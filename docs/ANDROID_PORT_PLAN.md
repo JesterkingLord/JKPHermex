@@ -12,7 +12,7 @@ translation, not a product redesign.
 
 ---
 
-## 1. Recommended approach: native Kotlin + Jetpack Compose, separate repo
+## 1. Recommended approach: native Kotlin + Jetpack Compose, same repo (monorepo)
 
 Three realistic options were considered:
 
@@ -22,16 +22,73 @@ Three realistic options were considered:
 | Kotlin Multiplatform (shared networking/models, Compose UI) | Not for v1. The iOS app is finished, pure-Swift, and stable; adopting KMP would mean rewriting the *iOS* data layer to get any sharing benefit. Worth revisiting only if maintaining two hand-written API clients becomes painful (see §7). |
 | Flutter / React Native | Rejected. Contradicts the project ethos and throws away the "native" differentiator; also adds a runtime dependency surface the project has deliberately avoided. |
 
-**Repo:** a new sibling repo (e.g. `hermex-android`), not a directory in this repo.
-The two apps share no code — they share a *contract* (the upstream API pin and
-`PROJECT_SPEC.md`). Keeping them separate keeps CI, tooling, releases, and agent
-working agreements simple. What gets copied/adapted into the new repo:
+**Repo:** both apps live in *this* repo. The two apps share no code — they share a
+*contract* (the upstream API pin, `PROJECT_SPEC.md` §6, and the contract-test
+fixtures) — and a monorepo makes that contract a single physical artifact instead of
+something copied between repos: one `UPSTREAM_TESTED_SHA`, one fixture corpus, one
+issue tracker, and atomic PRs when an upstream pin advance touches both clients.
+The costs (one-time iOS path churn, path-filtered CI, a bigger clone) are covered
+below.
 
-- `PROJECT_SPEC.md` §6 (API surface) verbatim — it is platform-neutral.
-- The hard rules from `AGENTS.md`/`CLAUDE.md` (never invent endpoints; tolerant
-  decoding; locked dependency list; don't commit broken builds).
-- `UPSTREAM_TESTED_SHA` and the `CONTRACT_TESTS.md` approach, pinned to the same
-  upstream commit so both clients are tested against the same server behavior.
+### Monorepo layout
+
+```
+hermex/
+├── ios/                    # everything Apple moves here, history preserved via git mv
+│   ├── HermesMobile/  HermesMobile.xcodeproj/  HermesMobileTests/
+│   ├── HermesShareExtension/  HermesLiveActivityWidget/
+│   ├── Config/  .xcodebuildmcp/  ci/
+│   └── AGENTS.md           # iOS-specific rules (tooling, simulator, TestFlight)
+├── android/                # self-contained Gradle project (phase 0 scaffolds this)
+│   ├── app/  gradle/  build.gradle.kts  settings.gradle.kts  gradlew
+│   └── AGENTS.md           # Android-specific rules (tooling, emulator, Play)
+├── shared/
+│   └── fixtures/           # recorded JSON contract fixtures, consumed by BOTH test suites
+├── docs/                   # cross-platform docs (this plan, agents conventions)
+├── PROJECT_SPEC.md         # product + API contract (platform-neutral sections stay root-level)
+├── UPSTREAM_TESTED_SHA     # ONE pin for both clients
+├── CONTRACT_TESTS.md  AGENTS.md  CLAUDE.md  README.md  …
+└── .github/workflows/      # path-filtered: ios.yml, android.yml, contract.yml
+```
+
+Rules that make it work:
+
+- **Toolchains never leak past their directory.** Xcode/SwiftPM own `ios/`, the
+  Gradle wrapper owns `android/`, the repo root stays tool-agnostic. Neither build
+  references files outside its subtree except `shared/fixtures/` and the pin.
+- **CI is path-filtered.** `ios.yml` runs on `ios/**` changes (macOS runner),
+  `android.yml` on `android/**` (cheap Linux runner), and both contract-test jobs
+  run when `shared/fixtures/**` or `UPSTREAM_TESTED_SHA` change. Docs-only changes
+  keep skipping builds. Note the branch-protection gotcha: a *required* check that
+  path-filters itself away blocks merging — use a gate job that reports success
+  when its paths didn't change.
+- **Layered agent instructions.** Root `AGENTS.md`/`CLAUDE.md` keeps only the
+  platform-neutral hard rules (never invent endpoints; tolerant decoding; locked
+  dependency lists; don't commit broken builds). Platform tooling rules move into
+  `ios/AGENTS.md` and `android/AGENTS.md` — agents pick up the nested file when
+  working inside that directory.
+- **Issues and releases are labeled/prefixed per app.** `ios` / `android` labels on
+  issues; tags like `ios-v1.4.0` and `android-v0.1.0`; `CHANGELOG.md` gets one
+  section per app. Branch conventions (`issue/<n>-slug`) stay unchanged.
+- **`master` stays the protected release-candidate branch for both apps** — the
+  path-filtered required checks keep it buildable on both sides.
+
+### Migration steps (before Android phase 0)
+
+- [ ] **PR A — move iOS under `ios/`.** Pure `git mv` (history follows), then fix
+      the handful of path references: CI workflow paths, `.xcodebuildmcp/config.yaml`
+      location, doc links, and the `xcodebuild -project` path in README/DEVELOPMENT/
+      TESTFLIGHT. The `.xcodeproj` itself uses relative paths inside the moved tree,
+      so it needs no surgery. Verify with a full build + test run before merge.
+- [ ] **PR B — hoist the shared contract.** Create `shared/fixtures/`, move/record
+      the contract-test fixture corpus there, point the XCTest suite at it, keep
+      `UPSTREAM_TESTED_SHA` + `CONTRACT_TESTS.md` at root, split `AGENTS.md` into
+      root + `ios/` layers.
+- [ ] **PR C — scaffold `android/`** (this is phase 0 of §4) with its own
+      `AGENTS.md`, locked dependency list, and path-filtered CI job.
+
+Do the migration as its own small PRs *before* any Android code lands — mixing the
+iOS move with Android scaffolding makes both impossible to review.
 
 ---
 
@@ -109,10 +166,11 @@ Mirrors `PROJECT_SPEC.md` §8, re-ordered slightly because Android CI is cheap f
 day one. Estimates assume one experienced Android developer (or agent-driven
 development at the same cadence as the iOS build). Check phases off as they land.
 
-- [ ] **Phase 0 — Setup** (1 day)
-  - [ ] New repo + Gradle project
-  - [ ] CI: build + unit tests on push
-  - [ ] Locked dependency list committed; copy spec/contract docs; pin upstream SHA
+- [ ] **Phase 0 — Setup** (1 day, after the §1 migration PRs)
+  - [ ] `android/` Gradle project scaffold
+  - [ ] Path-filtered CI: build + unit tests on `android/**` pushes
+  - [ ] Locked dependency list + `android/AGENTS.md` committed; wire tests to the
+        shared fixtures and root upstream pin
 - [ ] **Phase 1 — Networking core + auth** (2–3 days)
   - [ ] `ApiClient`, login/health, cookie/token handling
   - [ ] Keystore-backed secret storage
@@ -160,12 +218,12 @@ Defer: math rendering, Live Updates, voice input, insights, app shortcuts.
 
 ## 5. Testing & contract strategy
 
-- Port the **contract-test approach** (`CONTRACT_TESTS.md`), pinned to the same
-  `UPSTREAM_TESTED_SHA`. Both apps then chase upstream in lockstep: when the pin
-  advances here, open a matching issue in the Android repo.
-- MockWebServer replays the same recorded JSON fixtures; extracting the fixture
-  corpus into a small shared location (or duplicating it initially) keeps the two
-  clients honest against one wire format.
+- Both apps share the **contract-test approach** (`CONTRACT_TESTS.md`) and the
+  single root `UPSTREAM_TESTED_SHA`. A pin advance is one PR that runs both
+  clients' contract tests — the apps chase upstream in lockstep by construction.
+- MockWebServer (Android) and the URLProtocol mock server (iOS) replay the same
+  recorded JSON fixtures from `shared/fixtures/`, keeping the two clients honest
+  against one wire format.
 - Every model gets a "decodes with unknown fields / missing fields" test, same as
   the iOS tolerant-decoding rule.
 - Compose UI tests for the critical flows only (login, send message, stream render);
@@ -193,7 +251,7 @@ Defer: math rendering, Live Updates, voice input, insights, app shortcuts.
    Android's Network Security Config can't express CIDR ranges — small but easy to
    get wrong; needs tests.
 6. **Open questions for the maintainer** (check off as decided):
-   - [ ] Repo name and ownership
+   - [x] Repo strategy — decided: monorepo, both apps in this repo (§1)
    - [ ] Play developer account
    - [ ] Min SDK (26 vs 28)
    - [ ] Whether the Android app shares the Hermex name/branding on the Play
@@ -205,6 +263,8 @@ Defer: math rendering, Live Updates, voice input, insights, app shortcuts.
 
 If both apps are alive a year from now, the natural consolidation is a KMP module
 owning *models + API client + SSE parsing* (the parts governed by the upstream
-contract), with SwiftUI and Compose remaining fully native above it. That migration
-is only worth it once (a) the Android client exists and (b) contract drift has
-actually caused duplicated bug-fixing. Do not start there.
+contract), with SwiftUI and Compose remaining fully native above it. The monorepo
+makes this cheap to adopt later — a `shared/kotlin/` module next to
+`shared/fixtures/`, consumed by both apps, with no cross-repo publishing. That
+migration is only worth it once (a) the Android client exists and (b) contract
+drift has actually caused duplicated bug-fixing. Do not start there.
