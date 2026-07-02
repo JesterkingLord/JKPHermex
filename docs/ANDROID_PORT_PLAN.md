@@ -107,21 +107,47 @@ color optional) the same way the iOS app follows iOS conventions.
 
 Mirrors `PROJECT_SPEC.md` §8, re-ordered slightly because Android CI is cheap from
 day one. Estimates assume one experienced Android developer (or agent-driven
-development at the same cadence as the iOS build).
+development at the same cadence as the iOS build). Check phases off as they land.
 
-| Phase | Scope | Est. |
-|---|---|---|
-| **0. Setup** | New repo, Gradle project, CI (build + test on push), locked dependency list, copy spec/contract docs, pin upstream SHA | 1 day |
-| **1. Networking core + auth** | `ApiClient`, login/health, cookie/token handling, Keystore storage, tolerant-decoding test harness with MockWebServer | 2–3 days |
-| **2. Onboarding** | Welcome → connect (URL + password) → Tailscale/tunnel guidance pages; connection troubleshooting states | 2 days |
-| **3. Session list** | Fetch/search/resume sessions, projects & profiles, Room cache for offline reads, pull-to-refresh | 3 days |
-| **4. Chat + SSE streaming** *(the hardest slice, same as iOS)* | SSE client, token/tool_call/stream_end/error events, streaming markdown rendering, thinking + tool-call cards, stop/steer, approvals & clarifications overlays | 6–8 days |
-| **5. Composer** | Model/reasoning/workspace/profile selectors, attachments (upload + image picking), slash commands, context-window indicator, voice input | 4–5 days |
-| **6. Workspace + git** | File browser, file preview, git status/diff/branch/commit views | 3–4 days |
-| **7. Server panels** | Tasks (cron CRUD), Skills, Memory, Insights/analytics | 3 days |
-| **8. Settings + conversation actions** | Defaults, theming, session rename/delete, message long-press actions (copy/regenerate/listen) | 2–3 days |
-| **9. Platform integration** | Share target, response-complete notifications, ongoing run notification, deep links | 2–3 days |
-| **10. Polish + release prep** | Haptics, animations, empty/error states, Play Console internal-testing track, store listing | 3–4 days |
+- [ ] **Phase 0 — Setup** (1 day)
+  - [ ] New repo + Gradle project
+  - [ ] CI: build + unit tests on push
+  - [ ] Locked dependency list committed; copy spec/contract docs; pin upstream SHA
+- [ ] **Phase 1 — Networking core + auth** (2–3 days)
+  - [ ] `ApiClient`, login/health, cookie/token handling
+  - [ ] Keystore-backed secret storage
+  - [ ] Tolerant-decoding test harness with MockWebServer
+- [ ] **Phase 2 — Onboarding** (2 days)
+  - [ ] Welcome → connect (URL + password) → Tailscale/tunnel guidance pages
+  - [ ] Connection troubleshooting states
+- [ ] **Phase 3 — Session list** (3 days)
+  - [ ] Fetch/search/resume sessions; projects & profiles
+  - [ ] Room cache for offline reads; pull-to-refresh
+- [ ] **Phase 4 — Chat + SSE streaming** *(the hardest slice, same as iOS)* (6–8 days)
+  - [ ] SSE client: token / tool_call / stream_end / error events
+  - [ ] Streaming markdown rendering
+  - [ ] Thinking + tool-call cards
+  - [ ] Stop/steer; approvals & clarifications overlays
+- [ ] **Phase 5 — Composer** (4–5 days)
+  - [ ] Model/reasoning/workspace/profile selectors
+  - [ ] Attachments (upload + image picking)
+  - [ ] Slash commands; context-window indicator
+  - [ ] Voice input
+- [ ] **Phase 6 — Workspace + git** (3–4 days)
+  - [ ] File browser + file preview
+  - [ ] Git status/diff/branch/commit views
+- [ ] **Phase 7 — Server panels** (3 days)
+  - [ ] Tasks (cron CRUD)
+  - [ ] Skills; Memory; Insights/analytics
+- [ ] **Phase 8 — Settings + conversation actions** (2–3 days)
+  - [ ] Defaults + theming; session rename/delete
+  - [ ] Message long-press actions (copy/regenerate/listen)
+- [ ] **Phase 9 — Platform integration** (2–3 days)
+  - [ ] Share target; deep links
+  - [ ] Response-complete notifications; ongoing run notification
+- [ ] **Phase 10 — Polish + release prep** (3–4 days)
+  - [ ] Haptics, animations, empty/error states
+  - [ ] Play Console internal-testing track; store listing
 
 **Total: roughly 6–8 working weeks to feature parity.** A useful v1 cut (phases 0–5
 plus settings basics) ships in about half that; everything after phase 5 is additive.
@@ -166,9 +192,12 @@ Defer: math rendering, Live Updates, voice input, insights, app shortcuts.
 5. **Cleartext policy for Tailscale** needs the custom CGNAT-range check (§2) since
    Android's Network Security Config can't express CIDR ranges — small but easy to
    get wrong; needs tests.
-6. **Open questions for the maintainer:** repo name and ownership; Play developer
-   account; min SDK (26 vs 28); whether the Android app shares the Hermex
-   name/branding on the Play Store from day one.
+6. **Open questions for the maintainer** (check off as decided):
+   - [ ] Repo name and ownership
+   - [ ] Play developer account
+   - [ ] Min SDK (26 vs 28)
+   - [ ] Whether the Android app shares the Hermex name/branding on the Play
+         Store from day one
 
 ---
 
