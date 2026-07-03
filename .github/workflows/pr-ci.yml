@@ -11,7 +11,7 @@
 # Uses no repository secrets, so PRs from forks get green CI too.
 #
 # Code signing is disabled (CODE_SIGNING_ALLOWED=NO) — fine for compile/test
-# runs per TESTFLIGHT.md; the "simulator installs must be signed" rule applies
+# runs per ios/TESTFLIGHT.md; the "simulator installs must be signed" rule applies
 # to manual simulator testing, not CI.
 
 name: PR CI

@@ -30,7 +30,7 @@ When a smoke is skipped or held, the pin stays and the reason is recorded (in
 
 **How to advance.** Replace the SHA in `UPSTREAM_TESTED_SHA` with the peeled
 commit of the validated release, then update the human-readable tag references
-in this file, `README.md`, and `DEVELOPMENT.md` to match. Commit the pin move
+in this file, `README.md`, and `ios/DEVELOPMENT.md` to match. Commit the pin move
 together with a one-line note of which smoke validated it. `PROJECT_SPEC.md`
 §16 now points at the pin file instead of carrying its own copy, so it needs no
 update on advance.

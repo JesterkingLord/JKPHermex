@@ -287,7 +287,7 @@ set) before stopping, and remove the cookie jar: `rm -f "$JAR"`.
 
 1. Replace the SHA in `UPSTREAM_TESTED_SHA` with the peeled commit from Step 0.
 2. Update the human-readable tag references in `CONTRACT_TESTS.md`, `README.md`,
-   and `DEVELOPMENT.md` to the validated release.
+   and `ios/DEVELOPMENT.md` to the validated release.
 3. Commit the pin move with a one-line note of which smoke validated it.
 
 **Where to record the result** (per "Advance Policy" → "Cadence and owner"):

@@ -101,7 +101,7 @@ If that simulator is not installed, list available devices and choose a nearby i
 xcrun simctl list devices available
 ```
 
-Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config.yaml`; the standard post-change flow is in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config.yaml`; the standard post-change flow is in [`DEVELOPMENT.md`](ios/DEVELOPMENT.md).
 
 ## Server compatibility
 
@@ -111,8 +111,8 @@ The app is developed and tested against the `hermes-webui` commit pinned in [`UP
 
 - [`PROJECT_SPEC.md`](PROJECT_SPEC.md): source of truth for product scope, API behavior, dependencies, and architecture decisions.
 - [`PROJECT_INTENT.md`](PROJECT_INTENT.md): short orientation; useful for product tradeoffs, not implementation details.
-- [`DEVELOPMENT.md`](DEVELOPMENT.md): local development workflow, server setup notes, and the maintainer release runbook.
-- [`TESTFLIGHT.md`](TESTFLIGHT.md): maintainer-only TestFlight/App Store Connect operations.
+- [`DEVELOPMENT.md`](ios/DEVELOPMENT.md): local development workflow, server setup notes, and the maintainer release runbook.
+- [`TESTFLIGHT.md`](ios/TESTFLIGHT.md): maintainer-only TestFlight/App Store Connect operations.
 - [`CONTRACT_TESTS.md`](CONTRACT_TESTS.md): upstream contract-test readiness and the pin-advance policy.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`docs/agents/`](docs/agents): repo-local agent workflow conventions (issues, triage labels, domain notes).
