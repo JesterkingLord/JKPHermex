@@ -6,6 +6,7 @@ import com.hermexapp.android.model.ChatSteerResponse
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 
 // Chat endpoints, mirroring the iOS `APIClient+Chat`.
@@ -17,10 +18,11 @@ suspend fun ApiClient.startChat(
     model: String? = null,
     modelProvider: String? = null,
     profile: String? = null,
+    attachments: List<JsonElement>? = null,
 ): ChatStartResponse = postJson(
     Endpoint.CHAT_START,
     ApiJson.encodeToString(
-        ChatStartRequest(sessionId, message, workspace, model, modelProvider, profile),
+        ChatStartRequest(sessionId, message, workspace, model, modelProvider, profile, attachments),
     ),
 )
 
@@ -44,6 +46,7 @@ private data class ChatStartRequest(
     val model: String? = null,
     @SerialName("model_provider") val modelProvider: String? = null,
     val profile: String? = null,
+    val attachments: List<JsonElement>? = null,
 )
 
 @Serializable

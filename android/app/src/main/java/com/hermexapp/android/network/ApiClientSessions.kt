@@ -1,5 +1,6 @@
 package com.hermexapp.android.network
 
+import com.hermexapp.android.model.SessionMutationResponse
 import com.hermexapp.android.model.SessionResponse
 import com.hermexapp.android.model.SessionSearchResponse
 import com.hermexapp.android.model.SessionStatusResponse
@@ -50,10 +51,43 @@ suspend fun ApiClient.createSession(
     ),
 )
 
+suspend fun ApiClient.renameSession(id: String, title: String): SessionMutationResponse =
+    postJson(Endpoint.SESSION_RENAME, ApiJson.encodeToString(RenameSessionRequest(id, title)))
+
+suspend fun ApiClient.deleteSession(id: String): SessionMutationResponse =
+    postJson(Endpoint.SESSION_DELETE, ApiJson.encodeToString(SessionIdRequest(id)))
+
+suspend fun ApiClient.pinSession(id: String, pinned: Boolean): SessionMutationResponse =
+    postJson(Endpoint.SESSION_PIN, ApiJson.encodeToString(PinSessionRequest(id, pinned)))
+
+suspend fun ApiClient.archiveSession(id: String, archived: Boolean): SessionMutationResponse =
+    postJson(Endpoint.SESSION_ARCHIVE, ApiJson.encodeToString(ArchiveSessionRequest(id, archived)))
+
 @Serializable
 private data class NewSessionRequest(
     val workspace: String? = null,
     val model: String? = null,
     @SerialName("model_provider") val modelProvider: String? = null,
     val profile: String? = null,
+)
+
+@Serializable
+private data class RenameSessionRequest(
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+)
+
+@Serializable
+private data class SessionIdRequest(@SerialName("session_id") val sessionId: String)
+
+@Serializable
+private data class PinSessionRequest(
+    @SerialName("session_id") val sessionId: String,
+    val pinned: Boolean,
+)
+
+@Serializable
+private data class ArchiveSessionRequest(
+    @SerialName("session_id") val sessionId: String,
+    val archived: Boolean,
 )

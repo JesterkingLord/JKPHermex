@@ -209,26 +209,37 @@ development at the same cadence as the iOS build). Check phases off as they land
   - [x] Stop (`/api/chat/cancel`) and steer-while-running (`/api/chat/steer`)
   - [ ] Approvals & clarifications overlays (deferred — pending runs show
         their events but can't be approved from the app yet)
-- [ ] **Phase 5 — Composer** (4–5 days)
-  - [ ] Model/reasoning/workspace/profile selectors
-  - [ ] Attachments (upload + image picking)
-  - [ ] Slash commands; context-window indicator
-  - [ ] Voice input
-- [ ] **Phase 6 — Workspace + git** (3–4 days)
-  - [ ] File browser + file preview
-  - [ ] Git status/diff/branch/commit views
-- [ ] **Phase 7 — Server panels** (3 days)
-  - [ ] Tasks (cron CRUD)
-  - [ ] Skills; Memory; Insights/analytics
-- [ ] **Phase 8 — Settings + conversation actions** (2–3 days)
-  - [ ] Defaults + theming; session rename/delete
-  - [ ] Message long-press actions (copy/regenerate/listen)
-- [ ] **Phase 9 — Platform integration** (2–3 days)
-  - [ ] Share target; deep links
-  - [ ] Response-complete notifications; ongoing run notification
+- [x] **Phase 5 — Composer** (4–5 days)
+  - [x] Model/workspace/profile selectors riding on `/api/chat/start`
+        (reasoning-effort selector deferred)
+  - [x] Attachments: multipart upload + photo picking (arbitrary-file picking
+        deferred)
+  - [x] Slash-command autocomplete from `/api/commands` (context-window
+        indicator deferred)
+  - [ ] Voice input (deferred per plan §2 — v1-cut item)
+- [x] **Phase 6 — Workspace + git** (3–4 days)
+  - [x] File browser + monospace file preview
+  - [x] Git status / colored unified diff / branches — read-only; stage/commit/
+        checkout mutations deferred
+- [x] **Phase 7 — Server panels** (3 days)
+  - [x] Tasks: cron list + run/pause/resume (create/edit deferred)
+  - [x] Skills (browse + content); Memory; Insights summary
+- [x] **Phase 8 — Settings + conversation actions** (2–3 days)
+  - [x] Settings: server info, default-model picker, theme (system/light/dark);
+        session rename/delete/pin/archive via long-press
+  - [x] Message long-press copy (regenerate/listen deferred)
+- [x] **Phase 9 — Platform integration** (2–3 days)
+  - [x] Share target (text → new chat with prefilled composer; image share-in
+        deferred); notification tap deep-links into its session (a public
+        `hermes-agent://` scheme filter is deferred)
+  - [x] Response-complete notifications with POST_NOTIFICATIONS handling,
+        posted only when backgrounded (ongoing-run Live Update deferred)
 - [ ] **Phase 10 — Polish + release prep** (3–4 days)
-  - [ ] Haptics, animations, empty/error states
-  - [ ] Play Console internal-testing track; store listing
+  - [x] Haptics (send/stop/complete/long-press), animations (crossfade nav,
+        animated banners, list item placement), empty/error states with retry
+        across sessions/chat/panels/workspace
+  - [ ] Play Console internal-testing track; store listing (maintainer steps —
+        needs the Play account and final `applicationId` decision, §6)
 
 **Total: roughly 6–8 working weeks to feature parity.** A useful v1 cut (phases 0–5
 plus settings basics) ships in about half that; everything after phase 5 is additive.

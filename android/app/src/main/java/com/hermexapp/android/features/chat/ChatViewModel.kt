@@ -14,6 +14,7 @@ import com.hermexapp.android.network.cancelChat
 import com.hermexapp.android.network.chatStreamUrl
 import com.hermexapp.android.network.startChat
 import com.hermexapp.android.network.steerChat
+import com.hermexapp.android.network.uploadFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,7 +75,15 @@ class ChatViewModel(
         val isStreaming: Boolean = false,
         val isFromCache: Boolean = false,
         val errorMessage: String? = null,
-    )
+        val composerConfig: ComposerConfig = ComposerConfig(),
+        val attachments: List<PendingAttachment> = emptyList(),
+        val isUploadingAttachment: Boolean = false,
+        /** Set once per completed run so the screen can fire a completion haptic/notification. */
+        val finishedRunCount: Int = 0,
+    ) {
+        val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
+            get() = composerConfig.slashSuggestions(composerText)
+    }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -88,6 +97,82 @@ class ChatViewModel(
 
     fun load() {
         viewModelScope.launch { loadNow() }
+        viewModelScope.launch { loadComposerConfigNow() }
+    }
+
+    suspend fun loadComposerConfigNow() {
+        val config = loadComposerConfig(client)
+        _uiState.update { state ->
+            state.copy(
+                composerConfig = config.copy(
+                    selectedModelId = state.composerConfig.selectedModelId,
+                    selectedProviderId = state.composerConfig.selectedProviderId,
+                    selectedProfile = state.composerConfig.selectedProfile,
+                    selectedWorkspace = state.composerConfig.selectedWorkspace,
+                ),
+            )
+        }
+    }
+
+    fun selectModel(modelId: String?, providerId: String?) = _uiState.update {
+        it.copy(
+            composerConfig = it.composerConfig.copy(
+                selectedModelId = modelId,
+                selectedProviderId = providerId,
+            ),
+        )
+    }
+
+    fun selectProfile(name: String?) = _uiState.update {
+        it.copy(composerConfig = it.composerConfig.copy(selectedProfile = name))
+    }
+
+    fun selectWorkspace(path: String?) = _uiState.update {
+        it.copy(composerConfig = it.composerConfig.copy(selectedWorkspace = path))
+    }
+
+    /** Replaces the slash token with the picked command, keeping any argument text. */
+    fun applySlashCommand(command: com.hermexapp.android.model.AgentCommand) {
+        val name = command.name ?: return
+        val slash = if (name.startsWith("/")) name else "/$name"
+        _uiState.update { it.copy(composerText = "$slash ") }
+    }
+
+    /** Uploads picked bytes and adds the result to the pending strip. */
+    suspend fun addAttachmentNow(data: ByteArray, filename: String) {
+        if (data.size > PendingAttachment.MAX_UPLOAD_BYTES) {
+            _uiState.update {
+                it.copy(errorMessage = "$filename is too large. Attachments must be 20 MB or smaller.")
+            }
+            return
+        }
+        _uiState.update { it.copy(isUploadingAttachment = true, errorMessage = null) }
+        try {
+            val response = client.uploadFile(sessionId, data, filename)
+            if (response.error != null || response.path.isNullOrEmpty()) {
+                _uiState.update {
+                    it.copy(errorMessage = response.error ?: "The upload failed.")
+                }
+                return
+            }
+            val attachment = PendingAttachment(
+                name = response.filename ?: filename,
+                path = response.path,
+                mime = response.mime ?: "application/octet-stream",
+                size = response.size ?: data.size,
+                isImage = response.isImage == true,
+            )
+            _uiState.update { it.copy(attachments = it.attachments + attachment) }
+        } catch (e: ApiError) {
+            onAuthError(e)
+            _uiState.update { it.copy(errorMessage = e.userMessage) }
+        } finally {
+            _uiState.update { it.copy(isUploadingAttachment = false) }
+        }
+    }
+
+    fun removeAttachment(attachment: PendingAttachment) = _uiState.update {
+        it.copy(attachments = it.attachments - attachment)
     }
 
     fun send() {
@@ -117,24 +202,38 @@ class ChatViewModel(
     }
 
     suspend fun sendNow() {
-        val text = _uiState.value.composerText.trim()
-        if (text.isEmpty()) return
+        val state = _uiState.value
+        val draft = state.composerText.trim()
+        if (draft.isEmpty() && state.attachments.isEmpty()) return
 
-        if (_uiState.value.isStreaming) {
-            steerNow(text)
+        if (state.isStreaming) {
+            steerNow(draft)
             return
         }
+
+        val attachments = state.attachments
+        val message = PendingAttachment.messageText(draft, attachments)
+        val config = state.composerConfig
 
         _uiState.update {
             it.copy(
                 composerText = "",
+                attachments = emptyList(),
                 errorMessage = null,
-                entries = it.entries + TimelineEntry.UserMessage(nextId("user"), text),
+                entries = it.entries + TimelineEntry.UserMessage(nextId("user"), message),
             )
         }
 
         try {
-            val response = client.startChat(sessionId = sessionId, message = text)
+            val response = client.startChat(
+                sessionId = sessionId,
+                message = message,
+                workspace = config.selectedWorkspace,
+                model = config.selectedModelId,
+                modelProvider = config.selectedProviderId,
+                profile = config.selectedProfile,
+                attachments = attachments.map { it.toJsonElement() }.takeIf { it.isNotEmpty() },
+            )
             val streamId = response.streamId
             if (streamId.isNullOrEmpty()) {
                 _uiState.update {
@@ -153,6 +252,7 @@ class ChatViewModel(
 
     /** Mid-run message → `/api/chat/steer`, like the iOS composer while streaming. */
     suspend fun steerNow(text: String) {
+        if (text.isEmpty()) return
         _uiState.update {
             it.copy(
                 composerText = "",
@@ -311,9 +411,14 @@ class ChatViewModel(
     }
 
     private fun finishStreaming() {
+        val wasStreaming = activeStreamId != null
         activeStreamId = null
         _uiState.update { state ->
-            state.copy(isStreaming = false, entries = finalizeDrafts(state.entries))
+            state.copy(
+                isStreaming = false,
+                entries = finalizeDrafts(state.entries),
+                finishedRunCount = state.finishedRunCount + if (wasStreaming) 1 else 0,
+            )
         }
     }
 

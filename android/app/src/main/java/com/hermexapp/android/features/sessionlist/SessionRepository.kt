@@ -6,7 +6,11 @@ import com.hermexapp.android.model.SessionsResponse
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.network.ApiJson
+import com.hermexapp.android.network.archiveSession
 import com.hermexapp.android.network.createSession
+import com.hermexapp.android.network.deleteSession
+import com.hermexapp.android.network.pinSession
+import com.hermexapp.android.network.renameSession
 import com.hermexapp.android.network.searchSessions
 import com.hermexapp.android.network.session
 import com.hermexapp.android.network.sessions
@@ -73,6 +77,14 @@ class SessionRepository(
     }
 
     suspend fun createSession(): SessionDetail? = client.createSession().session
+
+    suspend fun renameSession(id: String, title: String) = client.renameSession(id, title)
+
+    suspend fun deleteSession(id: String) = client.deleteSession(id)
+
+    suspend fun pinSession(id: String, pinned: Boolean) = client.pinSession(id, pinned)
+
+    suspend fun archiveSession(id: String, archived: Boolean) = client.archiveSession(id, archived)
 
     /** Pinned first, then most recent activity — matches the sidebar ordering. */
     private fun sort(sessions: List<SessionSummary>): List<SessionSummary> =

@@ -1,17 +1,24 @@
 package com.hermexapp.android
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import com.hermexapp.android.auth.AuthManager
 import com.hermexapp.android.auth.KeystoreSecretStore
 import com.hermexapp.android.auth.SecretStore
+import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.SessionCookieJar
 import com.hermexapp.android.network.SseClient
 import com.hermexapp.android.persistence.CacheStore
 import com.hermexapp.android.persistence.HermexDatabase
+import com.hermexapp.android.persistence.InMemoryCacheStore
 import com.hermexapp.android.persistence.RoomCacheStore
+import com.hermexapp.android.platform.AppVisibility
+import com.hermexapp.android.platform.RunNotifications
+import com.hermexapp.android.platform.SharedDraftStore
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 
@@ -28,6 +35,21 @@ class HermexApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(KeystoreSecretStore(this), this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) {
+                AppVisibility.foregroundActivities++
+            }
+
+            override fun onActivityStopped(activity: Activity) {
+                AppVisibility.foregroundActivities--
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+            override fun onActivityResumed(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
     }
 }
 
@@ -41,7 +63,13 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
 
     val cacheStore: CacheStore = context
         ?.let { RoomCacheStore(HermexDatabase.build(it).cachedPayloadDao()) }
-        ?: com.hermexapp.android.persistence.InMemoryCacheStore()
+        ?: InMemoryCacheStore()
+
+    val prefs: AppPrefs? = context?.let { AppPrefs(it) }
+
+    val notifications: RunNotifications? = context?.let { RunNotifications(it) }
+
+    val sharedDraftStore = SharedDraftStore()
 
     val authManager = AuthManager(
         secretStore = secretStore,

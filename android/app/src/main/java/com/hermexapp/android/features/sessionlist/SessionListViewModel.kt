@@ -81,4 +81,28 @@ class SessionListViewModel(
         _uiState.update { it.copy(errorMessage = e.userMessage) }
         null
     }
+
+    fun renameSession(id: String, title: String) = mutate { repository.renameSession(id, title) }
+
+    fun deleteSession(id: String) = mutate { repository.deleteSession(id) }
+
+    fun pinSession(id: String, pinned: Boolean) = mutate { repository.pinSession(id, pinned) }
+
+    fun archiveSession(id: String, archived: Boolean) =
+        mutate { repository.archiveSession(id, archived) }
+
+    private fun mutate(action: suspend () -> com.hermexapp.android.model.SessionMutationResponse) {
+        viewModelScope.launch {
+            try {
+                val response = action()
+                if (response.error != null) {
+                    _uiState.update { it.copy(errorMessage = response.error) }
+                }
+                refreshNow()
+            } catch (e: ApiError) {
+                onAuthError(e)
+                _uiState.update { it.copy(errorMessage = e.userMessage) }
+            }
+        }
+    }
 }
