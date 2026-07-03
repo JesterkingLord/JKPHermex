@@ -91,11 +91,15 @@ Rules that make it work:
       `UPSTREAM_TESTED_SHA` + `CONTRACT_TESTS.md` stay at root; `AGENTS.md` split
       into a platform-neutral root layer + `ios/AGENTS.md` (with an `ios/CLAUDE.md`
       symlink mirroring the root pattern).
-- [ ] **Step C — scaffold `android/`** (this is phase 0 of §4) with its own
-      `AGENTS.md`, locked dependency list, and path-filtered CI job.
+- [x] **Step C — scaffold `android/`** (this is phase 0 of §4). Done: Gradle
+      project with version-catalog locked dependency list, `android/AGENTS.md`
+      (+ `CLAUDE.md` symlink), minimal Compose placeholder screen, unit tests
+      pinning the tolerant-decoding Json config and the shared-fixtures/pin
+      wiring, and a path-filtered `android-ci.yml` (with the iOS `pr-ci.yml`
+      filter taught to skip Android-only changes). Verified by a local
+      `gradlew build` (all tests + lint green) and the Android CI run.
 
-Steps A and B landed together on the plan PR at the maintainer's request; step C
-should still be its own PR so the Android scaffold is reviewable in isolation.
+All three steps landed together on the plan PR at the maintainer's request.
 `PROJECT_SPEC.md` §7's file layout was left untouched — it describes the tree
 *inside* the app project, which is unchanged relative to `ios/`.
 
@@ -175,10 +179,10 @@ Mirrors `PROJECT_SPEC.md` §8, re-ordered slightly because Android CI is cheap f
 day one. Estimates assume one experienced Android developer (or agent-driven
 development at the same cadence as the iOS build). Check phases off as they land.
 
-- [ ] **Phase 0 — Setup** (1 day, after the §1 migration PRs)
-  - [ ] `android/` Gradle project scaffold
-  - [ ] Path-filtered CI: build + unit tests on `android/**` pushes
-  - [ ] Locked dependency list + `android/AGENTS.md` committed; wire tests to the
+- [x] **Phase 0 — Setup** (1 day, after the §1 migration PRs)
+  - [x] `android/` Gradle project scaffold
+  - [x] Path-filtered CI: build + unit tests on `android/**` pushes
+  - [x] Locked dependency list + `android/AGENTS.md` committed; wire tests to the
         shared fixtures and root upstream pin
 - [ ] **Phase 1 — Networking core + auth** (2–3 days)
   - [ ] `ApiClient`, login/health, cookie/token handling
