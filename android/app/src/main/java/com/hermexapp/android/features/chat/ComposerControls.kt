@@ -17,12 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermexapp.android.model.AgentCommand
+import com.hermexapp.android.ui.HermexPickerSheet
+import com.hermexapp.android.ui.PickerRow
+import com.hermexapp.android.ui.PickerSection
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -199,34 +200,60 @@ fun ComposerBar(
     }
 
     when (openPicker) {
-        PickerKind.MODEL -> PickerDialog(
+        // Model picker: one section per provider group, plus a "server default"
+        // row. Value is (modelId?, providerId?) — null means server default.
+        PickerKind.MODEL -> HermexPickerSheet(
             title = "Model",
-            options = listOf("Server default" to null) + config.modelGroups.flatMap { group ->
-                group.models.map { "${it.displayName} (${group.name})" to (it.id to it.providerId) }
+            sections = listOf(
+                PickerSection<Pair<String?, String?>>(
+                    header = null,
+                    rows = listOf(PickerRow("Server default", null to null)),
+                ),
+            ) + config.modelGroups.map { group ->
+                PickerSection(
+                    header = group.name,
+                    rows = group.models.map { PickerRow(it.displayName, it.id to it.providerId) },
+                )
             },
-            onPick = { value ->
-                val pick = value as? Pair<*, *>
-                viewModel.selectModel(pick?.first as? String, pick?.second as? String)
+            isSelected = { it.first == config.selectedModelId },
+            onPick = { (modelId, providerId) ->
+                viewModel.selectModel(modelId, providerId)
                 openPicker = null
             },
             onDismiss = { openPicker = null },
         )
-        PickerKind.PROFILE -> PickerDialog(
+        PickerKind.PROFILE -> HermexPickerSheet(
             title = "Profile",
-            options = listOf("Active profile" to null) +
-                config.profiles.map { it.displayName to it.name },
-            onPick = { value ->
-                viewModel.selectProfile(value as? String)
+            sections = listOf(
+                PickerSection(
+                    header = null,
+                    rows = listOf(PickerRow<String?>("Active profile", null)) +
+                        config.profiles.map { PickerRow(it.displayName, it.name) },
+                ),
+            ),
+            isSelected = { it == config.selectedProfile },
+            searchable = config.profiles.size > 8,
+            onPick = { name ->
+                viewModel.selectProfile(name)
                 openPicker = null
             },
             onDismiss = { openPicker = null },
         )
-        PickerKind.WORKSPACE -> PickerDialog(
+        PickerKind.WORKSPACE -> HermexPickerSheet(
             title = "Workspace",
-            options = listOf("Session workspace" to null) +
-                config.workspaces.map { (it.name ?: it.path ?: "?") to it.path },
-            onPick = { value ->
-                viewModel.selectWorkspace(value as? String)
+            sections = listOf(
+                PickerSection(
+                    header = null,
+                    rows = listOf(PickerRow<String?>("Session workspace", null)) +
+                        config.workspaces.map {
+                            PickerRow(it.name ?: it.path ?: "?", it.path, sublabel = it.path)
+                        },
+                ),
+            ),
+            isSelected = { it == config.selectedWorkspace },
+            searchable = config.workspaces.size > 8,
+            onPick = { path ->
+                viewModel.selectWorkspace(path)
                 openPicker = null
             },
             onDismiss = { openPicker = null },
@@ -262,39 +289,6 @@ private fun PillChip(text: String, onClick: () -> Unit) {
 }
 
 private enum class PickerKind { MODEL, PROFILE, WORKSPACE }
-
-@Composable
-private fun PickerDialog(
-    title: String,
-    options: List<Pair<String, Any?>>,
-    onPick: (Any?) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                options.take(30).forEach { (label, value) ->
-                    Text(
-                        label,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPick(value) }
-                            .padding(vertical = 10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        },
-    )
-}
 
 /** Pending attachments above the composer, tap to remove — dark pills like iOS. */
 @Composable

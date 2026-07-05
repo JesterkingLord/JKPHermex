@@ -30,6 +30,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.ui.HermexHeader
+import com.hermexapp.android.ui.HermexPickerSheet
+import com.hermexapp.android.ui.PickerRow
+import com.hermexapp.android.ui.PickerSection
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import com.hermexapp.android.config.ThemeChoice
 import com.hermexapp.android.model.ModelCatalogGroup
@@ -126,37 +129,28 @@ fun SettingsScreen(
     }
 
     if (showModelPicker) {
-        AlertDialog(
-            onDismissRequest = { showModelPicker = false },
-            confirmButton = { TextButton(onClick = { showModelPicker = false }) { Text("Cancel") } },
-            title = { Text("Default model") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    modelGroups.flatMap { it.models }.take(30).forEach { option ->
-                        Text(
-                            option.displayName,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showModelPicker = false
-                                    scope.launch {
-                                        try {
-                                            val response = client.saveDefaultModel(option.id)
-                                            currentDefaultModel = response.model ?: option.id
-                                            message = "Default model saved."
-                                        } catch (e: ApiError) {
-                                            message = e.userMessage
-                                        }
-                                    }
-                                }
-                                .padding(vertical = 10.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        HermexPickerSheet(
+            title = "Default model",
+            sections = modelGroups.map { group ->
+                PickerSection(
+                    header = group.name,
+                    rows = group.models.map { PickerRow(it.displayName, it.id) },
+                )
+            },
+            isSelected = { it == currentDefaultModel },
+            onPick = { modelId ->
+                showModelPicker = false
+                scope.launch {
+                    try {
+                        val response = client.saveDefaultModel(modelId)
+                        currentDefaultModel = response.model ?: modelId
+                        message = "Default model saved."
+                    } catch (e: ApiError) {
+                        message = e.userMessage
                     }
                 }
             },
+            onDismiss = { showModelPicker = false },
         )
     }
 }

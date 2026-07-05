@@ -1,15 +1,22 @@
 package com.hermexapp.android.features.onboarding
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
+import com.hermexapp.android.ui.HermexWordmark
+import com.hermexapp.android.ui.theme.LocalHermexPalette
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +70,26 @@ fun OnboardingScreen(viewModel: OnboardingViewModel) {
 @Composable
 private fun WelcomePage(onContinue: () -> Unit) {
     Spacer(Modifier.height(48.dp))
-    com.hermexapp.android.ui.HermexWordmark()
+    // Gold radial-glow hero behind the wordmark — iOS onboarding parity, matching
+    // 9thLevel's port: a soft brand-gold bloom fading to transparent.
+    val gold = LocalHermexPalette.current.accent
+    Box(modifier = Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            gold.copy(alpha = 0.45f),
+                            gold.copy(alpha = 0.18f),
+                            gold.copy(alpha = 0f),
+                        ),
+                    ),
+                    CircleShape,
+                ),
+        )
+        HermexWordmark()
+    }
     Text(
         "Control your self-hosted Hermes agent from your phone. " +
             "Your server. Your phone. No middleman.",
