@@ -109,17 +109,18 @@ if ($needsJdk) {
 # Locate the JDK 17 install
 function Find-Jdk17 {
     $candidates = @()
-    # winget user-scope installs to %LOCALAPPDATA%\Programs\Microsoft\OpenJDK\jdk-17*
-    $userLocal = Join-Path $env:LOCALAPPDATA "Programs\Microsoft\OpenJDK"
+    # winget user-scope install (where Microsoft.OpenJDK.17 actually lands)
+    $userLocal = Join-Path $env:LOCALAPPDATA "Programs\Microsoft"
     if (Test-Path $userLocal) { $candidates += Get-ChildItem $userLocal -Directory -ErrorAction SilentlyContinue }
-    # winget machine-scope installs to C:\Program Files\Microsoft\jdk-17*
+    # winget machine-scope install to C:\Program Files\Microsoft\jdk-17*
     $pf = "C:\Program Files\Microsoft"
     if (Test-Path $pf) { $candidates += Get-ChildItem $pf -Directory -ErrorAction SilentlyContinue }
     # Manual install to C:\Program Files\OpenJDK\jdk-17*
     $pf2 = "C:\Program Files\OpenJDK"
     if (Test-Path $pf2) { $candidates += Get-ChildItem $pf2 -Directory -ErrorAction SilentlyContinue }
     foreach ($c in $candidates) {
-        if ($c.Name -match 'jdk-17') { return $c.FullName }
+        # Match jdk-17* (handles both jdk-17.0.10.7-hotspot and jdk-17.0.10.7)
+        if ($c.Name -match '^jdk-17') { return $c.FullName }
     }
     return $null
 }
