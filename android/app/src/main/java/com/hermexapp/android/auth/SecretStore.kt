@@ -13,6 +13,14 @@ interface SecretStore {
         // Serialized cookies for one server host (see SessionCookieJar). Always
         // scoped; the unscoped form is never written.
         SESSION_COOKIES("session_cookies"),
+        // v0.3.0+: Bearer grant returned by POST /v1/pair/complete. Scoped per
+        // server so multiple paired hosts don't collide. Not yet consumed by
+        // ApiClient — stored as a marker that the phone has completed the
+        // desktop's `python -m jkp pair` handoff, with Bearer-auth integration
+        // planned for v0.4.0.
+        PAIR_GRANT("pair_grant"),
+        // v0.3.0+: device id returned alongside the grant. Same scoping rules.
+        PAIR_DEVICE_ID("pair_device_id"),
     }
 
     fun save(value: String, key: Key, scope: String? = null)
@@ -33,14 +41,11 @@ interface SecretStore {
 /** In-memory store for tests and previews. */
 class InMemorySecretStore : SecretStore {
     private val values = mutableMapOf<String, String>()
-
     override fun save(value: String, key: SecretStore.Key, scope: String?) {
         values[SecretStore.storageKey(key, scope)] = value
     }
-
     override fun load(key: SecretStore.Key, scope: String?): String? =
         values[SecretStore.storageKey(key, scope)]
-
     override fun delete(key: SecretStore.Key, scope: String?) {
         values.remove(SecretStore.storageKey(key, scope))
     }

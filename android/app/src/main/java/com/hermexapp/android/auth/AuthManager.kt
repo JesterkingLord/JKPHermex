@@ -4,6 +4,7 @@ import com.hermexapp.android.model.AuthStatusResponse
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.network.SessionCookieJar
+import com.hermexapp.android.network.completePairing
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,32 @@ interface AuthGateway {
     val lastErrorMessage: StateFlow<String?>
     suspend fun testConnection(serverUrlString: String): AuthStatusResponse
     suspend fun configure(serverUrlString: String, password: String)
+
+    /**
+     * v0.3.0+: completes a QR/pasted pairing URL. On success the grant +
+     * device_id are persisted per-server and the server URL is saved so the
+     * existing password flow can take over (or, in v0.4.0+, the Bearer grant
+     * will be used directly). Returns a [PairingOutcome] describing what
+     * happened; failures also surface through [lastErrorMessage].
+     */
+    suspend fun pairAndConfigure(
+        rawText: String,
+        deviceName: String,
+    ): PairingOutcome
+}
+
+sealed class PairingOutcome {
+    /** Successfully paired; the URL is now saved as the active server. */
+    data class Paired(
+        val serverUrl: HttpUrl,
+        val deviceId: String,
+    ) : PairingOutcome()
+
+    /** The text was a URL but didn\'t carry pair_id/token — prefill only. */
+    data class Prefilled(val serverUrl: HttpUrl) : PairingOutcome()
+
+    /** Couldn\'t parse the input or call /v1/pair/complete. */
+    data class Failed(val reason: String) : PairingOutcome()
 }
 
 /**
@@ -33,13 +60,10 @@ class AuthManager(
     private val cookieJar: SessionCookieJar,
     private val clientFactory: (HttpUrl) -> ApiClient,
     private val logoutTimeoutMillis: Long = 5_000,
-    // Multi-server registry (nullable so tests can omit it). Kept in sync so the
-    // settings server switcher and the header interceptor see every server.
     private val registry: com.hermexapp.android.config.ServerRegistry? = null,
 ) : AuthGateway {
 
     sealed class State {
-        /** The server this state refers to — `Unconfigured` has none. */
         abstract val server: HttpUrl?
 
         data object Unconfigured : State() {
@@ -60,11 +84,6 @@ class AuthManager(
         restoreSavedServer()
     }
 
-    /**
-     * Probes a server: `/health` must report `status == "ok"`, then
-     * `/api/auth/status` says whether a password is needed. Mirrors the iOS
-     * `testConnection`. Throws [ApiError] on any failure.
-     */
     override suspend fun testConnection(serverUrlString: String): AuthStatusResponse {
         val serverUrl = ServerUrlNormalizer.normalize(serverUrlString)
         return testConnection(clientFactory(serverUrl))
@@ -78,11 +97,6 @@ class AuthManager(
         return client.authStatus()
     }
 
-    /**
-     * Full connect: probe, then log in when the server requires it, then persist
-     * the server URL — only on success, mirroring the iOS `configure`. Failures
-     * land in [lastErrorMessage] rather than throwing, so the UI shows them.
-     */
     override suspend fun configure(serverUrlString: String, password: String) {
         _lastErrorMessage.value = null
 
@@ -91,9 +105,6 @@ class AuthManager(
             val client = clientFactory(serverUrl)
             val authStatus = testConnection(client)
 
-            // Passkey-only: auth on but password auth explicitly off. Only an
-            // explicit false counts — a missing field is an older server, which
-            // must fall through to the password path.
             if (authStatus.authEnabled == true && authStatus.passwordAuthEnabled == false) {
                 _lastErrorMessage.value = PASSKEY_ONLY_MESSAGE
                 return
@@ -121,11 +132,70 @@ class AuthManager(
     }
 
     /**
-     * Switches the active server to an already-known one (settings server
-     * switcher). Its cookies load per-host automatically; a stale one is demoted
-     * to LoggedOut by the first 401 via [handleApiError], exactly like cold
-     * launch.
+     * v0.3.0+: parses [rawText] as a QR/pasted pairing URL and, if it carries
+     * pair_id+token, posts to /v1/pair/complete. On success the grant +
+     * device_id are persisted per-server, the server URL is saved, and we
+     * transition to [State.LoggedIn] without needing the password. The grant
+     * is stored but not yet used by ApiClient — that\'s v0.4.0+ Bearer auth.
      */
+    override suspend fun pairAndConfigure(
+        rawText: String,
+        deviceName: String,
+    ): PairingOutcome {
+        _lastErrorMessage.value = null
+
+        val intent = PairingIntentParser.parse(rawText)
+        return when (intent) {
+            is PairingIntent.Invalid -> {
+                val reason = intent.reason
+                _lastErrorMessage.value = reason
+                PairingOutcome.Failed(reason)
+            }
+
+            is PairingIntent.ServerUrlOnly -> {
+                // No pair_id/token — fall through to the URL field only.
+                PairingOutcome.Prefilled(intent.serverUrl)
+            }
+
+            is PairingIntent.CompletePairing -> {
+                try {
+                    val client = clientFactory(intent.serverUrl)
+                    val response = client.completePairing(
+                        pairId = intent.pairId,
+                        token = intent.token,
+                        deviceName = deviceName,
+                    )
+                    if (response.grant.isBlank() || response.device_id.isBlank()) {
+                        val reason = "Server returned an empty grant; pair rejected."
+                        _lastErrorMessage.value = reason
+                        return PairingOutcome.Failed(reason)
+                    }
+                    secretStore.save(
+                        response.grant,
+                        SecretStore.Key.PAIR_GRANT,
+                        intent.serverUrl.host,
+                    )
+                    secretStore.save(
+                        response.device_id,
+                        SecretStore.Key.PAIR_DEVICE_ID,
+                        intent.serverUrl.host,
+                    )
+                    secretStore.save(
+                        intent.serverUrl.toString(),
+                        SecretStore.Key.SERVER_URL,
+                    )
+                    registry?.addOrKeep(intent.serverUrl.toString())
+                    _state.value = State.LoggedIn(intent.serverUrl)
+                    PairingOutcome.Paired(intent.serverUrl, response.device_id)
+                } catch (e: ApiError) {
+                    val reason = e.userMessage
+                    _lastErrorMessage.value = reason
+                    PairingOutcome.Failed(reason)
+                }
+            }
+        }
+    }
+
     fun switchTo(serverUrlString: String) {
         val url = runCatching { ServerUrlNormalizer.normalize(serverUrlString) }.getOrNull() ?: return
         secretStore.save(url.toString(), SecretStore.Key.SERVER_URL)
@@ -133,17 +203,11 @@ class AuthManager(
         _state.value = State.LoggedIn(url)
     }
 
-    /**
-     * Drops to onboarding to add another server WITHOUT signing out of the
-     * current one — the registry and cookies are left intact so the user can
-     * switch back. Connecting a new server just makes it the active one.
-     */
     fun beginAddServer() {
         _lastErrorMessage.value = null
         _state.value = State.Unconfigured
     }
 
-    /** Forgets a server: server-side logout, drop its cookies + registry entry. */
     suspend fun forgetServer(serverUrlString: String) {
         val url = runCatching { ServerUrlNormalizer.normalize(serverUrlString) }.getOrNull() ?: return
         val isActive = _state.value.server?.host == url.host
@@ -151,6 +215,8 @@ class AuthManager(
             withTimeoutOrNull(logoutTimeoutMillis) { runCatching { clientFactory(url).logout() } }
         }
         cookieJar.clear(url.host)
+        secretStore.delete(SecretStore.Key.PAIR_GRANT, url.host)
+        secretStore.delete(SecretStore.Key.PAIR_DEVICE_ID, url.host)
         registry?.remove(url.toString())
         if (isActive) {
             secretStore.delete(SecretStore.Key.SERVER_URL)
@@ -159,11 +225,6 @@ class AuthManager(
         }
     }
 
-    /**
-     * Best-effort server-side logout (bounded, never blocks local sign-out —
-     * mirrors iOS `attemptBestEffortServerLogout`), then clears the saved server
-     * and its cookies and returns to onboarding.
-     */
     suspend fun signOut() {
         val server = _state.value.server
         if (server != null && _state.value is State.LoggedIn) {
@@ -171,17 +232,16 @@ class AuthManager(
                 runCatching { clientFactory(server).logout() }
             }
         }
-        server?.let { cookieJar.clear(it.host) }
+        server?.let {
+            cookieJar.clear(it.host)
+            secretStore.delete(SecretStore.Key.PAIR_GRANT, it.host)
+            secretStore.delete(SecretStore.Key.PAIR_DEVICE_ID, it.host)
+        }
         secretStore.delete(SecretStore.Key.SERVER_URL)
         _lastErrorMessage.value = null
         _state.value = State.Unconfigured
     }
 
-    /**
-     * Routes any API failure through session-expiry handling: a 401 keeps the
-     * saved server (re-login is a one-field affair) but clears its cookies and
-     * demotes state to LoggedOut. Everything else is left to the caller.
-     */
     fun handleApiError(error: Throwable) {
         if (error !is ApiError.Unauthorized) return
 
@@ -204,14 +264,12 @@ class AuthManager(
             secretStore.delete(SecretStore.Key.SERVER_URL)
             return
         }
-        // Optimistic, like the iOS cold-launch path: a stale cookie is demoted to
-        // LoggedOut by the first request's 401 via handleApiError.
         _state.value = State.LoggedIn(url)
     }
 
     companion object {
         const val PASSKEY_ONLY_MESSAGE =
-            "This server signs in with passkeys, which Hermex doesn't support yet."
+            "This server signs in with passkeys, which Hermex doesn\'t support yet."
         const val EMPTY_PASSWORD_MESSAGE = "Enter the server password."
     }
 }
