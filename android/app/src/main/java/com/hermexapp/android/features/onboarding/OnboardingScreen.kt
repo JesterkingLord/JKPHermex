@@ -109,7 +109,7 @@ private fun WelcomePage(onContinue: () -> Unit) {
 private fun GuidancePage(onContinue: () -> Unit, onBack: () -> Unit) {
     Text("Reach your server", style = MaterialTheme.typography.headlineMedium)
     Text(
-        "Hermex talks directly to your hermes-webui server, so it must be reachable from this phone:",
+        "JKP Mobile talks directly to your JKP server, so it must be reachable from this phone:",
         style = MaterialTheme.typography.bodyMedium,
     )
     GuidanceItem(

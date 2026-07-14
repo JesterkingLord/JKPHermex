@@ -93,7 +93,7 @@ fun ChatScreen(
         topBar = {
             HermexHeader(
                 title = state.title ?: "New chat",
-                subtitle = "hermes",
+                subtitle = "JKP Mobile",
                 onBack = onBack,
                 actions = {
                     CircleButton(onClick = onOpenFiles, glyph = "📁", size = 40)

@@ -101,7 +101,7 @@ fun HermexHeader(
 @Composable
 fun HermexWordmark(modifier: Modifier = Modifier) {
     Text(
-        "HERMEX",
+        "JKP MOBILE",
         modifier = modifier,
         color = LocalHermexPalette.current.accent,
         fontFamily = FontFamily.Monospace,
