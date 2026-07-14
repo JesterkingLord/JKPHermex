@@ -19,11 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -175,7 +175,7 @@ fun SessionListScreen(
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 8.dp)) {
-                    MenuRow(Icons.Filled.List, "Projects") { onOpenProjects() }
+                    MenuRow(Icons.AutoMirrored.Filled.List, "Projects") { onOpenProjects() }
                     MenuRow(Icons.Filled.DateRange, "Tasks") { onOpenPanel("TASKS") }
                     MenuRow(Icons.Filled.Build, "Skills") { onOpenPanel("SKILLS") }
                     MenuRow(Icons.Filled.Face, "Memory") { onOpenPanel("MEMORY") }

@@ -16,12 +16,13 @@ import org.junit.Test
 class SharedContractWiringTest {
 
     private fun repoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        val userDir = System.getProperty("user.dir") ?: error("user.dir is unavailable")
+        var dir: File? = File(userDir).absoluteFile
         while (dir != null) {
             if (File(dir, "UPSTREAM_TESTED_SHA").isFile) return dir
             dir = dir.parentFile
         }
-        fail("Could not locate the repo root (no UPSTREAM_TESTED_SHA above ${System.getProperty("user.dir")})")
+        fail("Could not locate the repo root (no UPSTREAM_TESTED_SHA above $userDir)")
         error("unreachable")
     }
 
