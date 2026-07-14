@@ -6,14 +6,42 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class ThemeChoice { SYSTEM, LIGHT, DARK }
 
-/** Header Logo Color presets, mirroring the iOS `HeaderLogoColor.presets`. */
+/** Header Logo Color presets, mirroring the iOS `HeaderLogoColor.presets` and
+ *  extending with project-flavoured options (EFER/EFURC/EFEMM + JKP Void).
+ *
+ *  New accents are added at the bottom so existing user choices (saved by
+ *  enum `name`, not by ordinal) don't silently change for anyone upgrading
+ *  from v0.1.0. The picker UI wraps via [FlowRow] so 16 circles fit
+ *  cleanly on phone screens.
+ *
+ *  Add a preset in three steps:
+ *   1. New enum entry below (displayName, hex).
+ *   2. (optional) update light-mode contrast in `HermexTheme.kt` if the
+ *      hue doesn't survive the darken-for-light-mode pass.
+ *   3. Bump `versionCode` in `app/build.gradle.kts` so the picker rebuilds.
+ */
 enum class AccentPreset(val displayName: String, val hex: String) {
+    // Original 6 (v0.1.0 baseline — do not reorder).
     GOLD("Gold", "#FFD700"),
     BLUE("Blue", "#5B7CFF"),
     PURPLE("Purple", "#AF52DE"),
     RED("Red", "#FF3B30"),
     GREEN("Green", "#34C759"),
-    WHITE("White", "#FFFFFF");
+    WHITE("White", "#FFFFFF"),
+
+    // New in v0.2.0 — additional brand-tied and JKP-flavoured options.
+    AMBER("Amber", "#FFB300"),       // warm gold alternative
+    CYAN("Cyan", "#00D4FF"),          // bright sky
+    MAGENTA("Magenta", "#FF2D92"),    // hot pink
+    ORANGE("Orange", "#FF6B1A"),      // sunset
+    TEAL("Teal", "#1ABC9C"),          // cool teal
+    INDIGO("Indigo", "#5856D6"),      // deep blue-purple
+    PINK("Pink", "#FF8AB9"),          // pastel pink
+    EFER_CRYPT_RED("EFER Crypt", "#8B0000"),  // EFER 3D RPG brand blood-red
+    EFURC_CYAN("EFURC Cyan", "#00C7B7"),      // EFURC TCG brand cyan
+    EFEMM_PURPLE("EFEMM Purple", "#9B59FF"),  // EFEMM Match-3 brand purple
+    JKP_VOID("JKP Void", "#1A1A1A"),          // subtle dark accent (gray-on-gold works well)
+    ;
 
     companion object {
         fun fromHex(hex: String?): AccentPreset = entries.firstOrNull { it.hex == hex } ?: GOLD
