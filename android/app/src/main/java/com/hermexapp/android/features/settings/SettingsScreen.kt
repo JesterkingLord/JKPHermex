@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +54,7 @@ import com.hermexapp.android.network.serverSettings
 import kotlinx.coroutines.launch
 
 /** Phase 8 settings: servers, custom headers, default model, theme, sign out. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     client: ApiClient,
@@ -73,6 +75,18 @@ fun SettingsScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var showAddHeader by remember { mutableStateOf(false) }
+
+    // Update check state — lifted to function level so the UpdateDialog
+    // (rendered alongside the Scaffold content) can read the result.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val installedVersion = remember {
+        com.hermexapp.android.network.UpdateChecker.installedVersionName(context) ?: "?"
+    }
+    var checking by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<com.hermexapp.android.network.UpdateResult?>(null) }
+    val checker = remember {
+        com.hermexapp.android.network.UpdateChecker(owner = "JesterkingLord", repo = "JKPHermex")
+    }
     val servers by (registry?.servers
         ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<com.hermexapp.android.config.ServerEntry>()))
         .collectAsState()
@@ -205,16 +219,32 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 AccentPreset.entries.forEach { preset ->
                     val selected = accent == preset
-                    Box(
-                        modifier = Modifier
-                            .size(if (selected) 34.dp else 28.dp)
-                            .clip(CircleShape)
-                            .background(accentColorFromHex(preset.hex))
-                            .clickable { prefs.setAccent(preset) },
-                    )
+                    Column(
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (selected) 34.dp else 28.dp)
+                                .clip(CircleShape)
+                                .background(accentColorFromHex(preset.hex))
+                                .clickable { prefs.setAccent(preset) },
+                        )
+                        if (selected) {
+                            Text(
+                                preset.displayName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                 }
             }
             HorizontalDivider()
@@ -230,13 +260,40 @@ fun SettingsScreen(
             }
             HorizontalDivider()
 
+            SectionTitle("About")
+            InfoRow("App version", installedVersion)
+            InfoRow("Update channel", "Stable (GitHub releases)")
+            TextButton(
+                onClick = {
+                    checking = true
+                    updateResult = null
+                    scope.launch {
+                        updateResult = checker.check(context)
+                        checking = false
+                    }
+                },
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (checking) "Checking…" else "Check for updates")
+            }
+            HorizontalDivider()
+
             Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
                 Text("Sign out")
             }
         }
     }
 
-    if (showAddHeader && registry != null) {
+    UpdateDialog(
+        loading = checking,
+        result = updateResult,
+        currentVersion = installedVersion,
+        onDismiss = { updateResult = null },
+        onOpenReleasePage = { url -> openUrlInBrowser(context, url) },
+    )
+
+if (showAddHeader && registry != null) {
         AddHeaderDialog(
             onDismiss = { showAddHeader = false },
             onConfirm = { name, value ->
