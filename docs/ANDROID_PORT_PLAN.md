@@ -255,6 +255,37 @@ Recommended v1 cut if time-boxed: onboarding, sessions, chat with streaming,
 composer with model/profile selection and attachments, offline cache, settings.
 Defer: math rendering, Live Updates, voice input, insights, app shortcuts.
 
+## 4.5 Cross-platform parity (Android ↔ iOS)
+
+Both apps share the same wire format, the same brand ("JKP Mobile" since v0.2.0),
+and the same release cadence. Android ships first because that's what the
+operator has on hand; iOS parity lands in lockstep when an iPhone is available
+for QA.
+
+| Capability | Android | iOS | Notes |
+|---|---|---|---|
+| Chat + SSE streaming | v0.1.x | upstream 1.4 (parity-pending) | Both clients consume the same `/api/chat/stream` |
+| Composer + attachments | v0.1.x | upstream 1.4 (parity-pending) | Image picking only; arbitrary-file picking deferred on both |
+| Settings + theme | v0.1.x | upstream 1.4 (parity-pending) | Android: 6 presets → 16 in v0.2.0; iOS follows |
+| GitHub update check | **v0.2.0 ✅** | parity-pending (iOS 1.5.0) | Settings → About → Check for updates |
+| GitHub release workflow | **v0.2.0 ✅** | parity-pending (iOS 1.5.0) | Tag-push trigger, attaches APK to release |
+| App label = "JKP Mobile" | **v0.2.0 ✅** | parity-pending (iOS 1.5.0) | Launcher / Springboard |
+| Play Console track | Phase 10, deferred | n/a (TestFlight instead) | Different distribution story per platform |
+
+**Naming.** Repo stays `JKPHermex` (renaming would orphan iOS history).
+App label is `JKP Mobile` on both platforms. Internal package IDs stay
+(`com.hermexapp.android` / `com.uzairansar.hermesmobile`) so existing
+installs upgrade in place.
+
+**Versioning.** Android tracks `0.x.y`; iOS tracks `1.x.y`. They share
+the **feature set** but not the version number — Android forked off a
+much earlier iOS point and reset to v0.1.0.
+
+**QA gate.** Android: `gradle :app:testDebugUnitTest` + operator's phone
+(`adb install`). iOS: `xcodebuild test` + operator's iPhone (TestFlight
+or simulator). Neither app's release workflow touches the other's QA —
+they run on independent runners (`ubuntu-latest` vs `macos-latest`).
+
 ---
 
 ## 5. Testing & contract strategy

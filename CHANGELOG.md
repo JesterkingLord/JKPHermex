@@ -10,6 +10,55 @@ Security sections per release.
 ### Added
 - TBD (next iteration).
 
+## [1.5.0] - 2026-07-14
+
+### Added (iOS parity with Android v0.2.0)
+- **App label renamed** to "JKP Mobile" in both `APP_DISPLAY_NAME`
+  build settings (Debug + Release) and the side-by-side
+  `BranchTestFlight.xcconfig`. Internal bundle ID
+  (`com.uzairansar.hermesmobile`) unchanged so existing installs
+  upgrade in place.
+- **GitHub update check** in Settings → About → "Check for updates":
+  queries `api.github.com/repos/JesterkingLord/JKPHermex/releases/latest`
+  and shows one of three sheets (update available, up to date, failed).
+  Uses `AppUpdateChecker` (typed actor) + `GitHubRelease` Codable model
+  + `SemanticVersion` parser with the same "release > rc" rule as
+  Android. 10-second timeout. **Unverified on a Mac — code was written
+  on Windows; needs `xcodebuild test` on macOS before tagging.**
+- **16 accent presets** (was 6) in `HeaderLogoColor.presets`. New
+  options: Amber, Cyan, Magenta, Orange, Teal, Indigo, Pink, EFER Crypt,
+  EFURC Cyan, EFEMM Purple, JKP Void. The Settings picker switched
+  from `HStack` (clipped at ~7 items) to `LazyVGrid` so all 16 fit
+  cleanly on a phone width.
+- **iOS release workflow** (`.github/workflows/ios-release.yml`):
+  triggers on `vMAJOR.MINOR.PATCH` tag push, builds an `.ipa` on
+  `macos-14`, attaches it to a GitHub Release. Requires 5 secrets
+  (`IOS_DEVELOPER_TEAM_ID`, `IOS_CODE_SIGNING_CERT_P12`,
+  `IOS_CODE_SIGNING_CERT_PASSWORD`, `IOS_PROVISIONING_PROFILE`,
+  `KEYCHAIN_PASSWORD`) — see workflow comments for setup.
+- **Unit tests** for the new code:
+  `HermesMobileTests/AppUpdateCheckerTests.swift` (11 tests covering
+  JSON decoding, unknown-field tolerance, asset filter, semver parse
+  + compare). Unverified on a Mac from Windows.
+
+### Changed
+- `MARKETING_VERSION` 1.4 → 1.5.0 across all 8 build configurations
+  (app, share extension, widget, tests × Debug/Release).
+- `Bundle.main.infoDictionary["CFBundleShortVersionString"]` is the
+  source of truth for the About card's "App version" row.
+
+### Notes
+- **iOS code is unverified on this Windows host.** Xcode isn't
+  available; the Swift files were written following existing patterns
+  (`APIClient` actor, `SettingsCard`, `String(localized:)`) but a Mac
+  run of `xcodebuild test` is required before tagging. The release
+  workflow will produce a signed .ipa when run on GitHub Actions if
+  the 5 signing secrets are configured.
+- Internal identifiers (`com.uzairansar.hermesmobile` bundle ID,
+  `hermesmobile` Keychain service, `Hermex` accessibility labels in
+  the localization table) deliberately left unchanged. Renaming any
+  of them would force an uninstall + re-pair on upgrade.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added
