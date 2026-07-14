@@ -1,7 +1,45 @@
 # Android Port Plan — Hermex for Android
 
-Status: **proposal / planning document**. Nothing in this document is committed work;
-it exists so the port can be discussed and scoped before any Android code is written.
+Status: **active delivery ledger**. Android phases 0-9 and most polish are implemented;
+the app is installed on the operator's physical Android phone and was verified against
+JKP on 2026-07-14. Open work is tracked below instead of treating this as a proposal.
+
+## 0. Current verified state (2026-07-14)
+
+- Android `0.3.0` is installed and running on the operator's physical phone.
+- The app reaches JKP, lists real JKP sessions, opens a session, sends a prompt, and
+  renders a live MiniMax M3 response. Screenshot evidence shows the session list and
+  the successful `Hermex JKP Connectivity` turn on the Android device.
+- The URL/fragment pairing flow is implemented through `/v1/pair/complete`; the
+  one-time secret stays in the URL fragment, and the returned grant/device ID are
+  stored in the Android secret store.
+- Local verification: `android/gradlew.bat test` completed successfully for debug
+  and release unit-test variants on 2026-07-14.
+- Important boundary: `0.3.0` still uses the existing typed-password/cookie flow for
+  API traffic. The stored JKP pairing grant is not yet attached as a Bearer token.
+
+### Next JKP integration milestone (`0.4.0`)
+
+1. Make `ApiClient` prefer the server-scoped JKP pairing grant and send
+   `Authorization: Bearer <grant>` on JKP API requests without exposing it in logs,
+   URLs, UI state, or backups.
+2. Fall back to the existing password/cookie flow for compatible Hermes WebUI servers
+   that do not advertise JKP pairing.
+3. Add camera QR scanning as a thin input layer over the already-tested
+   `PairingIntentParser`; retain paste/manual entry as the permission-free fallback.
+4. Add physical-device tests for revoke, expired pair, offline reconnect, model
+   switching, and cross-device session isolation against the JKP v1.13 API.
+5. Surface the linked device name and a local "Forget this JKP device" action; server
+   revocation remains an explicit host/admin operation.
+
+### Real-device acceptance evidence
+
+The 2026-07-14 acceptance check used the installed Android app, not an emulator or the
+browser companion. It proved server reachability, session enumeration, session resume,
+model selection display, prompt submission, and response rendering against the live JKP
+instance. The two source screenshots remain in the operator's JKP remote-attachment
+evidence directory; they are not copied into this repository because they include local
+workspace paths and session metadata.
 
 Hermex today is a native SwiftUI iPhone app (~175 Swift files, ~50k lines across the
 app, share extension, and Live Activity widget) that drives a self-hosted
@@ -247,6 +285,14 @@ development at the same cadence as the iOS build). Check phases off as they land
         across sessions/chat/panels/workspace
   - [ ] Play Console internal-testing track; store listing (maintainer steps —
         needs the Play account and final `applicationId` decision, §6)
+
+- [ ] **Phase 11 — Native JKP pairing completion**
+  - [x] Parse JKP fragment/query pairing URLs and enforce the shared cleartext policy
+  - [x] Call `/v1/pair/complete`, store the scoped grant/device ID, and clean up on sign-out
+  - [x] Paste-first pairing UI and Android `0.3.0` build
+  - [x] Physical Android phone connected to JKP; sessions and live model turn verified
+  - [ ] Use the stored grant as Bearer auth with password/cookie compatibility fallback
+  - [ ] Camera scanner, revoke/expiry recovery UX, and real-device security matrix
 
 **Total: roughly 6–8 working weeks to feature parity.** A useful v1 cut (phases 0–5
 plus settings basics) ships in about half that; everything after phase 5 is additive.

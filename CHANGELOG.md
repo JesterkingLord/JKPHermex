@@ -7,8 +7,17 @@ Security sections per release.
 
 ## [Unreleased]
 
-### Added
-- TBD (next iteration).
+### Verified
+- Android `0.3.0` was installed on the operator's physical phone and connected to
+  JKP. The native app listed real JKP sessions and completed a live MiniMax M3 model
+  response; this was not an emulator or mobile-browser check.
+- `android/gradlew.bat test` passed for debug and release unit-test variants on
+  Windows on 2026-07-14.
+
+### Planned
+- Android `0.4.0`: use the stored server-scoped pairing grant as Bearer auth,
+  retain password/cookie compatibility, add camera QR scanning, and verify
+  revoke/expiry/offline recovery on a physical device.
 
 ## [0.3.0] - 2026-07-14
 

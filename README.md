@@ -123,11 +123,20 @@ JKPHermex/
 | Phases 5-10: composer, workspace/git, panels, settings, platform, polish | `claude/android-port-plan-lt7p00` | 🟡 partial — see commits |
 | Phase 11: limited usage analytics | `claude/android-port-plan-lt7p00` | ⏳ planned |
 | Phase 12: polish (icons, haptics, voice, notifications) | `claude/android-port-plan-lt7p00` | ⏳ planned |
-| Phase 13: Play Store / sideload release | this fork | ⏳ blocked on toolchain install + working `hermes-webui` server |
+| Phase 13: Play Store / sideload release | this fork | 🟡 physical-phone sideload works; Play Console/listing remains |
+| JKP native pairing | this fork (`0.3.0`) | 🟡 URL pairing + secret storage shipped; Bearer auto-auth and camera scan next |
 
-This fork is **upstream's Android branch as of 2026-07-08** (HEAD
-`4670bf8 Android: allow cleartext to private LAN/VPN ranges; inset custom header
-below status bar`).
+### Real-device status (2026-07-14)
+
+The Android app is installed on the operator's phone and connected to JKP. It lists
+real JKP sessions and completed a live MiniMax M3 model turn. This was a physical-device
+check, not an emulator or mobile-browser check. The local Android debug/release
+unit-test task also passes. Sideload testing is therefore no longer blocked by the
+toolchain or server; the remaining release blocker is Play Console/store setup and a
+final application ID decision.
+
+This fork now includes JKP-specific Android `0.3.0` pairing work through commit
+`98e5f74`, on top of the upstream Android branch.
 
 ---
 
