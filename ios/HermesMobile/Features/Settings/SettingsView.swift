@@ -404,13 +404,18 @@ struct SettingsView: View {
                 }
 
                 SettingsCard(title: String(localized: "Account")) {
-                    SettingsFootnote(signOutFootnote)
+                                    SettingsFootnote(signOutFootnote)
 
-                    SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
-                        isConfirmingReconfigure = true
-                    }
-                }
-            }
+                                    SettingsButton(String(localized: "Sign Out of This Server"), role: .destructive) {
+                                        isConfirmingReconfigure = true
+                                    }
+                                }
+
+                                // v1.5.0: cross-platform parity with the Android Settings
+                                // → About section. Shows installed version + a button that
+                                // pings GitHub for the latest release.
+                                AppUpdateCard()
+                            }
             .padding(.horizontal, 16)
             .padding(.top, 18)
             .padding(.bottom, 36)
@@ -1275,16 +1280,25 @@ private struct HeaderLogoColorSettings: View {
                 )
                 .accessibilityHidden(true)
 
-            HStack(spacing: 10) {
-                ForEach(HeaderLogoColor.presets) { preset in
-                    HeaderLogoColorPresetButton(
-                        preset: preset,
-                        isSelected: HeaderLogoColor.normalizedHex(selectedHex) == preset.hex
-                    ) {
-                        selectedHex = preset.hex
-                    }
-                }
-            }
+            // v1.5.0: switched from a single HStack (which clipped beyond ~7 items on a
+                        // phone width) to a LazyVGrid that wraps to multiple rows. 16 presets
+                        // * 28dp swatches + 10dp spacing = ~480dp wide on the tightest iPhone,
+                        // so 5 columns at ~88dp each gives 4 rows. The grid is centered so an
+                        // uneven last row doesn't look ragged.
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5),
+                            alignment: .center,
+                            spacing: 10
+                        ) {
+                            ForEach(HeaderLogoColor.presets) { preset in
+                                HeaderLogoColorPresetButton(
+                                    preset: preset,
+                                    isSelected: HeaderLogoColor.normalizedHex(selectedHex) == preset.hex
+                                ) {
+                                    selectedHex = preset.hex
+                                }
+                            }
+                        }
 
             ColorPicker("Custom", selection: customColor, supportsOpacity: false)
                 .font(.subheadline)

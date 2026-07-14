@@ -56,13 +56,34 @@ enum HeaderLogoColor {
     static let storageKey = "headerLogoColorHex"
     static let defaultHex = "#FFD700"
 
+    /// Available accent-color presets (UI label → hex).
+    ///
+    /// v1.5.0: extended from 6 to 16 to match the Android port. The original
+    /// 6 are unchanged in position so any user whose `headerLogoColorHex`
+    /// is one of them keeps the same selection after upgrading (the picker
+    /// identifies presets by hex, not by index). New presets are appended
+    /// below — order does not affect selection, only display.
     static let presets: [HeaderLogoColorPreset] = [
+        // Original 6 (v1.0.0 baseline — do not reorder).
         HeaderLogoColorPreset(name: String(localized: "Yellow"), hex: "#FFD700"),
         HeaderLogoColorPreset(name: String(localized: "Blue"), hex: "#5B7CFF"),
         HeaderLogoColorPreset(name: String(localized: "Purple"), hex: "#AF52DE"),
         HeaderLogoColorPreset(name: String(localized: "Red"), hex: "#FF3B30"),
         HeaderLogoColorPreset(name: String(localized: "Green"), hex: "#34C759"),
-        HeaderLogoColorPreset(name: String(localized: "White"), hex: "#FFFFFF")
+        HeaderLogoColorPreset(name: String(localized: "White"), hex: "#FFFFFF"),
+
+        // Added in v1.5.0 (JKP Mobile brand parity).
+        HeaderLogoColorPreset(name: String(localized: "Amber"), hex: "#FFB300"),
+        HeaderLogoColorPreset(name: String(localized: "Cyan"), hex: "#00D4FF"),
+        HeaderLogoColorPreset(name: String(localized: "Magenta"), hex: "#FF2D92"),
+        HeaderLogoColorPreset(name: String(localized: "Orange"), hex: "#FF6B1A"),
+        HeaderLogoColorPreset(name: String(localized: "Teal"), hex: "#1ABC9C"),
+        HeaderLogoColorPreset(name: String(localized: "Indigo"), hex: "#5856D6"),
+        HeaderLogoColorPreset(name: String(localized: "Pink"), hex: "#FF8AB9"),
+        HeaderLogoColorPreset(name: String(localized: "EFER Crypt"), hex: "#8B0000"),
+        HeaderLogoColorPreset(name: String(localized: "EFURC Cyan"), hex: "#00C7B7"),
+        HeaderLogoColorPreset(name: String(localized: "EFEMM Purple"), hex: "#9B59FF"),
+        HeaderLogoColorPreset(name: String(localized: "JKP Void"), hex: "#1A1A1A"),
     ]
 
     static func normalizedHex(_ rawValue: String) -> String? {
