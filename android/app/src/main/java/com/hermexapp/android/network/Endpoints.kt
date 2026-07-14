@@ -71,4 +71,7 @@ enum class Endpoint(val path: String) {
     SKILL_CONTENT("/api/skills/content"),
     MEMORY("/api/memory"),
     INSIGHTS("/api/insights"),
+    PAIR_COMPLETE("/v1/pair/complete"),
+    PAIR_DEVICES("/v1/pair/devices"),
+    PAIR_STATUS("/v1/pair/status"),
 }
