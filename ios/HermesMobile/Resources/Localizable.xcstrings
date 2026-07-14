@@ -33173,6 +33173,9 @@
     "HERMEX" : {
       "shouldTranslate" : false
     },
+    "JKP Mobile" : {
+      "comment" : "New brand name for JKP Mobile (v1.5.0)."
+    },
     "Haptic Feedback" : {
       "localizations" : {
         "ar" : {
@@ -34552,7 +34555,7 @@
       }
     },
     "Hermex" : {
-      "shouldTranslate" : false
+      "comment" : "Replaced by JKP Mobile in v1.5.0 — kept for backwards-compatible string lookups. do not translate."
     },
     "Hermex is preparing a response" : {
       "localizations" : {
