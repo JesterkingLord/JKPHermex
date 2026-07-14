@@ -10,6 +10,49 @@ Security sections per release.
 ### Added
 - TBD (next iteration).
 
+## [0.3.0] - 2026-07-14
+
+### Added
+- **"Scan QR or paste pairing URL" on Connect page.** Pasting the URL
+  produced by the desktop's `python -m jkp pair` (or any QR scan) now
+  registers the phone as a paired device on the server:
+    - `PairingIntentParser` decodes the URL (both `?query` and `#fragment`
+      forms supported — desktop uses the fragment so pair_id/token
+      never appear in HTTP request lines) into a typed outcome:
+      `CompletePairing`, `ServerUrlOnly`, or `Invalid`.
+    - `AuthManager.pairAndConfigure(parsed, deviceName)` POSTs to
+      `/v1/pair/complete` and persists the returned `grant` and
+      `device_id` into `SecretStore` under the matching server key.
+    - `OnboardingViewModel.pairFromText(rawText)` wires the two together
+      and falls back to clipboard when the field is blank.
+    - The Connect screen adds a "Scan QR or paste pairing URL" entry
+      point below the existing Connect section, opening an `AlertDialog`
+      with a text field, paste-from-clipboard, Pair + Cancel.
+- Cleartext policy (`CleartextPolicy`) shared between the parser and
+  the existing URL normalizer, so QR flows and typed URLs agree on
+  what's allowed (RFC1918 + ts.net + loopback; public hosts must be
+  https).
+- **48 new tests** (196/196 green across 30 test classes):
+    - `PairingIntentParserTest` (18) — query + fragment, defaults,
+      cleartext allowlist, malformed inputs, case-insensitive scheme.
+    - `ApiClientPairingTest` (8) — happy, 400/401/410/409, network
+      failure, decoding failure, forward-compat with unknown fields.
+    - `AuthManagerPairingTest` (9) — happy, idempotent re-pair,
+      error → no secret writes, empty grant → failed, signOut
+      drops pair fields, `forgetServer(id)` drops the scoped row.
+
+### Notes
+- The grant is **stored but not yet used as Bearer auth** — v0.4.0 will
+  switch `ApiClient` to read `PAIR_GRANT` from `SecretStore` and send
+  `Authorization: Bearer …`. For now, after a successful pair, the
+  server URL is filled in and the user proceeds with the typed-password
+  flow as before. The pair record still exists on the server and the
+  grant is held locally so a future upgrade picks up seamlessly.
+- Camera/QR scanner UI is **deferred to v0.4.0** — paste-first so the
+  same code path works on any device without runtime permission prompts.
+- iOS parity for this feature is staged in the working tree but **not
+  shipped in v0.3.0** (will be cut as iOS v1.6.0 in a follow-up).
+
 ## [1.5.0] - 2026-07-14
 
 ### Added (iOS parity with Android v0.2.0)
