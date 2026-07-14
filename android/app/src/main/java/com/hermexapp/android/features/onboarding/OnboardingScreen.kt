@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Brush
 import com.hermexapp.android.ui.HermexWordmark
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -28,8 +29,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -37,6 +42,10 @@ import androidx.compose.ui.unit.dp
 /**
  * Welcome → reachability guidance → connect, mirroring the iOS onboarding
  * pages. Connection troubleshooting states render inline on the connect page.
+ *
+ * v0.3.0+ adds the "Scan QR or paste pairing URL" affordance on the connect
+ * page, which posts to `/v1/pair/complete` instead of needing a typed URL +
+ * password. The flow is opt-in: the typed URL path still works.
  */
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel) {
@@ -139,6 +148,8 @@ private fun GuidanceItem(title: String, detail: String) {
 
 @Composable
 private fun ConnectPage(state: OnboardingViewModel.UiState, viewModel: OnboardingViewModel) {
+    var showPairDialog by remember { mutableStateOf(false) }
+
     Text("Connect", style = MaterialTheme.typography.headlineMedium)
 
     OutlinedTextField(
@@ -190,7 +201,68 @@ private fun ConnectPage(state: OnboardingViewModel.UiState, viewModel: Onboardin
         enabled = !state.isWorking && state.serverUrlString.isNotBlank(),
     ) { Text("Connect") }
 
+    TextButton(
+        onClick = { showPairDialog = true },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !state.isWorking,
+    ) { Text("Scan QR or paste pairing URL") }
+
     TextButton(onClick = viewModel::backToGuidance) { Text("Back") }
+
+    if (showPairDialog) {
+        PairUrlDialog(
+            onDismiss = { showPairDialog = false },
+            onSubmit = { raw ->
+                showPairDialog = false
+                viewModel.pairFromText(raw)
+            },
+        )
+    }
+}
+
+@Composable
+private fun PairUrlDialog(onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val clipboard = LocalClipboardManager.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pair from URL") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "On the host machine run `python -m jkp pair`, then copy the URL it prints " +
+                        "and paste it here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Pairing URL") },
+                    placeholder = { Text("http://100.x.y.z:8642/v1/pair/connect?pair_id=…&token=…") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    singleLine = true,
+                )
+                TextButton(
+                    onClick = {
+                        val clip = clipboard.getText()?.text.orEmpty()
+                        if (clip.isNotBlank()) text = clip
+                    },
+                ) { Text("Paste from clipboard") }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(text) },
+                enabled = text.isNotBlank(),
+            ) { Text("Pair") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

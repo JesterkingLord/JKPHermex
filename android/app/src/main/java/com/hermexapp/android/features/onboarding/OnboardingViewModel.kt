@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hermexapp.android.auth.AuthGateway
 import com.hermexapp.android.auth.AuthManager
+import com.hermexapp.android.auth.PairingOutcome
 import com.hermexapp.android.model.AuthStatusResponse
 import com.hermexapp.android.network.ApiError
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +16,9 @@ import kotlinx.coroutines.launch
 /**
  * Port of the iOS `OnboardingViewModel`: drives the welcome → guidance →
  * connect flow, the test-connection probe, and password validation. All logic
- * lives in the suspend cores ([testConnectionNow]/[connectNow]) so JVM tests
- * exercise them directly; the UI goes through the launching wrappers.
+ * lives in the suspend cores ([testConnectionNow]/[connectNow]/[pairFromTextNow])
+ * so JVM tests exercise them directly; the UI goes through the launching
+ * wrappers.
  */
 class OnboardingViewModel(
     private val authGateway: AuthGateway,
@@ -63,6 +65,47 @@ class OnboardingViewModel(
 
     fun connect() {
         viewModelScope.launch { connectNow() }
+    }
+
+    /**
+     * v0.3.0+: handles a QR/pasted pairing URL from the OnboardingScreen's
+     * "Scan QR or paste URL" affordance. On [PairingOutcome.Paired] we
+     * transition to LoggedIn (no password needed yet — grant is stored but
+     * not yet consumed by ApiClient; that's v0.4.0+); on
+     * [PairingOutcome.Prefilled] we just fill the URL field; on
+     * [PairingOutcome.Failed] the reason is surfaced via errorMessage and
+     * the user keeps the typed URL.
+     */
+    fun pairFromText(rawText: String) {
+        viewModelScope.launch { pairFromTextNow(rawText) }
+    }
+
+    suspend fun pairFromTextNow(rawText: String) {
+        _uiState.update {
+            it.copy(isWorking = true, errorMessage = null, connectionMessage = null)
+        }
+        try {
+            val outcome = authGateway.pairAndConfigure(
+                rawText = rawText,
+                deviceName = PairFromTextDeviceName,
+            )
+            when (outcome) {
+                is PairingOutcome.Paired -> _uiState.update {
+                    it.copy(
+                        serverUrlString = outcome.serverUrl.toString(),
+                        connectionMessage = "Device paired as ${outcome.deviceId}.",
+                    )
+                }
+                is PairingOutcome.Prefilled -> _uiState.update {
+                    it.copy(serverUrlString = outcome.serverUrl.toString())
+                }
+                is PairingOutcome.Failed -> _uiState.update {
+                    it.copy(errorMessage = outcome.reason)
+                }
+            }
+        } finally {
+            _uiState.update { it.copy(isWorking = false) }
+        }
     }
 
     suspend fun testConnectionNow() {
@@ -130,5 +173,13 @@ class OnboardingViewModel(
             if (authStatus.passwordAuthEnabled == false) return null
             return if (password.trim().isEmpty()) AuthManager.EMPTY_PASSWORD_MESSAGE else null
         }
+
+        /**
+         * Default device name the server sees when the user pastes a pairing
+         * URL without typing one. Matches the desktop's browser-handoff page
+         * default ("My phone"). The iOS port overrides this with the user's
+         * actual device name from UIDevice.
+         */
+        const val PairFromTextDeviceName = "JKP Mobile"
     }
 }
