@@ -2,23 +2,29 @@ package com.hermexapp.android.features.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.model.ApprovalChoice
 import com.hermexapp.android.model.ChatMessage
 import com.hermexapp.android.model.ContextWindowSnapshot
 import com.hermexapp.android.model.PendingApproval
 import com.hermexapp.android.model.PendingClarification
+import com.hermexapp.android.model.ReasoningEffort
 import com.hermexapp.android.model.SessionDetail
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.network.ApiJson
+import com.hermexapp.android.network.ReasoningDisplay
 import com.hermexapp.android.network.SseEvent
 import com.hermexapp.android.network.SseStreaming
 import com.hermexapp.android.network.cancelChat
 import com.hermexapp.android.network.chatStreamUrl
+import com.hermexapp.android.network.reasoning
 import com.hermexapp.android.network.respondApproval
 import com.hermexapp.android.network.respondClarification
 import com.hermexapp.android.network.retrySession
+import com.hermexapp.android.network.saveReasoningDisplay
+import com.hermexapp.android.network.saveReasoningEffort
 import com.hermexapp.android.network.startChat
 import com.hermexapp.android.network.steerChat
 import com.hermexapp.android.network.uploadFile
@@ -43,6 +49,7 @@ class ChatViewModel(
     private val repository: SessionRepository,
     private val client: ApiClient,
     private val sse: SseStreaming,
+    private val prefs: AppPrefs? = null,
     private val onAuthError: (Throwable) -> Unit = {},
 ) : ViewModel() {
 
@@ -93,12 +100,36 @@ class ChatViewModel(
         /** A pending approval/clarification prompt raised mid-run; null when none. */
         val pendingApproval: PendingApproval? = null,
         val pendingClarification: PendingClarification? = null,
+        /**
+         * Currently-selected reasoning effort (mirrors the iOS
+         * `selectedReasoningEffort`). `AUTO` is the default — we let the
+         * server pick. Persisted across restarts via [AppPrefs].
+         */
+        val selectedReasoningEffort: ReasoningEffort = ReasoningEffort.AUTO,
+        /**
+         * When false, reasoning blocks are hidden from the timeline entirely
+         * (they're still received from the server so toggling on is instant).
+         * Persisted via [AppPrefs] as `show_reasoning`. Default true.
+         */
+        val showReasoning: Boolean = true,
+        /**
+         * Last non-fatal error from a `/api/reasoning` call (e.g. "wait for
+         * the current response to finish before changing reasoning"). Cleared
+         * the next time the picker is opened. The composer shows this as a
+         * non-blocking banner.
+         */
+        val reasoningErrorMessage: String? = null,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
     }
 
-    private val _uiState = MutableStateFlow(UiState())
+    private val _uiState = MutableStateFlow(
+        UiState(
+            selectedReasoningEffort = prefs?.reasoningEffort?.value ?: ReasoningEffort.AUTO,
+            showReasoning = prefs?.showReasoning?.value ?: true,
+        ),
+    )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var activeStreamId: String? = null
@@ -121,6 +152,111 @@ class ChatViewModel(
     fun load() {
         viewModelScope.launch { loadNow() }
         viewModelScope.launch { loadComposerConfigNow() }
+        viewModelScope.launch { loadReasoningState() }
+    }
+
+    /**
+     * Syncs the server's reported reasoning state (`GET /api/reasoning`)
+     * into the UI. The server is the source of truth — what we persisted
+     * in [AppPrefs] may be stale, or the user may have changed it from
+     * another device via the desktop CLI.
+     */
+    suspend fun loadReasoningState() {
+        try {
+            val status = client.reasoning()
+            val serverEffort = status.effectiveEffort
+            val serverShow = status.effectiveShowReasoning
+            prefs?.setReasoningEffort(serverEffort)
+            prefs?.setShowReasoning(serverShow)
+            _uiState.update {
+                it.copy(
+                    selectedReasoningEffort = serverEffort,
+                    showReasoning = serverShow,
+                    reasoningErrorMessage = null,
+                )
+            }
+        } catch (e: ApiError) {
+            // Non-fatal: the composer still has the local value.
+            onAuthError(e)
+        }
+    }
+
+    /**
+     * Picks a reasoning effort for the next message. Optimistically updates
+     * local state + prefs, then posts to `POST /api/reasoning` so the
+     * server also persists it. On failure, the UI rolls back to the
+     * previous effort and surfaces the error.
+     *
+     * Mirrors the iOS `selectReasoningEffort(_:)`:
+     *   - Auto/Auto is rejected while a run is in flight (iOS #824)
+     *   - All changes are blocked while `isStreaming` (iOS #828)
+     */
+    fun selectReasoningEffort(value: ReasoningEffort) {
+        val previous = _uiState.value.selectedReasoningEffort
+        if (previous == value) return
+        if (_uiState.value.isStreaming) {
+            _uiState.update {
+                it.copy(reasoningErrorMessage = "Wait for the current response to finish before changing reasoning.")
+            }
+            return
+        }
+        // Optimistic update.
+        _uiState.update {
+            it.copy(selectedReasoningEffort = value, reasoningErrorMessage = null)
+        }
+        prefs?.setReasoningEffort(value)
+        viewModelScope.launch {
+            try {
+                val response = client.saveReasoningEffort(value)
+                val effective = response.effectiveEffort
+                if (effective != value) {
+                    // Server clamped (model doesn't support the requested level).
+                    prefs?.setReasoningEffort(effective)
+                    _uiState.update {
+                        it.copy(
+                            selectedReasoningEffort = effective,
+                            reasoningErrorMessage = "Server adjusted to $effective (not supported by current model).",
+                        )
+                    }
+                }
+            } catch (e: ApiError) {
+                prefs?.setReasoningEffort(previous)
+                _uiState.update {
+                    it.copy(
+                        selectedReasoningEffort = previous,
+                        reasoningErrorMessage = e.userMessage,
+                    )
+                }
+                onAuthError(e)
+            }
+        }
+    }
+
+    /**
+     * Toggles whether reasoning blocks appear in the timeline. Persists
+     * locally immediately, then mirrors to the server so the desktop
+     * / iOS stay in sync. On failure, rolls back.
+     */
+    fun setShowReasoning(value: Boolean) {
+        val previous = _uiState.value.showReasoning
+        if (previous == value) return
+        _uiState.update { it.copy(showReasoning = value) }
+        prefs?.setShowReasoning(value)
+        viewModelScope.launch {
+            try {
+                val display = if (value) ReasoningDisplay.SHOW else ReasoningDisplay.HIDE
+                val response = client.saveReasoningDisplay(display)
+                val effective = response.effectiveShowReasoning
+                if (effective != value) {
+                    prefs?.setShowReasoning(effective)
+                    _uiState.update { it.copy(showReasoning = effective) }
+                }
+            } catch (e: ApiError) {
+                prefs?.setShowReasoning(previous)
+                _uiState.update { it.copy(showReasoning = previous) }
+                onAuthError(e)
+            }
+        }
     }
 
     suspend fun loadComposerConfigNow() {
@@ -256,6 +392,7 @@ class ChatViewModel(
                 modelProvider = config.selectedProviderId,
                 profile = config.selectedProfile,
                 attachments = attachments.map { it.toJsonElement() }.takeIf { it.isNotEmpty() },
+                reasoningEffort = state.selectedReasoningEffort.takeIf { it != ReasoningEffort.AUTO },
             )
             val streamId = response.streamId
             if (streamId.isNullOrEmpty()) {

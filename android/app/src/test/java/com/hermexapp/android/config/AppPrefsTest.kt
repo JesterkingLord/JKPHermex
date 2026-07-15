@@ -1,5 +1,6 @@
 package com.hermexapp.android.config
 
+import com.hermexapp.android.model.ReasoningEffort
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +16,8 @@ class AppPrefsTest {
         assertFalse(prefs.expandThinking.value)
         assertFalse(prefs.expandTools.value)
         assertTrue(prefs.notificationsEnabled.value) // notifications default on
+        assertEquals(ReasoningEffort.AUTO, prefs.reasoningEffort.value) // let the server pick
+        assertTrue(prefs.showReasoning.value) // default-show reasoning content
     }
 
     @Test
@@ -25,12 +28,16 @@ class AppPrefsTest {
         prefs.setExpandThinking(true)
         prefs.setExpandTools(true)
         prefs.setNotificationsEnabled(false)
+        prefs.setReasoningEffort(ReasoningEffort.HIGH)
+        prefs.setShowReasoning(false)
 
         assertEquals(ThemeChoice.DARK, prefs.theme.value)
         assertEquals(AccentPreset.PURPLE, prefs.accent.value)
         assertTrue(prefs.expandThinking.value)
         assertTrue(prefs.expandTools.value)
         assertFalse(prefs.notificationsEnabled.value)
+        assertEquals(ReasoningEffort.HIGH, prefs.reasoningEffort.value)
+        assertFalse(prefs.showReasoning.value)
     }
 
     @Test
@@ -41,6 +48,8 @@ class AppPrefsTest {
             setAccent(AccentPreset.GREEN)
             setExpandTools(true)
             setNotificationsEnabled(false)
+            setReasoningEffort(ReasoningEffort.MEDIUM)
+            setShowReasoning(false)
         }
 
         val restored = AppPrefs(store)
@@ -48,6 +57,8 @@ class AppPrefsTest {
         assertEquals(AccentPreset.GREEN, restored.accent.value)
         assertTrue(restored.expandTools.value)
         assertFalse(restored.notificationsEnabled.value)
+        assertEquals(ReasoningEffort.MEDIUM, restored.reasoningEffort.value)
+        assertFalse(restored.showReasoning.value)
     }
 
     @Test
@@ -62,5 +73,22 @@ class AppPrefsTest {
     fun `a corrupt persisted theme falls back to SYSTEM`() {
         val store = InMemoryKeyValueStore().apply { putString("theme", "PLAID") }
         assertEquals(ThemeChoice.SYSTEM, AppPrefs(store).theme.value)
+    }
+
+    @Test
+    fun `a corrupt or empty persisted reasoning effort falls back to AUTO`() {
+        val empty = InMemoryKeyValueStore()
+        assertEquals(ReasoningEffort.AUTO, AppPrefs(empty).reasoningEffort.value)
+
+        val bogus = InMemoryKeyValueStore().apply { putString("reasoning_effort", "tropical") }
+        assertEquals(ReasoningEffort.AUTO, AppPrefs(bogus).reasoningEffort.value)
+    }
+
+    @Test
+    fun `AUTO does not round-trip the literal auto string`() {
+        val store = InMemoryKeyValueStore()
+        AppPrefs(store).setReasoningEffort(ReasoningEffort.AUTO)
+        // Empty-string sentinel — never the literal "auto" the server would 400 on.
+        assertEquals("", store.getString("reasoning_effort"))
     }
 }

@@ -1,6 +1,7 @@
 package com.hermexapp.android.config
 
 import android.content.Context
+import com.hermexapp.android.model.ReasoningEffort
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -104,11 +105,50 @@ class AppPrefs(private val store: KeyValueStore) {
         store.putBoolean(KEY_NOTIFICATIONS, value)
     }
 
+    /**
+     * Per-app reasoning-effort preference (mirrors the iOS
+     * `selectedReasoningEffort` + `AppStorage.reasoningEffort`).
+     *
+     * The value is sent on every `/api/chat/start` body so the user doesn't
+     * have to set it per-message; it's also persisted to the server via
+     * `POST /api/reasoning` once the gateway round-trips it back. Storing
+     * the literal "auto" string would 400 the server, so we encode
+     * [ReasoningEffort.AUTO] as the empty string and translate at read time.
+     */
+    private val _reasoningEffort = MutableStateFlow(decodeReasoningEffort(store.getString(KEY_REASONING_EFFORT)))
+    val reasoningEffort: StateFlow<ReasoningEffort> = _reasoningEffort
+
+    fun setReasoningEffort(value: ReasoningEffort) {
+        _reasoningEffort.value = value
+        store.putString(KEY_REASONING_EFFORT, encodeReasoningEffort(value))
+    }
+
+    /**
+     * Show-vs-hide the model's reasoning blocks in the timeline (iOS
+     * `showReasoning`). Default true because hiding would silently drop
+     * reasoning content the user is paying tokens for.
+     */
+    private val _showReasoning = MutableStateFlow(store.getBoolean(KEY_SHOW_REASONING, true))
+    val showReasoning: StateFlow<Boolean> = _showReasoning
+
+    fun setShowReasoning(value: Boolean) {
+        _showReasoning.value = value
+        store.putBoolean(KEY_SHOW_REASONING, value)
+    }
+
+    private fun decodeReasoningEffort(raw: String?): ReasoningEffort =
+        ReasoningEffort.fromServer(raw)
+
+    private fun encodeReasoningEffort(value: ReasoningEffort): String =
+        value.wireValue ?: ""   // AUTO → "" (we never send "auto" to the server)
+
     private companion object {
         const val KEY_THEME = "theme"
         const val KEY_ACCENT = "accent_hex"
         const val KEY_EXPAND_THINKING = "expand_thinking"
         const val KEY_EXPAND_TOOLS = "expand_tools"
         const val KEY_NOTIFICATIONS = "notifications_enabled"
+        const val KEY_REASONING_EFFORT = "reasoning_effort"
+        const val KEY_SHOW_REASONING = "show_reasoning"
     }
 }
