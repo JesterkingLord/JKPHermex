@@ -41,7 +41,12 @@ fun MarkdownText(
     modifier: Modifier = Modifier,
     baseStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
 ) {
-    val blocks = remember(text) { parseBlocks(text) }
+    // Pre-process math regions: $...$ and $$...$$ become tagged tokens
+    // that the inline renderer recognises and styles as math (italic
+    // serif). This is the G-lite pass — no layout engine, just Unicode
+    // symbol substitution + sup/sub conversion.
+    val preprocessed = remember(text) { MathLite.replaceWithTags(text) }
+    val blocks = remember(preprocessed) { parseBlocks(preprocessed) }
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block -> BlockView(block, baseStyle) }
     }
@@ -158,7 +163,8 @@ private fun TableView(table: MdBlock.Table, baseStyle: androidx.compose.ui.text.
     }
 }
 
-// ── Inline formatting: **bold**, *italic*/_italic_, `code`, [text](url) ──
+// ── Inline formatting: **bold**, *italic*/_italic_, `code`, [text](url),
+//    ⟦display:...⟧ / ⟦inline:...⟧ math tokens (from MathLite) ──
 
 private fun inlineAnnotated(source: String, linkColor: androidx.compose.ui.graphics.Color): AnnotatedString =
     buildAnnotatedString {
@@ -166,6 +172,28 @@ private fun inlineAnnotated(source: String, linkColor: androidx.compose.ui.graph
         while (i < source.length) {
             val c = source[i]
             when {
+                // Math tokens emitted by MathLite.replaceWithTags.
+                c == '⟦' -> {
+                    val close = source.indexOf('⟧', i)
+                    if (close > 0) {
+                        val tag = source.substring(i + 1, close)
+                        val (body, isDisplay) = parseMathTag(tag)
+                        if (body != null) {
+                            // Math gets a distinct visual treatment: italic
+                            // serif, slightly larger when displayed. The
+                            // underlying body is plain Unicode text so it
+                            // survives any further inline parsing.
+                            val style = SpanStyle(
+                                fontStyle = FontStyle.Italic,
+                                fontFamily = FontFamily.Serif,
+                            )
+                            withStyle(style) { append(body) }
+                        } else {
+                            append(source.substring(i, close + 1))
+                        }
+                        i = close + 1
+                    } else { append(c); i++ }
+                }
                 c == '*' && i + 1 < source.length && source[i + 1] == '*' -> {
                     val end = source.indexOf("**", i + 2)
                     if (end > 0) {
@@ -204,3 +232,10 @@ private fun inlineAnnotated(source: String, linkColor: androidx.compose.ui.graph
             }
         }
     }
+
+private fun parseMathTag(tag: String): Pair<String?, Boolean> {
+    val isDisplay = tag.startsWith("display:")
+    val isInline = tag.startsWith("inline:")
+    if (!isDisplay && !isInline) return null to false
+    return tag.substringAfter(':') to isDisplay
+}
