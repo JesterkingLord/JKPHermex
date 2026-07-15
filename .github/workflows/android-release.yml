@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Tags must be fetched explicitly when checking out by ref.
           fetch-depth: 0
