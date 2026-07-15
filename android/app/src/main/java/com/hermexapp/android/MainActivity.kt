@@ -233,6 +233,7 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
                         repository = repository,
                         client = client,
                         sse = container.sseClient(),
+                        prefs = container.prefs,
                         onAuthError = container.authManager::handleApiError,
                     ).also { vm ->
                         sharePrefill?.let { vm.updateComposerText(it); sharePrefill = null }

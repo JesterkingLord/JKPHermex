@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermexapp.android.model.AgentCommand
+import com.hermexapp.android.model.ReasoningEffort
 import com.hermexapp.android.ui.HermexPickerSheet
 import com.hermexapp.android.ui.PickerRow
 import com.hermexapp.android.ui.PickerSection
@@ -133,6 +134,10 @@ fun ComposerBar(
                         label = (config.selectedModelDisplayName ?: "model").take(14),
                         onClick = { openPicker = PickerKind.MODEL },
                     )
+                    SelectorText(
+                        label = reasoningShortLabel(state.selectedReasoningEffort),
+                        onClick = { openPicker = PickerKind.REASONING },
+                    )
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
 
                     // Voice dictation → populates the composer only (iOS voice-input contract).
@@ -196,6 +201,21 @@ fun ComposerBar(
                 text = "👤 ${(config.selectedProfile ?: config.activeProfile ?: "Default").take(14)} ⌄",
                 onClick = { openPicker = PickerKind.PROFILE },
             )
+            PillChip(
+                text = "${if (state.showReasoning) "🧠" else "💭"} reasoning ${if (state.showReasoning) "on" else "off"}",
+                onClick = { viewModel.setShowReasoning(!state.showReasoning) },
+            )
+        }
+
+        // Non-blocking banner: the server told us to wait, or the effort was
+        // clamped. Cleared the next time the user opens the picker.
+        state.reasoningErrorMessage?.let { msg ->
+            Text(
+                msg,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.warning,
+            )
         }
     }
 
@@ -258,8 +278,51 @@ fun ComposerBar(
             },
             onDismiss = { openPicker = null },
         )
+        PickerKind.REASONING -> HermexPickerSheet(
+            title = "Reasoning effort",
+            sections = listOf(
+                PickerSection(
+                    header = null,
+                    rows = ReasoningEffort.entries.map { effort ->
+                        PickerRow(
+                            label = effort.displayName,
+                            value = effort,
+                            sublabel = reasoningSublabel(effort),
+                        )
+                    },
+                ),
+            ),
+            isSelected = { it == state.selectedReasoningEffort },
+            onPick = { effort ->
+                viewModel.selectReasoningEffort(effort)
+                openPicker = null
+            },
+            onDismiss = { openPicker = null },
+        )
         null -> Unit
     }
+}
+
+/** Two-letter short form for the composer chip. Keeps the row tight. */
+private fun reasoningShortLabel(effort: ReasoningEffort): String = when (effort) {
+    ReasoningEffort.AUTO -> "auto"
+    ReasoningEffort.NONE -> "off"
+    ReasoningEffort.MINIMAL -> "min"
+    ReasoningEffort.LOW -> "low"
+    ReasoningEffort.MEDIUM -> "med"
+    ReasoningEffort.HIGH -> "high"
+    ReasoningEffort.XHIGH -> "xhi"
+}
+
+/** One-liner explaining what the effort does — shown in the picker sheet. */
+private fun reasoningSublabel(effort: ReasoningEffort): String? = when (effort) {
+    ReasoningEffort.AUTO -> "Server picks the default (usually Medium)"
+    ReasoningEffort.NONE -> "Disable reasoning blocks entirely"
+    ReasoningEffort.MINIMAL -> "Lightest reasoning, fastest response"
+    ReasoningEffort.LOW -> "Brief reasoning, low cost"
+    ReasoningEffort.MEDIUM -> "Balanced (the server's default)"
+    ReasoningEffort.HIGH -> "Deep reasoning, higher cost"
+    ReasoningEffort.XHIGH -> "Maximum reasoning — extended-thinking models only"
 }
 
 @Composable
@@ -288,7 +351,7 @@ private fun PillChip(text: String, onClick: () -> Unit) {
     }
 }
 
-private enum class PickerKind { MODEL, PROFILE, WORKSPACE }
+private enum class PickerKind { MODEL, PROFILE, WORKSPACE, REASONING }
 
 /** Pending attachments above the composer, tap to remove — dark pills like iOS. */
 @Composable

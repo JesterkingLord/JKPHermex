@@ -149,6 +149,7 @@ fun ChatScreen(
                         TimelineEntryView(
                             entry = entry,
                             isStreamingRun = state.isStreaming,
+                            showReasoning = state.showReasoning,
                             onRegenerate = viewModel::regenerate,
                             onListen = { speech.speak(it) },
                         )
@@ -194,6 +195,7 @@ fun ChatScreen(
 private fun TimelineEntryView(
     entry: TimelineEntry,
     isStreamingRun: Boolean,
+    showReasoning: Boolean = true,
     onRegenerate: () -> Unit = {},
     onListen: (String) -> Unit = {},
 ) {
@@ -259,7 +261,7 @@ private fun TimelineEntryView(
         }
 
         // iOS "Thinking" card: dark, collapsible, preview in the header.
-        is TimelineEntry.Reasoning -> ThinkingCard(entry, isStreamingRun)
+        is TimelineEntry.Reasoning -> ThinkingCard(entry, isStreamingRun, showReasoning)
 
         is TimelineEntry.ToolCall -> {
             val hasPreview = !entry.preview.isNullOrBlank()
@@ -327,7 +329,19 @@ private fun TimelineEntryView(
 }
 
 @Composable
-private fun ThinkingCard(entry: TimelineEntry.Reasoning, isStreamingRun: Boolean) {
+private fun ThinkingCard(
+    entry: TimelineEntry.Reasoning,
+    isStreamingRun: Boolean,
+    showReasoning: Boolean = true,
+) {
+    if (!showReasoning) {
+        // User has hidden reasoning blocks; collapse to a small "thinking"
+        // marker so the timeline is still scrollable. The text is kept in
+        // state so re-enabling restores it instantly.
+        // (No UI surface needed — we just skip the card entirely; the
+        // streaming assistant text below acts as the visible signal.)
+        return
+    }
     val palette = LocalHermexPalette.current
     // Expanded while it streams (like iOS), collapses to the header afterwards
     // unless the user toggles it.
