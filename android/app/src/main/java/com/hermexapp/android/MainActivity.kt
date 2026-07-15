@@ -33,6 +33,10 @@ import com.hermexapp.android.features.chat.ChatScreen
 import com.hermexapp.android.features.chat.ChatViewModel
 import com.hermexapp.android.features.chat.LocalChatDisplayPrefs
 import com.hermexapp.android.features.onboarding.OnboardingScreen
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import com.hermexapp.android.features.onboarding.OnboardingViewModel
 import com.hermexapp.android.features.panels.PanelKind
 import com.hermexapp.android.features.panels.PanelScreen
@@ -206,7 +210,45 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
         }
     }
 
-    Crossfade(targetState = screen, label = "screens") { current ->
+    // Auto-check for a newer version on every app launch. The check
+    // is silent (no spinner, no modal) — the only user-visible
+    // surface is a one-line Snackbar at the bottom of the session
+    // list, with a tap target that opens the GitHub release page.
+    // If the network fails or the response is malformed, nothing
+    // is shown (the user can still tap "Check for updates" in
+    // Settings for a manual retry).
+    val updateChecker = remember {
+        com.hermexapp.android.network.UpdateChecker(
+            owner = "JesterkingLord",
+            repo = "JKPHermex",
+        )
+    }
+    var autoUpdateResult by remember { mutableStateOf<com.hermexapp.android.network.UpdateResult?>(null) }
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        val result = updateChecker.check(context)
+        if (result is com.hermexapp.android.network.UpdateResult.UpdateAvailable) {
+            autoUpdateResult = result
+            val outcome = snackbarHostState.showSnackbar(
+                message = "JKP Mobile ${result.latestVersion} is available",
+                actionLabel = "View",
+                withDismissAction = true,
+                duration = androidx.compose.material3.SnackbarDuration.Long,
+            )
+            if (outcome == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                com.hermexapp.android.features.settings.openUrlInBrowser(
+                    context,
+                    result.release.htmlUrl,
+                )
+                autoUpdateResult = null
+            } else if (outcome == androidx.compose.material3.SnackbarResult.Dismissed) {
+                autoUpdateResult = null
+            }
+        }
+    }
+
+    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+        Crossfade(targetState = screen, label = "screens") { current ->
         when (current) {
             Screen.SessionList -> SessionListScreen(
                 viewModel = sessionListViewModel,
@@ -215,7 +257,6 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
                 onOpenSettings = { screen = Screen.Settings },
                 onOpenProjects = { screen = Screen.Projects },
             )
-
             Screen.Projects -> {
                 BackHandler { screen = Screen.SessionList }
                 com.hermexapp.android.features.sessionlist.ProjectsScreen(
@@ -316,6 +357,16 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
                 )
             }
         }
+        }
+        // Auto-update Snackbar — overlaid on every screen so the user
+        // sees the "new version" prompt regardless of which screen
+        // they're on when the check completes.
+        androidx.compose.material3.SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .padding(16.dp),
+        )
     }
 }
 

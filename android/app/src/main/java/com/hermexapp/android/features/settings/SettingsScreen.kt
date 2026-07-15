@@ -277,6 +277,36 @@ fun SettingsScreen(
             ) {
                 Text(if (checking) "Checking…" else "Check for updates")
             }
+            // Privacy + source links. Both point to the canonical repo on
+            // GitHub so the version in the Play Console listing is always
+            // the same as the version in the code that the user can audit.
+            AboutLinkRow(
+                label = "Privacy policy",
+                subtitle = "What data the app stores, and what it doesn't",
+            ) {
+                openUrlInBrowser(
+                    context,
+                    "https://github.com/JesterkingLord/JKPHermex/blob/master/PRIVACY.md",
+                )
+            }
+            AboutLinkRow(
+                label = "Source on GitHub",
+                subtitle = "github.com/JesterkingLord/JKPHermex",
+            ) {
+                openUrlInBrowser(
+                    context,
+                    "https://github.com/JesterkingLord/JKPHermex",
+                )
+            }
+            AboutLinkRow(
+                label = "Security policy",
+                subtitle = "How to report a vulnerability privately",
+            ) {
+                openUrlInBrowser(
+                    context,
+                    "https://github.com/JesterkingLord/JKPHermex/blob/master/SECURITY.md",
+                )
+            }
             HorizontalDivider()
 
             Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
@@ -391,6 +421,43 @@ private fun InfoRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * Tappable row in the About section. Opens an external link in the
+ * platform's default browser via the shared [openUrlInBrowser] helper.
+ * The subtitle is optional and rendered in onSurfaceVariant colour.
+ */
+@Composable
+private fun AboutLinkRow(
+    label: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            "↗",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
