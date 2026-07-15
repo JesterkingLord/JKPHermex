@@ -45,6 +45,7 @@ enum class Endpoint(val path: String) {
     PROFILE_SWITCH("/api/profile/switch"),
     WORKSPACES("/api/workspaces"),
     SETTINGS("/api/settings"),
+    REASONING("/api/reasoning"),
     UPLOAD("/api/upload"),
     DIRECTORY_LIST("/api/list"),
     FILE("/api/file"),
