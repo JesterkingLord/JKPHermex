@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+        Network: Hermex talks to the operator's own JKP gateway. The
+        networkSecurityConfig (res/xml/network_security_config.xml)
+        explicitly trusts the operator's Tailscale / self-signed certs
+        while keeping the default strict transport for the public
+        internet. See network_security_config.xml for the rules.
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -11,17 +19,33 @@
         android:name=".HermexApp"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Hermex">
+        android:theme="@style/Theme.Hermex"
+        tools:targetApi="34">
 
+        <!--
+            ActiveRunService: background data sync so an in-flight chat
+            response can complete after the app is backgrounded. Not
+            exported — only invoked by us.
+        -->
         <service
             android:name=".platform.ActiveRunService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!--
+            HermexWidgetProvider: homescreen widget. exported="true" is
+            required so the system's AppWidgetHost can deliver the
+            APPWIDGET_UPDATE broadcast. The intent-filter is locked
+            down to the single system action; we never accept external
+            data through this receiver.
+        -->
         <receiver
             android:name=".platform.HermexWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:directBootAware="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -29,10 +53,24 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/hermex_widget_info" />
         </receiver>
+
+        <!--
+            MainActivity: singleTask so the share-target path lands on
+            the existing chat screen instead of stacking a new activity.
+            exported="true" is required for the LAUNCHER intent-filter
+            (so the system can launch us from the home screen) and for
+            the SEND / SEND_MULTIPLE share-target filters (so other apps
+            can share text / images / PDFs into a new chat). The
+            share-target is harmless: it accepts a single
+            EXTRA_STREAM / EXTRA_TEXT and hands it to the chat
+            composer; we do not execute or render external content
+            automatically.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
