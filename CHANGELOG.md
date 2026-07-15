@@ -8,16 +8,73 @@ Security sections per release.
 ## [Unreleased]
 
 ### Verified
-- Android `0.4.0` reasoning-effort selector compiles clean, passes 230/230
-  unit tests, and produces a 11 MB debug APK. Pairs symmetrically with the
-  iOS `0.4.x` effort selector and the desktop CLI's `/reasoning` command.
+- Android `0.4.1` Play Store prep — `./gradlew :app:assembleRelease` produces
+  a 1.7 MB R8-minified + resource-shrunk APK that passes `apksigner verify`
+  (APK Signature Scheme v2). `./gradlew :app:assembleDebug` still produces
+  an 11 MB debug APK for sideloading. 230/230 unit tests still green.
 
 ### Planned
-- Android `0.5.0` (next): Play Store prep — release signing config that reads
-  from `local.properties` / env vars, ProGuard/R8 rules for Compose +
-  Serialization + OkHttp + Kotlinx Coroutines, manifest hardening audit
-  (`android:exported` review, intent filter consolidation, app links
-  verification), and an end-to-end "no-cleartext on real device" check.
+- Android `0.5.0` (next): store listing text + privacy policy URL + Play
+  Console upload. The code-side work (signing config, ProGuard, manifest
+  hardening, backup/extraction rules) is done in `0.4.1`; what's left is
+  operator-side (Google Play Developer account, content rating, screenshot
+  assets, the .aab upload itself).
+
+## [0.4.1] - 2026-07-15
+
+### Changed
+- **Release build pipeline hardened for Play Store upload.** `assembleRelease`
+  now produces an R8-minified, resource-shrunk, properly-signed APK ready
+  to upload to Google Play (the operator still needs the Play Developer
+  account and the actual `.aab`, both operator-side):
+  - `app/build.gradle.kts` release buildType:
+    `isMinifyEnabled = true`, `isShrinkResources = true`, and the new
+    `proguard-rules.pro` keep-set. Result: 11 MB debug → **1.6 MB unsigned
+    release, 1.7 MB signed release** (6.5× reduction).
+  - **Release signing creds** resolve from environment variables
+    (`HERMEX_RELEASE_STORE_FILE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD`)
+    first, then `android/local.properties` (`hermex.release.storeFile =
+    ...`, etc.). Both forms are gitignored. If neither is set, the build
+    still succeeds and emits a clear warning that the release APK is
+    unsigned. The CI release workflow reads the env-var form from
+    GitHub Secrets.
+  - `local.properties.example` documents the four required keys and the
+    `keytool -genkey` command for generating a new keystore.
+
+### Added
+- **`app/proguard-rules.pro`** — minimum safe R8 keep-set, verified by
+  the working `assembleRelease` run. Covers:
+  - `kotlinx.serialization` `$$serializer` companions (would otherwise
+    produce `SerializationException: Serializer for class X is not found`
+    at runtime — the most common R8 footgun for Kotlin apps).
+  - `kotlinx.coroutines` `AndroidDispatcherFactory` (ServiceLoader).
+  - `OkHttp` / SSE (platform reflection, `Conscrypt`, `BouncyCastle`).
+  - `Room` generated `*_Impl` classes and `@Entity` / `@Dao` annotations.
+  - `ViewModel` / `AndroidViewModel` constructors.
+  - Manifest-referenced entry points (`MainActivity`, `HermexApp`,
+    `HermexWidgetProvider`, `ActiveRunService`).
+  - Source line numbers for crash-report readability, with source-file
+    renaming so we still ship obfuscated bytecode.
+- **`res/xml/backup_rules.xml`** (Android <12) and
+  **`res/xml/data_extraction_rules.xml`** (Android 12+) — exclude
+  `hermex_secrets`, `hermex_prefs`, `hermex_servers`, and `hermex.db`
+  from BOTH cloud backup AND device-transfer flows. The pairing grant
+  is a bearer credential; a phone restore must NOT silently trust a
+  different physical device. Referenced from `<application>` via
+  `android:fullBackupContent` and `android:dataExtractionRules`.
+- **Manifest hardening** (`AndroidManifest.xml`):
+  - `tools:targetApi="34"` for clean lint output.
+  - `configChanges` on `MainActivity` so rotation / dark-mode toggle
+    doesn't tear down the share-intent target.
+  - `directBootAware="false"` on the widget receiver (Hermex is
+    encrypted-pre-boot; the widget doesn't need direct-boot state).
+  - In-line comments justify every `exported="true"` surface.
+
+### Tests
+- 230/230 unit tests still green (verified via JUnit XML).
+- New smoke test: `./gradlew :app:assembleRelease` succeeds with
+  a synthesized JKS keystore → `apksigner verify` reports v2 signing
+  valid with 1 signer.
 
 ## [0.4.0] - 2026-07-15
 
