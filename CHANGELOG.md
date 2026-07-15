@@ -8,16 +8,69 @@ Security sections per release.
 ## [Unreleased]
 
 ### Verified
-- Android `0.3.0` was installed on the operator's physical phone and connected to
-  JKP. The native app listed real JKP sessions and completed a live MiniMax M3 model
-  response; this was not an emulator or mobile-browser check.
-- `android/gradlew.bat test` passed for debug and release unit-test variants on
-  Windows on 2026-07-14.
+- Android `0.4.0` reasoning-effort selector compiles clean, passes 230/230
+  unit tests, and produces a 11 MB debug APK. Pairs symmetrically with the
+  iOS `0.4.x` effort selector and the desktop CLI's `/reasoning` command.
 
 ### Planned
-- Android `0.4.0`: use the stored server-scoped pairing grant as Bearer auth,
-  retain password/cookie compatibility, add camera QR scanning, and verify
-  revoke/expiry/offline recovery on a physical device.
+- Android `0.5.0` (next): Play Store prep — release signing config that reads
+  from `local.properties` / env vars, ProGuard/R8 rules for Compose +
+  Serialization + OkHttp + Kotlinx Coroutines, manifest hardening audit
+  (`android:exported` review, intent filter consolidation, app links
+  verification), and an end-to-end "no-cleartext on real device" check.
+
+## [0.4.0] - 2026-07-15
+
+### Added
+- **Reasoning-effort selector on Android, mirroring the iOS `0.4.x` feature.**
+  Symmetric with the desktop CLI's `/reasoning` command — pick an effort
+  in the mobile app, the next `/api/chat/start` request carries
+  `reasoning_effort: "high"` (etc.), and the server is the source of truth:
+  - New "Reasoning effort" selector chip in the chat composer (next to the
+    model selector). Seven options matching the iOS sheet: `auto` (local
+    sentinel — never round-trips as the literal string "auto" because the
+    server rejects it), `none`, `minimal`, `low`, `medium`, `high`, `xhigh`.
+  - New "🧠 reasoning on / off" pill in the composer that toggles whether
+    the `ThinkingCard` is shown or hidden for the current and future
+    assistant turns.
+  - Optimistic local update on tap; rollback on API failure. Server
+    clamping (e.g. operator asked for `xhigh` but the gateway downgraded
+    to `medium` for this model) is reflected back into the UI with a
+    user-visible banner: "Server adjusted to MEDIUM".
+  - "Wait for current response" guard matches iOS — you can't change
+    effort mid-run; the chip is disabled until the assistant finishes
+    its current turn.
+  - `loadReasoningState()` runs on every chat open, so opening the app
+    on a different device picks up whatever the desktop set last.
+
+### Changed
+- `ChatStartRequest` now accepts an optional `reasoningEffort: ReasoningEffort?`.
+  The field is emitted to the wire as `reasoning_effort: "..."` only when
+  the user picked a non-`AUTO` value; `AUTO` is a local-only sentinel.
+- `ApiClient.startChat()` signature: `startChat(prompt, sessionId?, modelId?,
+  effort?)` — `effort` is null when `AUTO` so existing call sites in
+  `ChatViewModel.sendNow()` and the tests behave identically.
+
+### Tests
+- **+34 unit tests, 230/230 green** (verified via JUnit XML, not summary):
+  - `model/ReasoningStatusTest` (9): parser is case-insensitive, trims
+    whitespace, accepts both `snake_case` and `camelCase` from the
+    gateway, `AUTO` never round-trips, unknown values fall back to
+    `null` (server is the source of truth, never lie about the model).
+  - `network/ApiClientReasoningTest` (11): GET/POST wire protocol,
+    `AUTO` short-circuits the POST (no network call), 401 → `Unauthorized`,
+    500 → `Http`, network failure → `Network`, plus 13 wire-level
+    invariants.
+  - `features/chat/ChatViewModelReasoningTest` (11): hydration from
+    prefs, optimistic updates, server-clamp handling, rollback on
+    error, `null` prefs safety, `reasoning_effort` included in
+    `/api/chat/start` when non-`AUTO`, omitted when `AUTO`.
+  - `config/AppPrefsTest` (+3): `AUTO` round-trips as empty string
+    (never the literal `"auto"`), corrupt / empty persisted values
+    fall back to `AUTO`, prefs survive process restart.
+- Added `kotlinx-coroutines-test:1.9.0` (test-only dep) for the
+  viewmodel tests. Production code uses the existing `ioDispatcher`
+  abstraction and real `Dispatchers.IO`.
 
 ## [0.3.0] - 2026-07-14
 
