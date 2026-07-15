@@ -8,17 +8,109 @@ Security sections per release.
 ## [Unreleased]
 
 ### Verified
-- Android `0.4.1` Play Store prep — `./gradlew :app:assembleRelease` produces
-  a 1.7 MB R8-minified + resource-shrunk APK that passes `apksigner verify`
-  (APK Signature Scheme v2). `./gradlew :app:assembleDebug` still produces
-  an 11 MB debug APK for sideloading. 230/230 unit tests still green.
+- Android `0.5.0` G-lite math rendering + auto-update check — 255/255
+  unit tests green, 11 MB debug APK and 1.7 MB signed R8-minified
+  release APK. `assembleBundle` (Play Store .aab) also verified at
+  3.8 MB signed.
 
 ### Planned
-- Android `0.5.0` (next): store listing text + privacy policy URL + Play
-  Console upload. The code-side work (signing config, ProGuard, manifest
-  hardening, backup/extraction rules) is done in `0.4.1`; what's left is
-  operator-side (Google Play Developer account, content rating, screenshot
-  assets, the .aab upload itself).
+- Android `0.6.0` (next): the operator-side Play Store upload — Google
+  Play Developer account, real release keystore in 1Password, mipmap
+  launcher icons, feature graphic, screenshots, store listing copy
+  (already drafted in `docs/PLAY_STORE_LISTING.md`), privacy policy
+  URL (already published in `PRIVACY.md`).
+
+## [0.5.0] - 2026-07-15
+
+### Added
+- **G-lite math rendering (Markdown)**. The chat composer / message
+  timeline now recognise `$...$` inline math and `$$...$$` display
+  math in assistant responses, replace the LaTeX commands with their
+  Unicode equivalents, and render the result in italic serif so the
+  math is visually distinct from prose. Examples:
+  - `$a^2 + b^2 = c^2$` → `a²+b²=c²`
+  - `$\alpha + \beta = \gamma$` → `α+β=γ`
+  - `$\sum_{i=1}^n x_i$` → `Σᵢ₌₁ⁿxᵢ`
+  - `$\int_0^1 f(x)\,dx$` → `∫₀¹f(x)dx`
+  - `$\mathbb{R}, \mathbb{N}, \mathbb{Z}$` → `ℝ, ℕ, ℤ`
+  - `$\vec{F} = m\vec{a}$` → `F⃗ = ma⃗` (combining arrow above)
+  - `$\hat{x}, \tilde{x}, \bar{x}$` → `x̂, x̃, x̄` (combining marks)
+  - `$\frac{a+b}{c}$` → `(a+b)/c` (parens disambiguate the division)
+  - `$\sqrt{x}$` → `√x`
+  - Currency-style `$5 and got $3 back` is correctly **NOT** matched
+    as math — the inline matcher requires at least one math
+    character AND no common English words in the body.
+
+  Implementation: `ui/markdown/MathLite.kt` (pure object, no Compose
+  deps, no extra runtime deps). 25 unit tests in
+  `MathLiteTest` lock in the behaviour — the test suite went from
+  230 to 255 tests with all green. The renderer is wired in via a
+  tagged-token pass in `Markdown.kt` — math regions become
+  `⟦display:...⟧` or `⟦inline:...⟧` markers that the inline
+  formatter recognises and styles with `FontStyle.Italic +
+  FontFamily.Serif`.
+
+- **Auto-update check on app launch**. `MainActivity` now runs
+  `UpdateChecker.check()` once when the chat screen mounts, and if
+  GitHub has a newer release it shows a non-intrusive Snackbar at
+  the bottom: `JKP Mobile X.Y.Z is available` with a "View" action
+  that opens the GitHub release page in the browser. The check is
+  silent (no spinner, no modal) — if the network fails or the API
+  returns malformed JSON, nothing is shown and the user can still
+  tap "Check for updates" in Settings for a manual retry.
+
+- **In-app About links**. The Settings → About section now lists:
+  - **Privacy policy** → `github.com/JesterkingLord/JKPHermex/blob/master/PRIVACY.md`
+  - **Source on GitHub** → `github.com/JesterkingLord/JKPHermex`
+  - **Security policy** → `github.com/JesterkingLord/JKPHermex/blob/master/SECURITY.md`
+
+  Each is a tappable row with a subtitle, a `↗` icon, and uses the
+  platform's default browser via the existing
+  `openUrlInBrowser(context, url)` helper. The new `AboutLinkRow`
+  composable lives in `SettingsScreen.kt`.
+
+- **Play Store listing draft** at `docs/PLAY_STORE_LISTING.md` —
+  copy-paste-ready short description (68 chars), full description
+  (~1,650 chars), "What's new in this release" block (~470 chars),
+  categorisation, and a checklist of operator-side blockers
+  (Play Console account, mipmap launcher icons, feature graphic,
+  screenshots). The code-side work is done; the upload itself
+  is operator-side.
+
+- **Privacy policy** at `PRIVACY.md` — published in the source
+  repository so the version in the Play Console listing is always
+  the same as the version in the code that the user can audit.
+  Covers: what the app stores on device, what it sends over the
+  network, what it does NOT do (no analytics, no crash reporting,
+  no advertising, no FCM), third-party services (GitHub API for
+  the in-app update check), children's privacy, data retention,
+  the user's rights, change-control process, and contact info.
+
+### Changed
+- `MainActivity` now wraps its `Crossfade` in a `Box` that overlays
+  a `SnackbarHost` so the auto-update prompt can be shown over
+  any screen (session list, chat, settings) without needing to
+  thread a state through each screen's Composable signature.
+- `MarkdownText` (composable) now runs the math pre-processor
+  before the block parser; the inline renderer (`inlineAnnotated`)
+  recognises the `⟦display:...⟧` / `⟦inline:...⟧` tagged tokens
+  emitted by `MathLite.replaceWithTags`. The math style is
+  italic + serif, visually distinct from prose.
+
+### Tests
+- **+25 unit tests, 255/255 green** (verified via JUnit XML):
+  - `ui/markdown/MathLiteTest` (25): parser cases (inline / display
+    / currency / unclosed / multiple / shadowed), command cases
+    (Greek, operators, fractions, sup/sub, integrals, sets, trig,
+    arrows, accents, ellipses, `\dots` / `\ldots` / `\cdots`),
+    tag-emission cases (display / inline / mixed / no-op), and
+    end-to-end LLM-output shapes (Pythagoras, Gaussian integral,
+    quadratic formula).
+- 230 pre-existing tests still green.
+- `./gradlew :app:assembleRelease` still produces a 1.7 MB signed
+  R8-minified APK (R8 keeps `kotlinx.serialization` and
+  `kotlinx.coroutines` clean — verified with the existing
+  `proguard-rules.pro`).
 
 ## [0.4.1] - 2026-07-15
 
