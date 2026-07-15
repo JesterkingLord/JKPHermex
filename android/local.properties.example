@@ -1,0 +1,23 @@
+# JKPHermex local properties — operator-only, never commit
+#
+# Copy this file to `local.properties` (which IS in .gitignore) and fill in
+# your real release keystore credentials. NEVER commit the filled-in copy.
+#
+# If you don't have a release keystore yet, generate one with:
+#   keytool -genkey -v -keystore /path/to/hermex-release.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 \
+#           -alias hermex-release \
+#           -dname "CN=JKP,O=Hermex,C=US"
+#
+# Store the .jks file outside the repo (e.g. ~/keystores/ or in 1Password).
+# The CI release workflow (`.github/workflows/android-release.yml`) reads
+# the same values from GitHub Secrets as environment variables, so the
+# local-file form is for YOUR local builds only.
+
+# Absolute path to your release keystore
+hermex.release.storeFile=/Users/you/keystores/hermex-release.jks
+
+# Passwords for the keystore and the key inside it
+hermex.release.storePassword=change-me
+hermex.release.keyAlias=hermex-release
+hermex.release.keyPassword=change-me

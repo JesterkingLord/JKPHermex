@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hermex data extraction rules — Android 12+ (cloud backup + device
+  transfer). Mirrors backup_rules.xml: the secret store, prefs, and
+  the pairing-grant database are EXCLUDED from any cloud backup or
+  D2D device-transfer flow.
+
+  Backup flows excluded: cloud, device-to-device.
+  Backup flows included (and what they include): nothing.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="hermex_secrets.xml" />
+        <exclude domain="sharedpref" path="hermex_prefs.xml" />
+        <exclude domain="sharedpref" path="hermex_servers.xml" />
+        <exclude domain="file" path="databases/hermex.db" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="hermex_secrets.xml" />
+        <exclude domain="sharedpref" path="hermex_prefs.xml" />
+        <exclude domain="sharedpref" path="hermex_servers.xml" />
+        <exclude domain="file" path="databases/hermex.db" />
+    </device-transfer>
+</data-extraction-rules>
