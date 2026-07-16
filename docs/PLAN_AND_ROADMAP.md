@@ -65,7 +65,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 | 6.1 | Google Play Developer account + real release keystore (1Password) | P0 operator |
 | 6.2 | Launcher mipmaps, feature graphic, screenshots | P0 |
 | 6.3 | Store listing from `docs/PLAY_STORE_LISTING.md` + `PRIVACY.md` URL | P0 |
-| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak) | **P0 product** |
+| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **P0 product** |
 | 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | P0 |
 | 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | P1 |
 | 6.7 | Device UI: linked device name + local “Forget this JKP device” | P1 |
