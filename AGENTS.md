@@ -11,6 +11,7 @@ in the directory you're working in: `ios/AGENTS.md` today, `android/AGENTS.md` o
 that app exists. Read the platform file before touching code in that directory.
 
 ## Session start & wrap-up
+- Read **`docs/PLAN_AND_ROADMAP.md`** for version roadmap (0.5.0 baseline → 0.6.0 next).
 - Read `CURRENT.md` first if it exists — it holds the latest resumable state. It is
   local-only (gitignored), never committed; a fresh clone won't have one.
 - Read only the `PROJECT_SPEC.md` sections named in CURRENT.md's **Spec Read** field;

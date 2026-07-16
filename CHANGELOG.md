@@ -14,11 +14,12 @@ Security sections per release.
   3.8 MB signed.
 
 ### Planned
-- Android `0.6.0` (next): the operator-side Play Store upload — Google
-  Play Developer account, real release keystore in 1Password, mipmap
-  launcher icons, feature graphic, screenshots, store listing copy
-  (already drafted in `docs/PLAY_STORE_LISTING.md`), privacy policy
-  URL (already published in `PRIVACY.md`).
+- Android `0.6.0` (next) — full checklist in **`docs/PLAN_AND_ROADMAP.md`**:
+  - Play Store operator upload (Developer account, real release keystore in
+    1Password, mipmap icons, feature graphic, screenshots, listing from
+    `docs/PLAY_STORE_LISTING.md`, privacy URL from `PRIVACY.md`)
+  - **JKP pairing Bearer** on API traffic + password/cookie fallback
+  - Optional QR pairing; device name + local forget; physical QA matrix
 
 ## [0.5.0] - 2026-07-15
 

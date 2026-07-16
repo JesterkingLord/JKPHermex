@@ -1,12 +1,14 @@
 # Android Port Plan — Hermex for Android
 
-Status: **active delivery ledger**. Android phases 0-9 and most polish are implemented;
-the app is installed on the operator's physical Android phone and was verified against
-JKP on 2026-07-14. Open work is tracked below instead of treating this as a proposal.
+Status: **historical + phase ledger**.  
+**What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-07-16).  
+This file remains the architecture and phases 0–11 delivery ledger.
 
-## 0. Current verified state (2026-07-14)
+**Current ship baseline:** Android **`0.5.0`** (`versionCode` 6) — math-lite chat, auto-update check, 255 unit tests, signed release path verified (2026-07-15). Physical phone chat against live JKP first proven at **0.3.0** (2026-07-14).
 
-- Android `0.3.0` is installed and running on the operator's physical phone.
+## 0. Current verified state (2026-07-14 device + 2026-07-16 roadmap)
+
+- Android `0.3.0` was installed and running on the operator's physical phone (first live JKP proof).
 - The app reaches JKP, lists real JKP sessions, opens a session, sends a prompt, and
   renders a live MiniMax M3 response. Screenshot evidence shows the session list and
   the successful `Hermex JKP Connectivity` turn on the Android device.
@@ -18,7 +20,10 @@ JKP on 2026-07-14. Open work is tracked below instead of treating this as a prop
 - Important boundary: `0.3.0` still uses the existing typed-password/cookie flow for
   API traffic. The stored JKP pairing grant is not yet attached as a Bearer token.
 
-### Next JKP integration milestone (`0.4.0`)
+### Next JKP integration milestone (`0.6.0` — was sketched as 0.4.0)
+
+> **Version numbers moved:** 0.4.x/0.5.0 shipped Play prep + math + auto-update.  
+> **Bearer pairing + Play upload** are now **`0.6.0`** — full checklist in [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) §2.
 
 1. Make `ApiClient` prefer the server-scoped JKP pairing grant and send
    `Authorization: Bearer <grant>` on JKP API requests without exposing it in logs,
@@ -28,7 +33,7 @@ JKP on 2026-07-14. Open work is tracked below instead of treating this as a prop
 3. Add camera QR scanning as a thin input layer over the already-tested
    `PairingIntentParser`; retain paste/manual entry as the permission-free fallback.
 4. Add physical-device tests for revoke, expired pair, offline reconnect, model
-   switching, and cross-device session isolation against the JKP v1.13 API.
+   switching, and cross-device session isolation against the live JKP API.
 5. Surface the linked device name and a local "Forget this JKP device" action; server
    revocation remains an explicit host/admin operation.
 

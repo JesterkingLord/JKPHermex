@@ -10,10 +10,16 @@ This repository is a **fork-of-fork**:
 - **Upstream Android branch:** [`claude/android-port-plan-lt7p00`](https://github.com/super3/hermex/tree/claude/android-port-plan-lt7p00) — the Android Kotlin/Compose port
 - **This fork:** `JesterkingLord/JKPHermex` — the upstream Android branch, re-hosted as a standalone repo so we can ship a `JesterkingLord`-owned APK that talks to a self-hosted `hermes-webui` server (or any compatible JKP/Hermes backend) on the operator's laptop.
 
-The agent does **not** run on the phone. The phone is a client. See
-[`docs/ANDROID_PORT_PLAN.md`](docs/ANDROID_PORT_PLAN.md) and the upstream
-[`PROJECT_SPEC.md`](https://github.com/super3/hermex/blob/master/PROJECT_SPEC.md)
-for the full architecture.
+The agent does **not** run on the phone. The phone is a client. See:
+
+| Doc | Role |
+|---|---|
+| **[`docs/PLAN_AND_ROADMAP.md`](docs/PLAN_AND_ROADMAP.md)** | **What’s next** (0.5.0 baseline → 0.6.0 Play + Bearer pairing) |
+| [`docs/ANDROID_PORT_PLAN.md`](docs/ANDROID_PORT_PLAN.md) | Port phases 0–11 + architecture ledger |
+| Upstream [`PROJECT_SPEC.md`](https://github.com/super3/hermex/blob/master/PROJECT_SPEC.md) | Product/API source of truth |
+| JKP host roadmap | `E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md` |
+
+**Current Android version:** `0.5.0` (debug + signed release verified).
 
 ---
 
