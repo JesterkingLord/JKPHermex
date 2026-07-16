@@ -38,7 +38,8 @@ val ApiJson: Json = Json {
  *
  * Endpoint families live in extension files mirroring the iOS split
  * (`ApiClientSessions.kt`, `ApiClientChat.kt`), built on [getJson]/[postJson].
- * The session cookie rides in the injected [OkHttpClient]'s cookie jar.
+ * Auth: session cookie via [SessionCookieJar]; JKP device grant via
+ * [BearerAuthInterceptor] on the shared OkHttpClient (Hermex 0.6).
  */
 class ApiClient(
     val baseUrl: HttpUrl,

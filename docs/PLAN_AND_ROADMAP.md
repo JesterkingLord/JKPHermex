@@ -2,7 +2,7 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android version:** **`0.5.0`** (`versionCode` 6)  
+**Current Android version:** **`0.6.0-rc1`** (`versionCode` 7) — Bearer pairing on API/SSE  
 **Last roadmap refresh:** `2026-07-16`  
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · v1.13 plan: [`docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
@@ -65,7 +65,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 | 6.1 | Google Play Developer account + real release keystore (1Password) | P0 operator |
 | 6.2 | Launcher mipmaps, feature graphic, screenshots | P0 |
 | 6.3 | Store listing from `docs/PLAY_STORE_LISTING.md` + `PRIVACY.md` URL | P0 |
-| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **P0 product** |
+| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **SHIPPED in 0.6.0-rc1** (`BearerAuthInterceptor` + 401 clears grant) |
 | 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | P0 |
 | 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | P1 |
 | 6.7 | Device UI: linked device name + local “Forget this JKP device” (local grant clear only — **not** host revoke) | P1 |

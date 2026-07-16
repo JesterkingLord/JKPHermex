@@ -70,8 +70,8 @@ class OnboardingViewModel(
     /**
      * v0.3.0+: handles a QR/pasted pairing URL from the OnboardingScreen's
      * "Scan QR or paste URL" affordance. On [PairingOutcome.Paired] we
-     * transition to LoggedIn (no password needed yet — grant is stored but
-     * not yet consumed by ApiClient; that's v0.4.0+); on
+     * transition to LoggedIn (grant stored; Hermex 0.6 BearerAuthInterceptor
+     * sends Authorization: Bearer on API/SSE); on
      * [PairingOutcome.Prefilled] we just fill the URL field; on
      * [PairingOutcome.Failed] the reason is surfaced via errorMessage and
      * the user keeps the typed URL.

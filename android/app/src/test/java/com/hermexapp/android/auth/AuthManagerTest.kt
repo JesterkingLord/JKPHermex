@@ -149,14 +149,28 @@ class AuthManagerTest {
         secretStore.save(serverUrlString(), SecretStore.Key.SERVER_URL)
         secretStore.save("hermes_session=stale", SecretStore.Key.SESSION_COOKIES, scope = server.hostName)
         secretStore.save("hermes_session=other", SecretStore.Key.SESSION_COOKIES, scope = "other.host")
+        secretStore.save("jkp_device_stale", SecretStore.Key.PAIR_GRANT, scope = server.hostName)
+        secretStore.save("device-1", SecretStore.Key.PAIR_DEVICE_ID, scope = server.hostName)
+        secretStore.save("jkp_device_other", SecretStore.Key.PAIR_GRANT, scope = "other.host")
 
         val manager = makeManager()
         manager.handleApiError(ApiError.Unauthorized)
 
         assertTrue(manager.state.value is AuthManager.State.LoggedOut)
         assertNotNull(manager.lastErrorMessage.value)
+        assertTrue(
+            manager.lastErrorMessage.value!!.contains("authorized", ignoreCase = true) ||
+                manager.lastErrorMessage.value!!.contains("link", ignoreCase = true),
+        )
         assertNull(secretStore.load(SecretStore.Key.SESSION_COOKIES, scope = server.hostName))
         assertNotNull(secretStore.load(SecretStore.Key.SESSION_COOKIES, scope = "other.host"))
+        // JKP freeze: clear local grant on 401 so the phone re-pairs.
+        assertNull(secretStore.load(SecretStore.Key.PAIR_GRANT, scope = server.hostName))
+        assertNull(secretStore.load(SecretStore.Key.PAIR_DEVICE_ID, scope = server.hostName))
+        assertEquals(
+            "jkp_device_other",
+            secretStore.load(SecretStore.Key.PAIR_GRANT, scope = "other.host"),
+        )
         // The server URL survives a session expiry so re-login is one field.
         assertNotNull(secretStore.load(SecretStore.Key.SERVER_URL))
     }

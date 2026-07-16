@@ -68,6 +68,12 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
 
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
+        // Hermex 0.6 / JKP pairing freeze: Bearer grant on all API + SSE calls.
+        .addInterceptor(
+            com.hermexapp.android.network.BearerAuthInterceptor { host ->
+                secretStore.load(SecretStore.Key.PAIR_GRANT, host)
+            },
+        )
         .apply {
             serverRegistry?.let { registry ->
                 addInterceptor(com.hermexapp.android.network.CustomHeaderInterceptor(registry::headersForHost))

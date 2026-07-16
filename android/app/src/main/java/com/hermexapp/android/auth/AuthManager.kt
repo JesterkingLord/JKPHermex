@@ -132,11 +132,10 @@ class AuthManager(
     }
 
     /**
-     * v0.3.0+: parses [rawText] as a QR/pasted pairing URL and, if it carries
-     * pair_id+token, posts to /v1/pair/complete. On success the grant +
-     * device_id are persisted per-server, the server URL is saved, and we
-     * transition to [State.LoggedIn] without needing the password. The grant
-     * is stored but not yet used by ApiClient — that\'s v0.4.0+ Bearer auth.
+     * Completes a QR/pasted pairing URL. On success the grant + device_id are
+     * persisted per-server, the server URL is saved, and we transition to
+     * [State.LoggedIn]. Hermex 0.6: [BearerAuthInterceptor] sends
+     * `Authorization: Bearer <grant>` on all API/SSE calls for that host.
      */
     override suspend fun pairAndConfigure(
         rawText: String,
@@ -245,15 +244,24 @@ class AuthManager(
     fun handleApiError(error: Throwable) {
         if (error !is ApiError.Unauthorized) return
 
-        _lastErrorMessage.value = "Your session expired. Sign in again."
+        // JKP freeze: 401 invalid_device_grant / expired cookie → clear local
+        // grant and re-pair (phone cannot call host revoke).
+        _lastErrorMessage.value =
+            "This phone link is no longer authorized. Link it again from your JKP host."
         when (val current = _state.value) {
             is State.LoggedIn -> {
-                cookieJar.clear(current.server.host)
+                clearHostAuth(current.server.host)
                 _state.value = State.LoggedOut(current.server)
             }
-            is State.LoggedOut -> cookieJar.clear(current.server.host)
+            is State.LoggedOut -> clearHostAuth(current.server.host)
             State.Unconfigured -> Unit
         }
+    }
+
+    private fun clearHostAuth(host: String) {
+        cookieJar.clear(host)
+        secretStore.delete(SecretStore.Key.PAIR_GRANT, host)
+        secretStore.delete(SecretStore.Key.PAIR_DEVICE_ID, host)
     }
 
     private fun restoreSavedServer() {

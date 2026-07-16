@@ -34,7 +34,7 @@ sealed class ApiError : Exception() {
             is Network ->
                 "Could not reach the server. Check that the machine is awake, hermes-webui is running, and your tunnel or Tailscale connection is up."
             is Unauthorized ->
-                "The password is incorrect or your session expired. Sign in again."
+                "This phone link or password is no longer authorized. Pair again from JKP or sign in."
             is Decoding ->
                 "The server response could not be read. Check that the URL points to a Hermes Web UI server."
             is Http -> when (statusCode) {

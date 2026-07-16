@@ -13,13 +13,11 @@ interface SecretStore {
         // Serialized cookies for one server host (see SessionCookieJar). Always
         // scoped; the unscoped form is never written.
         SESSION_COOKIES("session_cookies"),
-        // v0.3.0+: Bearer grant returned by POST /v1/pair/complete. Scoped per
-        // server so multiple paired hosts don't collide. Not yet consumed by
-        // ApiClient — stored as a marker that the phone has completed the
-        // desktop's `python -m jkp pair` handoff, with Bearer-auth integration
-        // planned for v0.4.0.
+        // Bearer grant from POST /v1/pair/complete. Scoped per server host.
+        // Hermex 0.6: [com.hermexapp.android.network.BearerAuthInterceptor]
+        // attaches Authorization: Bearer <grant> on API + SSE traffic.
         PAIR_GRANT("pair_grant"),
-        // v0.3.0+: device id returned alongside the grant. Same scoping rules.
+        // device id returned alongside the grant. Same scoping rules.
         PAIR_DEVICE_ID("pair_device_id"),
     }
 
