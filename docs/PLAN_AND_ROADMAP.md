@@ -68,10 +68,10 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 | 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **P0 product** |
 | 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | P0 |
 | 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | P1 |
-| 6.7 | Device UI: linked device name + local “Forget this JKP device” | P1 |
+| 6.7 | Device UI: linked device name + local “Forget this JKP device” (local grant clear only — **not** host revoke) | P1 |
 | 6.8 | Physical QA matrix: revoke, expired pair, offline reconnect, model switch, multi-device isolation | P0 |
 
-**Depends on host JKP:** stable `/v1/pair/*`, grant revoke, session ownership (already in JKP v1.12 track; freeze contract in v1.13.1).
+**Depends on host JKP:** stable `/v1/pair/*`, grant revoke, session ownership (v1.12 track); freeze contract **v1.13.1**; host revoke UX **v1.13.1c** (`python -m jkp pair list` / `pair revoke`, contract `revoke_ux`, PWA “Forget this phone link”). Mirror: local forget ≠ host revoke; on 401 `invalid_device_grant` clear grant and re-pair.
 
 ### 0.7.0 — Operator quality (after 0.6)
 
