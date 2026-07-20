@@ -121,6 +121,26 @@ fun ChatScreen(
                 )
             }
 
+            // Excellence 13.10: stream-drop recovery invite (no invent reconnect API).
+            AnimatedVisibility(visible = state.streamRecoveryOffer && state.streamRecoveryTip != null) {
+                Text(
+                    state.streamRecoveryTip.orEmpty(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.warning,
+                )
+            }
+
+            // Hang honesty: silent stream tip (approve / YOLO on host).
+            AnimatedVisibility(visible = state.hangTip != null) {
+                Text(
+                    state.hangTip.orEmpty(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.warning,
+                )
+            }
+
             when {
                 state.isLoading && state.entries.isEmpty() ->
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

@@ -436,6 +436,10 @@ final class AuthManager {
 
         if let server {
             try? keychain.delete(.customHeaders, scope: server.absoluteString)
+            // v1.6.0+: also drop the per-server pairing grant + device id so
+            // a forgotten server doesn't leak its Bearer grant across reinstalls.
+            try? keychain.delete(.pairGrant, scope: server.absoluteString)
+            try? keychain.delete(.pairDeviceID, scope: server.absoluteString)
             clearSessionCookies(for: server)
         } else {
             clearAllSessionCookies()
@@ -591,6 +595,8 @@ protocol AuthAPIClient: Sendable {
     func authStatus() async throws -> AuthStatusResponse
     func login(password: String) async throws -> LoginResponse
     func logout() async throws -> LoginResponse
+    // v1.6.0+: short-lived JKP mobile pairing. Mirrors Android v0.3.0+.
+    func completePairing(pairID: String, token: String, deviceName: String) async throws -> PairCompleteResponse
 }
 
 extension APIClient: AuthAPIClient {}

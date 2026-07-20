@@ -32,20 +32,30 @@ sealed class ApiError : Exception() {
             is CleartextNotAllowed ->
                 "Plain http:// is only allowed for Tailscale addresses (100.64.x.x–100.127.x.x) and localhost. Use https:// for $host."
             is Network ->
-                "Could not reach the server. Check that the machine is awake, hermes-webui is running, and your tunnel or Tailscale connection is up."
+                // Prefer shared JKP catalog so APK / PWA / host use the same network copy.
+                ClientErrorCatalog.NETWORK_UNREACHABLE.message
             is Unauthorized ->
-                "This phone link or password is no longer authorized. Pair again from JKP or sign in."
+                ClientErrorCatalog.INVALID_DEVICE_GRANT.message
             is Decoding ->
                 "The server response could not be read. Check that the URL points to a Hermes Web UI server."
-            is Http -> when (statusCode) {
-                403 -> "The server refused access. Check the server password and permissions."
-                404 -> "The server endpoint was not found. Check that the URL points to a Hermes Web UI server."
-                408 -> "The server took too long to respond. Check that the machine is awake and the server is running."
-                429 -> "The server is receiving too many requests. Wait a moment, then try again."
-                500 -> "The Hermes server hit an internal error. Check the server logs, then try again."
-                502, 503, 504 ->
-                    "The server or tunnel is unavailable. Check that the machine is awake, hermes-webui is running, and the tunnel is connected."
-                else -> "The server returned an unexpected response (HTTP $statusCode)."
+            is Http -> {
+                // Prefer host-aligned catalog when status/body map cleanly; keep
+                // a few endpoint-not-found strings that are more specific than
+                // the generic server_error entry.
+                val catalogMsg = ClientErrorCatalog.userMessage(
+                    status = statusCode,
+                    message = body,
+                )
+                when {
+                    statusCode == 404 ->
+                        "The server endpoint was not found. Check that the URL points to a Hermes Web UI server."
+                    statusCode == 408 ->
+                        "The server took too long to respond. Check that the machine is awake and the server is running."
+                    catalogMsg != ClientErrorCatalog.UNKNOWN.message -> catalogMsg
+                    statusCode == 403 ->
+                        "The server refused access. Check the server password and permissions."
+                    else -> "The server returned an unexpected response (HTTP $statusCode)."
+                }
             }
         }
 

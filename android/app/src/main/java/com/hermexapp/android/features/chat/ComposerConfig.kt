@@ -89,6 +89,46 @@ data class PendingAttachment(
     }
 }
 
+/**
+ * Model preference parity (JKPHermex 7.3 / host excellence 13.8b).
+ *
+ * When the operator opens a session that already has a host model, the
+ * composer must show that model — not silently fall back to the catalog
+ * default — until the user picks something else.
+ *
+ * Priority: explicit user selection → session model → catalog default.
+ * Pure so unit tests lock the contract without Compose or network.
+ */
+data class ModelSelection(
+    val modelId: String?,
+    val providerId: String?,
+)
+
+fun resolveSessionModelSelection(
+    sessionModel: String?,
+    sessionProvider: String?,
+    selectedModelId: String?,
+    selectedProviderId: String?,
+    defaultModel: String?,
+): ModelSelection {
+    val userPick = selectedModelId?.trim()?.takeIf { it.isNotEmpty() }
+    if (userPick != null) {
+        return ModelSelection(
+            modelId = userPick,
+            providerId = selectedProviderId?.trim()?.takeIf { it.isNotEmpty() },
+        )
+    }
+    val sessionPick = sessionModel?.trim()?.takeIf { it.isNotEmpty() }
+    if (sessionPick != null) {
+        return ModelSelection(
+            modelId = sessionPick,
+            providerId = sessionProvider?.trim()?.takeIf { it.isNotEmpty() },
+        )
+    }
+    val catalogDefault = defaultModel?.trim()?.takeIf { it.isNotEmpty() }
+    return ModelSelection(modelId = catalogDefault, providerId = null)
+}
+
 /** Loads the four catalog fetches concurrently; individual failures degrade to empty. */
 suspend fun loadComposerConfig(client: ApiClient): ComposerConfig = coroutineScope {
     val modelsDeferred = async { runCatching { client.models() }.getOrNull() }

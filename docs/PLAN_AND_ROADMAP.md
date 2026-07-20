@@ -2,10 +2,10 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android version:** **`0.6.0-rc1`** (`versionCode` 7) — Bearer pairing on API/SSE  
-**Last roadmap refresh:** `2026-07-16`  
+**Current Android version:** **`0.6.0-rc6`** (`versionCode` 12) — Bearer + hang honesty + catalog + model parity (7.3) + stream recovery UI (13.10)  
+**Last roadmap refresh:** `2026-07-18` (host excellence **13.10**)  
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
-**Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · v1.13 plan: [`docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
+**Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
 ---
 
@@ -21,12 +21,18 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 ---
 
-## 1. Current state (2026-07-16)
+## 1. Current state (2026-07-18)
 
 ### Shipped
 
 | Version | Highlights |
 |---|---|
+| **0.6.0-rc6** | Stream recovery offer UI after drops (13.10) — partial-kept + resend tip banner |
+| **0.6.0-rc5** | SSE error catalog honesty + free-text classify + streamDropRecovery pure helpers (13.9) |
+| **0.6.0-rc4** | Session model preference parity (7.3) — composer seeds from host `session.model`; `invalid_api_key` + required-code catalog lock (host excellence 13.8a/b) |
+| **0.6.0-rc3** | SSE transport failure → network honesty + resend tip (7.4 early) |
+| **0.6.0-rc2** | Hang honesty stall tip (≥15s silent stream); `ClientErrorCatalog` aligned with host `jkp.client_errors`; Settings “Forget this JKP device” local-only tip; ApiError catalog routing |
+| **0.6.0-rc1** | Bearer pairing on all API/SSE; 401 clears grant |
 | **0.5.0** | G-lite math in chat markdown; auto-update check → GitHub releases Snackbar; 255 unit tests green; debug + signed release APKs verified |
 | **0.4.x** | Release signing / Play prep scaffolding; proguard; manifest hardening |
 | **0.3.0** | Physical phone ↔ live JKP: sessions, stream, MiniMax response (2026-07-14 evidence) |
@@ -36,9 +42,9 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 | Phase | Status note |
 |---|---|
-| **4 – Chat + SSE** | Functionally shipped on device (0.3+ evidence); keep checkbox debt cleaned as polish only |
-| **10 – Polish + release prep** | In progress via 0.4–0.6 track (Play listing, icons, keystore) |
-| **11 – Native JKP pairing completion** | **Primary product gap** — grant as Bearer on API traffic; QR optional |
+| **4 – Chat + SSE** | Functionally shipped on device (0.3+ evidence); hang honesty added in 0.6.0-rc2 |
+| **10 – Polish + release prep** | **Operator-blocked** Play assets / keystore / console (see §2) |
+| **11 – Native JKP pairing completion** | Bearer **done** in 0.6.0-rc1; QR optional remains P1 |
 
 ### Boundaries (locked)
 
@@ -58,29 +64,29 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 - Auto-update check + About / privacy links stay honest.  
 - Document install path for operator phone.
 
-### 0.6.0 — Play Store operator upload + pairing Bearer (NEXT)
+### 0.6.0 — Play Store operator upload + pairing Bearer (IN PROGRESS)
 
 | # | Work | Priority |
 |---|---|---|
-| 6.1 | Google Play Developer account + real release keystore (1Password) | P0 operator |
-| 6.2 | Launcher mipmaps, feature graphic, screenshots | P0 |
-| 6.3 | Store listing from `docs/PLAY_STORE_LISTING.md` + `PRIVACY.md` URL | P0 |
-| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **SHIPPED in 0.6.0-rc1** (`BearerAuthInterceptor` + 401 clears grant) |
-| 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | P0 |
-| 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | P1 |
-| 6.7 | Device UI: linked device name + local “Forget this JKP device” (local grant clear only — **not** host revoke) | P1 |
-| 6.8 | Physical QA matrix: revoke, expired pair, offline reconnect, model switch, multi-device isolation | P0 |
+| 6.1 | Google Play Developer account + real release keystore (1Password) | **BLOCKED — operator secrets** |
+| 6.2 | Launcher mipmaps, feature graphic, screenshots | **BLOCKED — operator assets** |
+| 6.3 | Store listing from `docs/PLAY_STORE_LISTING.md` + `PRIVACY.md` URL | **BLOCKED — Play console** |
+| 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **SHIPPED in 0.6.0-rc1** |
+| 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | **SHIPPED** (AuthManager password + SessionCookieJar) |
+| 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | P1 open |
+| 6.7 | Device UI: local “Forget this JKP device” (local grant clear only — **not** host revoke) | **SHIPPED in 0.6.0-rc2** (Settings copy + host-revoke tip) |
+| 6.8 | Physical QA matrix: revoke, expired pair, offline reconnect, model switch, multi-device isolation | **BLOCKED — physical device session** |
 
 **Depends on host JKP:** stable `/v1/pair/*`, grant revoke, session ownership (v1.12 track); freeze contract **v1.13.1**; host revoke UX **v1.13.1c**; host discovery **v1.13.2a** (`python -m jkp pair probe`, `GET /v1/pair/contract`, `GET /v1/client-errors`, capabilities advertises device grant). Before phone QA: `python -m jkp pair probe --url <host>`. Mirror: local forget ≠ host revoke; on 401 `invalid_device_grant` clear grant and re-pair.
 
-### 0.7.0 — Operator quality (after 0.6)
+### 0.7.0 — Operator quality (partially pulled into 0.6.0-rc2)
 
 | # | Work | Priority |
 |---|---|---|
-| 7.1 | Hang honesty: surface host approval waits (mirror Hermex PWA “Still working / approve or YOLO on host”) | P0 |
-| 7.2 | Categorized errors aligned with JKP gateway categories (auth, quota, rate-limit, offline) | P1 |
-| 7.3 | Model preference parity with host session model | P1 |
-| 7.4 | Streaming resilience (reconnect, partial render) | P1 |
+| 7.1 | Hang honesty: surface host approval waits (mirror Hermex PWA “Still working / approve or YOLO on host”) | **SHIPPED in 0.6.0-rc2** (`HangHonesty` + ChatViewModel stall watch) |
+| 7.2 | Categorized errors aligned with JKP gateway categories (auth, quota, rate-limit, offline) | **SHIPPED in 0.6.0-rc2** (`ClientErrorCatalog` + ApiError routing) |
+| 7.3 | Model preference parity with host session model | **SHIPPED in 0.6.0-rc4** (`resolveSessionModelSelection` + ChatViewModel seed) |
+| 7.4 | Streaming resilience (reconnect, partial render) | **Partial** — transport honesty (rc3) + SSE error catalog (rc5) + **streamDropRecovery pure helpers (host 13.9)**; full auto-reconnect still open |
 | 7.5 | Optional: share sheet / deep link polish | P2 |
 
 ### Later / explicit non-goals
@@ -194,5 +200,11 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-07-18 | **0.6.0-rc6**: stream recovery offer UI (host excellence 13.10) |
+| 2026-07-18 | **0.6.0-rc5**: SSE error catalog + classify free-text + streamDropRecovery pure helpers (13.9) |
+| 2026-07-18 | Host excellence **13.9–13.10**: recovery helpers + dual-surface recovery UX |
+| 2026-07-18 | **0.6.0-rc4**: session model preference (7.3) + full catalog lock (`invalid_api_key`); host excellence 13.8 |
+| 2026-07-18 | **0.6.0-rc3**: stream transport honesty (`HangHonesty.transportFailureMessage`) |
+| 2026-07-18 | **0.6.0-rc2**: hang honesty, ClientErrorCatalog, forget-device tip; Play/keystore marked operator-blocked; cross-link JKP master plan 2026-07-18 |
 | 2026-07-16 | Initial PLAN_AND_ROADMAP: 0.5.0 baseline, 0.6.0 Play + Bearer pairing, 0.7 quality; cross-link JKP v1.13 |
 | 2026-07-14 | Device evidence against JKP (recorded in ANDROID_PORT_PLAN §0) |

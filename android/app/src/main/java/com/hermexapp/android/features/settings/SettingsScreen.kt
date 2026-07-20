@@ -153,9 +153,16 @@ fun SettingsScreen(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = { onForgetServer(entry.url) }) { Text("Forget") }
+                        TextButton(onClick = { onForgetServer(entry.url) }) {
+                            Text("Forget this JKP device")
+                        }
                     }
                 }
+                Text(
+                    "Forget clears the pairing grant and cookies on this phone only — it does not revoke the device on the host. On the laptop run: python -m jkp pair revoke.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 TextButton(onClick = onAddServer) { Text("Add server") }
                 HorizontalDivider()
 

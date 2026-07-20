@@ -25,6 +25,13 @@ struct KeychainStore: KeychainStoring {
         // URL is treated as a credential (PROJECT_SPEC Phase 1), so the registry
         // lives in the Keychain, not UserDefaults (#15).
         case servers = "servers"
+        // v1.6.0+: Bearer grant returned by POST /v1/pair/complete. Scoped per
+        // server. Mirrors the Android `SecretStore.Key.PAIR_GRANT`. Stored but
+        // not yet consumed by APIClient — Bearer-auth integration is planned for
+        // v1.7.0+.
+        case pairGrant = "pair_grant"
+        // v1.6.0+: device id returned alongside the grant. Same scoping rules.
+        case pairDeviceID = "pair_device_id"
     }
 
     private let keychain: Keychain

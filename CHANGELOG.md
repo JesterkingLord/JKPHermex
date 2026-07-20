@@ -7,19 +7,86 @@ Security sections per release.
 
 ## [Unreleased]
 
-### Verified
-- Android `0.5.0` G-lite math rendering + auto-update check — 255/255
-  unit tests green, 11 MB debug APK and 1.7 MB signed R8-minified
-  release APK. `assembleBundle` (Play Store .aab) also verified at
-  3.8 MB signed.
+### Planned (operator-blocked)
+- Play Store upload: Developer account, real release keystore (1Password),
+  mipmap icons, feature graphic, screenshots, listing from
+  `docs/PLAY_STORE_LISTING.md`, privacy URL from `PRIVACY.md`
+- Physical QA matrix on device
+- Optional camera QR pairing
 
-### Planned
-- Android `0.6.0` (next) — full checklist in **`docs/PLAN_AND_ROADMAP.md`**:
-  - Play Store operator upload (Developer account, real release keystore in
-    1Password, mipmap icons, feature graphic, screenshots, listing from
-    `docs/PLAY_STORE_LISTING.md`, privacy URL from `PRIVACY.md`)
-  - **JKP pairing Bearer** on API traffic + password/cookie fallback
-  - Optional QR pairing; device name + local forget; physical QA matrix
+## [0.6.0-rc6] - 2026-07-18
+
+### Added
+- **Stream recovery offer UI** (excellence 13.10) — after transport/stream
+  drops, `streamRecoveryOffer` + tip “Partial reply kept. Edit or resend…”
+  on chat screen; pure helpers from 13.9 drive the decision.
+
+### Changed
+- `versionName` **0.6.0-rc6** (`versionCode` 12).
+
+## [0.6.0-rc5] - 2026-07-18
+
+### Added
+- **Stream-drop recovery pure helpers** (`HangHonesty.streamDropRecovery`,
+  `shouldKeepPartialTranscript`) — excellence 13.9 / 7.4 partial.
+
+### Fixed
+- **SSE in-band error honesty** — stream `error` events route through
+  `HangHonesty.streamErrorMessage` / `ClientErrorCatalog` (not raw JSON);
+  auth failures clear local grant via `onAuthError`.
+- **Catalog classify** — free-text payloads that embed catalog codes
+  (e.g. `invalid_api_key expired`) no longer fall through to `unknown`;
+  auth heuristic only forces re-pair on invalid+key/grant/token signals
+  (bare/status-403 policy bodies stay `policy_blocked`, not re-pair).
+
+### Changed
+- `versionName` **0.6.0-rc5** (`versionCode` 11).
+
+## [0.6.0-rc4] - 2026-07-18
+
+### Added
+- **Session model preference parity (7.3)** — pure
+  `resolveSessionModelSelection` seeds the chat composer from the host
+  session’s model/provider when the user has not picked a model yet
+  (user pick still wins over session; catalog default is display-only).
+- **Catalog lock** — `ClientErrorCatalog.REQUIRED_HOST_CODES` +
+  `invalid_api_key` entry aligned with host `jkp.client_errors`
+  (excellence 13.8a).
+
+### Changed
+- `versionName` **0.6.0-rc4** (`versionCode` 10).
+
+## [0.6.0-rc3] - 2026-07-18
+
+### Added
+- **Stream transport honesty** (`HangHonesty.transportFailureMessage`): SSE
+  drops map to network catalog copy + resend/session tip instead of raw OkHttp
+  exceptions (7.4 slice early).
+
+### Changed
+- `versionName` **0.6.0-rc3** (`versionCode` 9).
+
+## [0.6.0-rc2] - 2026-07-18
+
+### Added
+- **Hang honesty** for long silent streams (`HangHonesty` + ChatViewModel
+  stall watch ≥15s). Surfaces the same “approve on host / YOLO” tip as the
+  Hermex PWA so a host approval wait does not look like a crashed agent.
+- **`ClientErrorCatalog`** aligned with host `jkp.client_errors` codes
+  (auth, quota, rate_limit, policy, server, network, approval_wait).
+- Settings **“Forget this JKP device”** label + copy that local forget ≠
+  host revoke (`python -m jkp pair revoke` on the laptop).
+
+### Changed
+- `ApiError.userMessage` routes Network / Unauthorized / many HTTP statuses
+  through the shared catalog.
+- `versionName` **0.6.0-rc2** (`versionCode` 8).
+
+## [0.6.0-rc1] - 2026-07-16
+
+### Added
+- **Bearer pairing** on API/SSE via `BearerAuthInterceptor`; 401
+  `invalid_device_grant` clears the local grant.
 
 ## [0.5.0] - 2026-07-15
 

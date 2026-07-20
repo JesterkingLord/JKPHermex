@@ -65,4 +65,43 @@ class ComposerConfigTest {
         )
         assertEquals("plain", PendingAttachment.messageText("plain", emptyList()))
     }
+
+    @Test
+    fun `session model seeds selection before catalog default (7_3 parity)`() {
+        val fromSession = resolveSessionModelSelection(
+            sessionModel = "minimax-m2.5",
+            sessionProvider = "minimax",
+            selectedModelId = null,
+            selectedProviderId = null,
+            defaultModel = "other-default",
+        )
+        assertEquals("minimax-m2.5", fromSession.modelId)
+        assertEquals("minimax", fromSession.providerId)
+    }
+
+    @Test
+    fun `user model pick wins over session model (7_3 parity)`() {
+        val userPick = resolveSessionModelSelection(
+            sessionModel = "session-model",
+            sessionProvider = "session-provider",
+            selectedModelId = "user-picked",
+            selectedProviderId = "user-provider",
+            defaultModel = "default",
+        )
+        assertEquals("user-picked", userPick.modelId)
+        assertEquals("user-provider", userPick.providerId)
+    }
+
+    @Test
+    fun `catalog default used only when session and selection empty (7_3 parity)`() {
+        val fallback = resolveSessionModelSelection(
+            sessionModel = null,
+            sessionProvider = null,
+            selectedModelId = "  ",
+            selectedProviderId = null,
+            defaultModel = "catalog-default",
+        )
+        assertEquals("catalog-default", fallback.modelId)
+        assertEquals(null, fallback.providerId)
+    }
 }

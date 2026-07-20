@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum OnboardingConnectField: Hashable {
     case serverURL
@@ -12,6 +13,8 @@ struct OnboardingConnectPage: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isShowingAdvanced = false
+    @State private var isShowingPairSheet = false
+    @State private var pairText = ""
 
     private var canSubmit: Bool {
         !viewModel.serverURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -83,6 +86,23 @@ struct OnboardingConnectPage: View {
                 }
                 .tint(.white.opacity(0.6))
 
+                // v1.6.0+: QR/paste pairing entry point. The desktop's
+                // `python -m jkp pair` mints a short-lived pair_id+token; the
+                // user pastes the URL the host prints here, and the phone
+                // registers itself on the server. Mirror of the Android
+                // OnboardingScreen's "Scan QR or paste pairing URL" button.
+                Button {
+                    isShowingPairSheet = true
+                } label: {
+                    Label("Scan QR or paste pairing URL", systemImage: "qrcode.viewfinder")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.85))
+                .disabled(viewModel.isWorking)
+
                 if viewModel.isWorking {
                     OnboardingStatusBanner(
                         text: String(localized: "Checking server..."),
@@ -113,5 +133,63 @@ struct OnboardingConnectPage: View {
             .padding(.bottom, 24)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .sheet(isPresented: $isShowingPairSheet) {
+            PairFromURLSheet(
+                pairText: $pairText,
+                onSubmit: { raw in
+                    isShowingPairSheet = false
+                    Task { await viewModel.pairFromText(authManager: authManager, rawText: raw) }
+                },
+                onCancel: { isShowingPairSheet = false },
+            )
+        }
+    }
+}
+
+/// v1.6.0+: sheet that mirrors the Android `PairUrlDialog`. Hosts paste a
+/// URL the desktop's `python -m jkp pair` printed; we hand it straight to
+/// [OnboardingViewModel.pairFromText] which routes through the new
+/// `AuthManager.pairAndConfigure` extension.
+private struct PairFromURLSheet: View {
+    @Binding var pairText: String
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("On the host machine run `python -m jkp pair`, then copy the URL it prints and paste it here.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Pairing URL") {
+                    TextField(
+                        "http://100.x.y.z:8642/v1/pair/connect?pair_id=…&token=…",
+                        text: $pairText
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    Button("Paste from clipboard") {
+                        if let clip = UIPasteboard.general.string {
+                            pairText = clip
+                        }
+                    }
+                    .disabled(UIPasteboard.general.string?.isEmpty ?? true)
+                }
+            }
+            .navigationTitle("Pair from URL")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Pair") { onSubmit(pairText) }
+                        .disabled(pairText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
     }
 }

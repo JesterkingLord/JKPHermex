@@ -95,6 +95,29 @@ final class OnboardingViewModel {
         errorMessage = authManager.lastErrorMessage
     }
 
+    /// v1.6.0+: bridges a QR/pasted pairing URL from the OnboardingConnectPage's
+    /// "Pair from URL" sheet into the existing auth state machine. On
+    /// `.paired` the server URL is filled and a success message is shown; on
+    /// `.prefilled` the URL is just filled; on `.failed` the reason is
+    /// surfaced and the user keeps whatever URL they typed.
+    func pairFromText(authManager: AuthManager, rawText: String) async {
+        errorMessage = nil
+        connectionMessage = nil
+        isWorking = true
+        defer { isWorking = false }
+
+        let outcome = await authManager.pairAndConfigure(rawText: rawText)
+        switch outcome {
+        case .paired(let url, let deviceID):
+            serverURLString = url.absoluteString
+            connectionMessage = "Device paired as \(deviceID)."
+        case .prefilled(let url):
+            serverURLString = url.absoluteString
+        case .failed(let reason):
+            errorMessage = reason
+        }
+    }
+
     nonisolated static func passwordValidationMessage(authStatus: AuthStatusResponse?, password: String) -> String? {
         guard authStatus?.authEnabled == true else { return nil }
         // Passkey-only servers don't take a password — let configure() report the

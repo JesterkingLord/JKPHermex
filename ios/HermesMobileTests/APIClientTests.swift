@@ -126,14 +126,27 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
     private(set) var loginPasswords: [String] = []
     private(set) var logoutCallCount = 0
 
+    // v1.6.0+: pairing completion is configurable per-test via the initializer
+    // so `AuthManagerPairingTests` can exercise happy-path, 410 expired,
+    // connection-failure, and empty-grant cases without subclassing.
+    struct PairBehavior {
+        var response: PairCompleteResponse =
+            PairCompleteResponse(pairID: "p", deviceID: "dev", grant: "g", tokenType: "Bearer")
+        var error: Error? = nil
+    }
+    private(set) var pairBehavior = PairBehavior()
+    private(set) var pairCalls: [(pairID: String, token: String, deviceName: String)] = []
+
     init(
         authStatus: AuthStatusResponse,
         loginResponse: LoginResponse = LoginResponse(ok: true, message: nil, error: nil),
-        logoutBehavior: LogoutBehavior = .succeed
+        logoutBehavior: LogoutBehavior = .succeed,
+        pairBehavior: PairBehavior = PairBehavior()
     ) {
         self.authStatusResponse = authStatus
         self.loginResponse = loginResponse
         self.logoutBehavior = logoutBehavior
+        self.pairBehavior = pairBehavior
     }
 
     func health() async throws -> HealthResponse {
@@ -162,6 +175,14 @@ final class MockAuthAPIClient: AuthAPIClient, @unchecked Sendable {
             try await Task.sleep(for: .seconds(3600))
             return LoginResponse(ok: true, message: nil, error: nil)
         }
+    }
+
+    func completePairing(pairID: String, token: String, deviceName: String) async throws -> PairCompleteResponse {
+        pairCalls.append((pairID, token, deviceName))
+        if let error = pairBehavior.error {
+            throw error
+        }
+        return pairBehavior.response
     }
 }
 

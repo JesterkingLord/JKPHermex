@@ -93,6 +93,12 @@ enum Endpoint {
     case skillContent(name: String, file: String?)
     case upload
     case transcribe
+    // v1.6.0+: short-lived JKP mobile pairing (mirrors Android v0.3.0+).
+    // See AuthManager+Pairing.swift for the request bodies.
+    case pairComplete
+    case pairStatus(pairID: String)
+    case pairDevices
+    case pairRevoke(deviceID: String)
 
     var path: String {
         switch self {
@@ -280,6 +286,14 @@ enum Endpoint {
             return "/api/upload"
         case .transcribe:
             return "/api/transcribe"
+        case .pairComplete:
+            return "/v1/pair/complete"
+        case .pairStatus:
+            return "/v1/pair/status"
+        case .pairDevices:
+            return "/v1/pair/devices"
+        case .pairRevoke:
+            return "/v1/pair/devices"
         }
     }
 
@@ -355,6 +369,10 @@ enum Endpoint {
                 URLQueryItem(name: "path", value: path),
                 URLQueryItem(name: "kind", value: kind)
             ]
+        case let .pairStatus(pairID):
+            return [URLQueryItem(name: "pair_id", value: pairID)]
+        case let .pairRevoke(deviceID):
+            return []
         case let .cronStatus(jobID):
             guard let jobID else { return [] }
             return [URLQueryItem(name: "job_id", value: jobID)]

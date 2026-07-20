@@ -244,10 +244,10 @@ class AuthManager(
     fun handleApiError(error: Throwable) {
         if (error !is ApiError.Unauthorized) return
 
-        // JKP freeze: 401 invalid_device_grant / expired cookie → clear local
-        // grant and re-pair (phone cannot call host revoke).
+        // JKP freeze: 401 invalid_device_grant / invalid_api_key / expired cookie
+        // → clear local grant and re-pair (phone cannot call host revoke).
         _lastErrorMessage.value =
-            "This phone link is no longer authorized. Link it again from your JKP host."
+            com.hermexapp.android.network.ClientErrorCatalog.INVALID_DEVICE_GRANT.message
         when (val current = _state.value) {
             is State.LoggedIn -> {
                 clearHostAuth(current.server.host)

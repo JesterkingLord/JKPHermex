@@ -28,10 +28,17 @@ import com.hermexapp.android.network.saveReasoningEffort
 import com.hermexapp.android.network.startChat
 import com.hermexapp.android.network.steerChat
 import com.hermexapp.android.network.uploadFile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 
@@ -119,6 +126,17 @@ class ChatViewModel(
          * non-blocking banner.
          */
         val reasoningErrorMessage: String? = null,
+        /**
+         * Hang honesty (0.7.1): tip when the stream is silent for a long time
+         * without a local approval overlay — host may be waiting on YOLO.
+         */
+        val hangTip: String? = null,
+        /**
+         * Excellence 13.10 / 7.4: after a stream drop, invite resend from the
+         * composer without inventing reconnect APIs.
+         */
+        val streamRecoveryOffer: Boolean = false,
+        val streamRecoveryTip: String? = null,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
@@ -134,8 +152,59 @@ class ChatViewModel(
 
     private var activeStreamId: String? = null
     private var entryCounter = 0
+    /** Wall-clock ms of last SSE activity while streaming (for hang honesty). */
+    private var lastActivityAtMs: Long = 0L
+    private var stallWatchJob: Job? = null
+    /**
+     * Hang-honesty timer uses Default (not Main) so JVM unit tests without a
+     * Main dispatcher still exercise [sendNow] / stream paths.
+     */
+    private val hangScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private fun nextId(prefix: String): String = "$prefix-${entryCounter++}"
+
+    private fun markStreamActivity() {
+        lastActivityAtMs = System.currentTimeMillis()
+        // Clear tip on new activity so it re-arms after another silent stretch.
+        if (_uiState.value.hangTip != null) {
+            _uiState.update { it.copy(hangTip = null) }
+        }
+    }
+
+    private fun startStallWatch() {
+        stallWatchJob?.cancel()
+        lastActivityAtMs = System.currentTimeMillis()
+        stallWatchJob = hangScope.launch {
+            while (isActive) {
+                delay(1_000L)
+                val state = _uiState.value
+                if (!state.isStreaming) break
+                val silent = ((System.currentTimeMillis() - lastActivityAtMs) / 1000L).toInt()
+                val tip = HangHonesty.tipIfStalled(
+                    isStreaming = true,
+                    silentSeconds = silent,
+                    hasPendingApproval = state.pendingApproval != null,
+                )
+                val banner = if (tip != null) HangHonesty.banner(silent) else null
+                if (state.hangTip != banner) {
+                    _uiState.update { it.copy(hangTip = banner) }
+                }
+            }
+        }
+    }
+
+    private fun stopStallWatch() {
+        stallWatchJob?.cancel()
+        stallWatchJob = null
+        if (_uiState.value.hangTip != null) {
+            _uiState.update { it.copy(hangTip = null) }
+        }
+    }
+
+    override fun onCleared() {
+        hangScope.cancel()
+        super.onCleared()
+    }
 
     fun updateComposerText(value: String) = _uiState.update { it.copy(composerText = value) }
 
@@ -262,12 +331,17 @@ class ChatViewModel(
     suspend fun loadComposerConfigNow() {
         val config = loadComposerConfig(client)
         _uiState.update { state ->
+            // Do not promote catalog default into selectedModelId — that would
+            // race loadNow and mask session.model (7.3). Display falls back via
+            // ComposerConfig.selectedModelDisplayName → defaultModel.
             state.copy(
                 composerConfig = config.copy(
                     selectedModelId = state.composerConfig.selectedModelId,
                     selectedProviderId = state.composerConfig.selectedProviderId,
-                    selectedProfile = state.composerConfig.selectedProfile,
-                    selectedWorkspace = state.composerConfig.selectedWorkspace,
+                    selectedProfile = state.composerConfig.selectedProfile
+                        ?: config.activeProfile,
+                    selectedWorkspace = state.composerConfig.selectedWorkspace
+                        ?: config.lastWorkspace,
                 ),
             )
         }
@@ -346,12 +420,24 @@ class ChatViewModel(
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         try {
             val (detail, fromCache) = repository.loadSession(sessionId)
-            _uiState.update {
-                it.copy(
+            _uiState.update { state ->
+                // 7.3: seed composer from host session model when user has not picked.
+                val resolved = resolveSessionModelSelection(
+                    sessionModel = detail?.model,
+                    sessionProvider = detail?.modelProvider,
+                    selectedModelId = state.composerConfig.selectedModelId,
+                    selectedProviderId = state.composerConfig.selectedProviderId,
+                    defaultModel = state.composerConfig.defaultModel,
+                )
+                state.copy(
                     title = detail?.title,
                     entries = entriesFromDetail(detail),
                     isFromCache = fromCache,
                     isLoading = false,
+                    composerConfig = state.composerConfig.copy(
+                        selectedModelId = resolved.modelId,
+                        selectedProviderId = resolved.providerId,
+                    ),
                 )
             }
         } catch (e: ApiError) {
@@ -379,6 +465,8 @@ class ChatViewModel(
                 composerText = "",
                 attachments = emptyList(),
                 errorMessage = null,
+                streamRecoveryOffer = false,
+                streamRecoveryTip = null,
                 entries = it.entries + TimelineEntry.UserMessage(nextId("user"), message),
             )
         }
@@ -402,7 +490,8 @@ class ChatViewModel(
                 return
             }
             activeStreamId = streamId
-            _uiState.update { it.copy(isStreaming = true) }
+            _uiState.update { it.copy(isStreaming = true, hangTip = null) }
+            startStallWatch()
             sse.start(client.chatStreamUrl(streamId), ::onSseEvent)
         } catch (e: ApiError) {
             onAuthError(e)
@@ -442,11 +531,19 @@ class ChatViewModel(
     }
 
     /** Stops the SSE stream when the screen goes away. */
-    fun teardown() = sse.stop()
+    fun teardown() {
+        stopStallWatch()
+        sse.stop()
+    }
 
     // ── SSE event application (called on OkHttp's reader thread) ──
 
     internal fun onSseEvent(event: SseEvent) {
+        // Any real stream event counts as activity for hang-honesty timing.
+        when (event) {
+            SseEvent.Ignored -> Unit
+            else -> if (_uiState.value.isStreaming) markStreamActivity()
+        }
         when (event) {
             is SseEvent.Token -> appendToDraft(event.text)
             is SseEvent.Reasoning -> appendToReasoning(event.text)
@@ -466,9 +563,24 @@ class ChatViewModel(
             SseEvent.Cancelled -> _uiState.update {
                 it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), "Run stopped."))
             }
-            is SseEvent.Error -> failStream(event.message)
+            is SseEvent.Error -> {
+                // Catalog honesty: never surface raw server error JSON to operators.
+                val honest = HangHonesty.streamErrorMessage(event.message)
+                failStream(honest)
+                if (HangHonesty.isAuthFailureMessage(event.message)) {
+                    onAuthError(ApiError.Unauthorized)
+                }
+            }
             is SseEvent.TransportError ->
-                if (_uiState.value.isStreaming) failStream(event.message) else Unit
+                if (_uiState.value.isStreaming) {
+                    // 0.6.0-rc3 / 7.4 / 13.9: honest stream-drop copy, not raw OkHttp.
+                    failStream(
+                        HangHonesty.transportFailureMessage(event.message),
+                        isTransportDrop = true,
+                    )
+                } else {
+                    Unit
+                }
             SseEvent.Ignored -> Unit
         }
     }
@@ -588,7 +700,8 @@ class ChatViewModel(
         val pending = response?.pending
             ?: try { ApiJson.decodeFromJsonElement(PendingApproval.serializer(), payload) } catch (_: Exception) { null }
         if (pending != null && !pending.isEmpty) {
-            _uiState.update { it.copy(pendingApproval = pending) }
+            // Local overlay is the primary UX; clear hang tip so we don't stack copy.
+            _uiState.update { it.copy(pendingApproval = pending, hangTip = null) }
         }
     }
 
@@ -661,18 +774,43 @@ class ChatViewModel(
         }
     }
 
-    private fun failStream(message: String) {
+    private fun failStream(message: String, isTransportDrop: Boolean = false) {
+        // Capture partial before finishStreaming marks drafts complete (7.4 / 13.9–13.10).
+        val hadPartial = _uiState.value.entries.any { entry ->
+            entry is TimelineEntry.AssistantMessage && entry.text.isNotBlank()
+        }
         sse.stop()
         finishStreaming()
-        _uiState.update { it.copy(errorMessage = message) }
+        val recovery = HangHonesty.streamDropRecovery(
+            hadPartialAssistantText = hadPartial,
+            isTransportDrop = isTransportDrop,
+        )
+        // keepPartial is always true by contract; finalizeDrafts already retained text.
+        val err = when {
+            message.isNotBlank() -> message
+            else -> recovery.tip
+        }
+        _uiState.update {
+            it.copy(
+                errorMessage = err,
+                streamRecoveryOffer = recovery.offerResend,
+                streamRecoveryTip = if (recovery.offerResend) {
+                    "Partial reply kept. Edit or resend from the composer if needed."
+                } else {
+                    null
+                },
+            )
+        }
     }
 
     private fun finishStreaming() {
         val wasStreaming = activeStreamId != null
         activeStreamId = null
+        stopStallWatch()
         _uiState.update { state ->
             state.copy(
                 isStreaming = false,
+                hangTip = null,
                 entries = finalizeDrafts(state.entries),
                 finishedRunCount = state.finishedRunCount + if (wasStreaming) 1 else 0,
             )

@@ -4,6 +4,7 @@ import com.hermexapp.android.auth.InMemorySecretStore
 import com.hermexapp.android.features.chat.ChatViewModel.TimelineEntry
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.network.ApiClient
+import com.hermexapp.android.network.ClientErrorCatalog
 import com.hermexapp.android.network.SessionCookieJar
 import com.hermexapp.android.network.SseEvent
 import com.hermexapp.android.network.SseStreaming
@@ -199,8 +200,26 @@ class ChatViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.isStreaming)
-        assertEquals("the model provider exploded", state.errorMessage)
+        // 0.6.0-rc6: SSE errors are catalog-honest (HangHonesty.streamErrorMessage),
+        // never raw server text. Unclassified payload → UNKNOWN copy.
+        assertEquals(ClientErrorCatalog.UNKNOWN.message, state.errorMessage)
         assertTrue(sse.stopped)
+    }
+
+    @Test
+    fun `transport errors while streaming use hang honesty copy`() = runBlocking {
+        server.enqueue(json("""{"stream_id": "st1"}"""))
+        viewModel.updateComposerText("go")
+        viewModel.sendNow()
+
+        sse.emit(SseEvent.TransportError("Software caused connection abort"))
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isStreaming)
+        assertTrue(sse.stopped)
+        val msg = state.errorMessage.orEmpty()
+        assertTrue(msg.contains("unreachable") || msg.lowercase().contains("connection"))
+        assertTrue(msg.contains("resend") || msg.contains("session"))
     }
 
     @Test
