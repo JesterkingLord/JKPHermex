@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -73,7 +75,7 @@ class UpdateChecker(
      * that's the source of truth — `BuildConfig.VERSION_NAME` could be
      * wrong if you're running a different build flavor.
      */
-    fun check(context: Context): UpdateResult {
+    suspend fun check(context: Context): UpdateResult {
         val currentVersion = installedVersionName(context) ?: return UpdateResult.Failed(
             "Couldn't determine the installed app version.",
         )
@@ -85,7 +87,7 @@ class UpdateChecker(
      * for tests and for the manual "Check for updates" button that
      * sometimes gets invoked with an explicit baseline.
      */
-    fun checkAgainst(currentVersion: String): UpdateResult {
+    suspend fun checkAgainst(currentVersion: String): UpdateResult {
         val latest = fetchLatest()
         if (latest !is SourceResult.Ok) {
             val reason = (latest as? SourceResult.Err)?.reason
@@ -123,14 +125,11 @@ class UpdateChecker(
      * underlying reason so the dialog is self-diagnosing instead of the old
      * generic "Couldn't reach GitHub".
      */
-    private fun fetchLatest(): SourceResult {
+    private suspend fun fetchLatest(): SourceResult {
         // Route 0: ask the connected JKP backend (works through VPNs).
         if (backendBaseUrl != null) {
             val backend = fetchFromBackend(backendBaseUrl)
             if (backend is SourceResult.Ok) return backend
-            // Backend unreachable or returned no tag — fall through to direct
-            // GitHub routes. The backend's error reason is discarded; if all
-            // direct routes also fail, we surface the API/git reason instead.
         }
 
         val api = fetchFromApi()
@@ -139,7 +138,6 @@ class UpdateChecker(
             is SourceResult.Err -> {
                 val web = fetchFromWeb()
                 if (web is SourceResult.Ok) return web
-                // Both failed — surface the API reason (the primary route).
                 return api
             }
         }
@@ -153,25 +151,25 @@ class UpdateChecker(
      * release page), or [SourceResult.Err] if the backend is unreachable
      * or returns no tag.
      */
-    private fun fetchFromBackend(baseUrl: String): SourceResult {
+    private suspend fun fetchFromBackend(baseUrl: String): SourceResult = withContext(Dispatchers.IO) {
         val url = baseUrl.trimEnd('/') + "/api/hermex/latest-version"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
             .header("User-Agent", "JKPHermex-Android/$owner")
             .build()
-        return try {
+        return@withContext try {
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return SourceResult.Err("Backend returned HTTP ${response.code}.")
+                    return@use SourceResult.Err("Backend returned HTTP ${response.code}.")
                 }
-                val body = response.body?.string() ?: return SourceResult.Err(
+                val body = response.body?.string() ?: return@use SourceResult.Err(
                     "Backend returned an empty response.",
                 )
                 val info = runCatching { BackendLatestVersionJson.parse(body) }.getOrNull()
-                    ?: return SourceResult.Err("Couldn't read backend's version info.")
+                    ?: return@use SourceResult.Err("Couldn't read backend's version info.")
                 val tag = info.tag
-                    ?: return SourceResult.Err("Backend has no version info yet.")
+                    ?: return@use SourceResult.Err("Backend has no version info yet.")
                 SourceResult.Ok(
                     GitHubRelease(
                         tagName = tag,
@@ -191,22 +189,22 @@ class UpdateChecker(
     }
 
     /** Route 1: Releases API (rich payload, rate-limited). */
-    private fun fetchFromApi(): SourceResult {
+    private suspend fun fetchFromApi(): SourceResult = withContext(Dispatchers.IO) {
         val url = "$apiBase/repos/$owner/$repo/releases?per_page=1"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "JKPHermex-Android/$owner")
             .build()
-        return try {
+        return@withContext try {
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return SourceResult.Err(apiFailureReason(response.code))
+                    return@use SourceResult.Err(apiFailureReason(response.code))
                 }
                 val body = response.body?.string()
-                    ?: return SourceResult.Err("GitHub returned an empty response.")
+                    ?: return@use SourceResult.Err("GitHub returned an empty response.")
                 val release = runCatching { GitHubReleaseJson.parseFirst(body) }.getOrNull()
-                    ?: return SourceResult.Err("Couldn't read GitHub's update info.")
+                    ?: return@use SourceResult.Err("Couldn't read GitHub's update info.")
                 SourceResult.Ok(release)
             }
         } catch (_: IOException) {
@@ -230,22 +228,22 @@ class UpdateChecker(
      * Yields only the newest version (no per-release asset URL), so an
      * available update links to the release page for the download button.
      */
-    private fun fetchFromWeb(): SourceResult {
+    private suspend fun fetchFromWeb(): SourceResult = withContext(Dispatchers.IO) {
         val url = "$webBase/$owner/$repo/info/refs?service=git-upload-pack"
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "git/2.0 (JKPHermex update check)")
             .build()
-        return try {
+        return@withContext try {
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return SourceResult.Err("GitHub's git endpoint returned HTTP ${response.code}.")
+                    return@use SourceResult.Err("GitHub's git endpoint returned HTTP ${response.code}.")
                 }
-                val body = response.body?.string() ?: return SourceResult.Err(
+                val body = response.body?.string() ?: return@use SourceResult.Err(
                     "GitHub returned an empty response.",
                 )
                 val tag = newestTagFromGitRefs(body)
-                    ?: return SourceResult.Err("Couldn't find any release on GitHub.")
+                    ?: return@use SourceResult.Err("Couldn't find any release on GitHub.")
                 SourceResult.Ok(
                     GitHubRelease(
                         tagName = tag,

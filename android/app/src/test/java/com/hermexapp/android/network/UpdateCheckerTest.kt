@@ -1,5 +1,6 @@
 package com.hermexapp.android.network
 
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -11,14 +12,15 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Tests the two-route update check: Releases API first, git-refs fallback
- * when the API rate-limits (the real-world phone failure mode on shared
- * carrier IPs — the phone's VPN/carrier IP gets HTTP 403 from GitHub's
- * 60 req/hour unauthenticated API quota).
+ * Tests the update check: backend (Route 0) first, Releases API (Route 1)
+ * next, git-refs fallback (Route 2) last. The phone's VPN/carrier IP often
+ * can't reach GitHub (HTTP 403 rate limit or outright block), so Route 0
+ * asks the connected JKP backend, which fetches GitHub on the host side.
  *
- * The git smart-HTTP fallback (`/info/refs?service=git-upload-pack`) is NOT
- * rate-limited and survives VPN interception, making it the reliable
- * secondary route.
+ * `checkAgainst` is a `suspend` fun (the real fix for the on-device
+ * NetworkOnMainThreadException — the network call must run on Dispatchers.IO,
+ * never the main thread). Tests drive it with `runBlocking`; on the JVM there
+ * is no main-thread network restriction, so this exercises the same code path.
  */
 class UpdateCheckerTest {
 
@@ -56,7 +58,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 200 with newer tag reports UpdateAvailable`() {
+    fun `API 200 with newer tag reports UpdateAvailable`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
                 """[{"tag_name":"v9.9.9","name":"v9.9.9","body":"","html_url":"https://x","assets":[]}]""",
@@ -68,7 +70,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 200 with same tag reports UpToDate`() {
+    fun `API 200 with same tag reports UpToDate`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
                 """[{"tag_name":"v0.6.0-rc6","name":"x","body":"","html_url":"","assets":[]}]""",
@@ -79,7 +81,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 403 rate-limit falls back to git refs`() {
+    fun `API 403 rate-limit falls back to git refs`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"rate limit"}"""))
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(gitRefsBody("v0.5.0", "v9.9.9")),
@@ -90,7 +92,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 403 then git refs same version reports UpToDate`() {
+    fun `API 403 then git refs same version reports UpToDate`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403))
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(gitRefsBody("v0.6.0-rc6")),
@@ -100,7 +102,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `both routes fail reports the API reason`() {
+    fun `both routes fail reports the API reason`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403))
         server.enqueue(MockResponse().setResponseCode(500))
         val result = checker.checkAgainst("0.6.0-rc6")
@@ -110,7 +112,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 404 reports no-releases reason when git refs also empty`() {
+    fun `API 404 reports no-releases reason when git refs also empty`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(200).setBody("001e# service=git-upload-pack\n0000\n"))
         val result = checker.checkAgainst("0.6.0-rc6")
@@ -165,7 +167,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `backend route returns UpdateAvailable when tag is newer`() {
+    fun `backend route returns UpdateAvailable when tag is newer`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
                 """{"tag":"v9.9.9","url":"https://x","source":"host","cached":false}""",
@@ -177,7 +179,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `backend route returns UpToDate when tag matches`() {
+    fun `backend route returns UpToDate when tag matches`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
                 """{"tag":"v0.6.0-rc6","url":"https://x","source":"host","cached":true}""",
@@ -188,7 +190,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `backend unreachable falls back to API`() {
+    fun `backend unreachable falls back to API`() = runBlocking {
         // Route 0: backend fails.
         server.enqueue(MockResponse().setResponseCode(500))
         // Route 1: API succeeds.
@@ -202,7 +204,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `backend returns null tag falls back to API`() {
+    fun `backend returns null tag falls back to API`() = runBlocking {
         // Route 0: backend returns no tag.
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
@@ -220,7 +222,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `all routes fail reports the API reason`() {
+    fun `all routes fail reports the API reason`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(500)) // backend
         server.enqueue(MockResponse().setResponseCode(403)) // API
         server.enqueue(MockResponse().setResponseCode(500)) // git-refs

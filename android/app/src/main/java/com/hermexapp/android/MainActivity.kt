@@ -221,6 +221,7 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
         com.hermexapp.android.network.UpdateChecker(
             owner = "JesterkingLord",
             repo = "JKPHermex",
+            backendBaseUrl = server.toString(),
         )
     }
     var autoUpdateResult by remember { mutableStateOf<com.hermexapp.android.network.UpdateResult?>(null) }
