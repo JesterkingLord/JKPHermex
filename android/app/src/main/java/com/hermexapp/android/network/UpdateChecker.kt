@@ -83,7 +83,10 @@ class UpdateChecker(
     }
 
     private fun fetchLatest(): GitHubRelease? {
-        val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
+        // Use /releases (not /releases/latest) so pre-release builds (rc, beta)
+        // are surfaced — /releases/latest only returns the newest *stable*
+        // release, which means RC channels would never appear in-app.
+        val url = "https://api.github.com/repos/$owner/$repo/releases?per_page=1"
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
@@ -93,7 +96,7 @@ class UpdateChecker(
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val body = response.body?.string() ?: return null
-                runCatching { GitHubReleaseJson.parse(body) }.getOrNull()
+                runCatching { GitHubReleaseJson.parseFirst(body) }.getOrNull()
             }
         } catch (_: IOException) {
             null

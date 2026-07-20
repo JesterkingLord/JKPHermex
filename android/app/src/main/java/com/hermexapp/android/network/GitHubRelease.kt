@@ -61,6 +61,15 @@ object GitHubReleaseJson {
      * "couldn't parse release info" to the user.
      */
     fun parse(json: String): GitHubRelease = ApiJson.decodeFromString(GitHubRelease.serializer(), json)
+
+    /**
+     * Parses the body of `GET /repos/{owner}/{repo}/releases?per_page=N`.
+     * Returns the first (newest) release, or null if the array is empty.
+     */
+    fun parseFirst(json: String): GitHubRelease? =
+        runCatching {
+            ApiJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(GitHubRelease.serializer()), json).firstOrNull()
+        }.getOrNull()
 }
 
 /**

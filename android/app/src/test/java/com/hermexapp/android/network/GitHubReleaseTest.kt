@@ -110,6 +110,29 @@ class GitHubReleaseTest {
         val ex = runCatching { GitHubReleaseJson.parse("this is not json") }
         assertTrue("expected failure but got ${ex.getOrNull()}", ex.isFailure)
     }
+
+    // ── parseFirst (array endpoint: /releases?per_page=N) ──────────────────
+
+    @Test
+    fun `parseFirst returns first release from array`() {
+        val json = """[
+            {"tag_name":"v0.6.0-rc6","name":"rc6","body":"","html_url":"","assets":[]},
+            {"tag_name":"v0.5.0","name":"stable","body":"","html_url":"","assets":[]}
+        ]"""
+        val release = GitHubReleaseJson.parseFirst(json)
+        assertNotNull(release)
+        assertEquals("v0.6.0-rc6", release!!.tagName)
+    }
+
+    @Test
+    fun `parseFirst returns null on empty array`() {
+        assertNull(GitHubReleaseJson.parseFirst("[]"))
+    }
+
+    @Test
+    fun `parseFirst returns null on malformed JSON`() {
+        assertNull(GitHubReleaseJson.parseFirst("not json"))
+    }
 }
 
 class SemanticVersionTest {
