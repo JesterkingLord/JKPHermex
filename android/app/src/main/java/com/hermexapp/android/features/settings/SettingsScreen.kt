@@ -84,6 +84,8 @@ fun SettingsScreen(
     }
     var checking by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<com.hermexapp.android.network.UpdateResult?>(null) }
+    var downloadState by remember { mutableStateOf<com.hermexapp.android.update.UpdateDownloadState?>(null) }
+    val updater = remember { com.hermexapp.android.update.ApkUpdater() }
     val checker = remember {
         com.hermexapp.android.network.UpdateChecker(
             owner = "JesterkingLord",
@@ -330,7 +332,39 @@ fun SettingsScreen(
         loading = checking,
         result = updateResult,
         currentVersion = installedVersion,
-        onDismiss = { updateResult = null },
+        downloadState = downloadState,
+        onDismiss = { updateResult = null; downloadState = null },
+        onDownloadAndInstall = {
+            scope.launch {
+                updater.downloadLatestApk(context, serverUrl).collect { state ->
+                    downloadState = state
+                }
+                // After collection, if we landed on ReadyToInstall, trigger install.
+                val ready = downloadState as? com.hermexapp.android.update.UpdateDownloadState.ReadyToInstall
+                if (ready != null) {
+                    if (updater.canInstallUnknownApps(context)) {
+                        updater.installApk(context, ready.apkFile)
+                    } else {
+                        updater.openInstallPermissionSettings(context)
+                    }
+                }
+            }
+        },
+        onRetryDownload = {
+            scope.launch {
+                updater.downloadLatestApk(context, serverUrl).collect { state ->
+                    downloadState = state
+                }
+                val ready = downloadState as? com.hermexapp.android.update.UpdateDownloadState.ReadyToInstall
+                if (ready != null) {
+                    if (updater.canInstallUnknownApps(context)) {
+                        updater.installApk(context, ready.apkFile)
+                    } else {
+                        updater.openInstallPermissionSettings(context)
+                    }
+                }
+            }
+        },
         onOpenReleasePage = { url -> openUrlInBrowser(context, url) },
     )
 

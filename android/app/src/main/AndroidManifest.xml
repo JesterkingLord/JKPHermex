@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- In-app updater: lets us hand a downloaded APK to Android's package
+         installer. On first update the user grants "install from this app"
+         via the standard system prompt (we check canRequestPackageInstalls
+         and route to Settings if not). Never auto-installs — always shows
+         the standard install-confirmation dialog. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".HermexApp"
@@ -26,6 +32,22 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Hermex"
         tools:targetApi="34">
+
+        <!--
+            FileProvider for the in-app APK updater. We download update APKs
+            to our private cache and hand them to Android's package installer
+            via content:// URIs (required since API 24). Only the cache/apk/
+            directory is exposed — nothing else in our private storage.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!--
             ActiveRunService: background data sync so an in-flight chat
