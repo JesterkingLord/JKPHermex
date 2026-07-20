@@ -148,24 +148,34 @@ class UpdateChecker(
     }
 
     /**
-     * Route 2: tags web page (not API rate-limited). Yields only the version;
-     * the release object links to the release page for the download button.
+     * Route 2: git smart-HTTP refs (not API rate-limited, not JS-rendered).
+     *
+     * `GET {webBase}/{owner}/{repo}/info/refs?service=git-upload-pack` returns
+     * plain pkt-line text listing every ref — including `refs/tags/vX.Y.Z`.
+     * Unlike the HTML tags page (which GitHub now renders client-side, so a
+     * raw fetch contains zero tag links) and unlike the API (60/hr rate limit
+     * that shared phone/carrier IPs trip constantly), this endpoint is a
+     * static git protocol dump: always present, never rate-limited, and it
+     * survives VPN/proxy interception because it's not the JSON API.
+     *
+     * Yields only the newest version (no per-release asset URL), so an
+     * available update links to the release page for the download button.
      */
     private fun fetchFromWeb(): SourceResult {
-        val url = "$webBase/$owner/$repo/tags"
+        val url = "$webBase/$owner/$repo/info/refs?service=git-upload-pack"
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0 (JKPHermex update check)")
+            .header("User-Agent", "git/2.0 (JKPHermex update check)")
             .build()
         return try {
             httpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return SourceResult.Err("GitHub's update page returned HTTP ${response.code}.")
+                    return SourceResult.Err("GitHub's git endpoint returned HTTP ${response.code}.")
                 }
                 val body = response.body?.string() ?: return SourceResult.Err(
                     "GitHub returned an empty response.",
                 )
-                val tag = newestTagFromHtml(body)
+                val tag = newestTagFromGitRefs(body)
                     ?: return SourceResult.Err("Couldn't find any release on GitHub.")
                 SourceResult.Ok(
                     GitHubRelease(
@@ -179,7 +189,7 @@ class UpdateChecker(
         } catch (_: IOException) {
             SourceResult.Err("No internet connection to GitHub.")
         } catch (_: RuntimeException) {
-            SourceResult.Err("Couldn't read GitHub's update page.")
+            SourceResult.Err("Couldn't read GitHub's update info.")
         }
     }
 
@@ -205,17 +215,96 @@ class UpdateChecker(
         }
 
         /**
-         * Extract the newest `vX.Y.Z[-pre]` tag from GitHub's tags-page HTML by
-         * scanning `/releases/tag/<tag>` links in document order (newest first).
-         * Pure + side-effect-free so unit tests lock it without a live page.
+         * Extract the newest `vX.Y.Z[-pre]` tag from a git smart-HTTP
+         * `info/refs?service=git-upload-pack` pkt-line response.
+         *
+         * Each ref line carries `<sha> refs/tags/<name>`; annotated tags also
+         * emit a `<sha> refs/tags/<name>^{}` peeled line. We scan every
+         * `refs/tags/` occurrence (the `^{}` suffix is excluded by the char
+         * class), keep only valid semver tags, and return the highest.
+         *
+         * Uses [isTagNewer] rather than [SemanticVersion.isNewerThan] because
+         * the latter deliberately treats two pre-releases with equal numeric
+         * parts as unordered — but git refs for `v0.6.0-rc1`…`rc6` all share
+         * `0.6.0`, so we need real pre-release ordering to pick `rc6`.
+         *
+         * Pure + side-effect-free so unit tests lock it against a captured
+         * response without a live network call.
          */
-        internal fun newestTagFromHtml(html: String): String? {
-            val regex = Regex("/releases/tag/([^\"<>\\s]+)")
-            for (m in regex.findAll(html)) {
-                val tag = m.groupValues[1]
-                if (SemanticVersion.parse(tag) != null) return tag
+        internal fun newestTagFromGitRefs(body: String): String? {
+            val regex = Regex("refs/tags/([^\\s\\^\\u0000]+)")
+            var best: SemanticVersion? = null
+            var bestTag: String? = null
+            for (m in regex.findAll(body)) {
+                val ver = SemanticVersion.parse(m.groupValues[1]) ?: continue
+                val cur = best
+                if (cur == null || isTagNewer(ver, cur)) {
+                    best = ver
+                    bestTag = m.groupValues[1]
+                }
             }
-            return null
+            return bestTag
+        }
+
+        /**
+         * Total ordering over two parsed versions, including pre-release
+         * identifiers (release > any pre-release, then natural-sort the
+         * pre-release string so `rc6 > rc1` and `rc10 > rc9`).
+         */
+        private fun isTagNewer(candidate: SemanticVersion, current: SemanticVersion): Boolean {
+            if (candidate.major != current.major) return candidate.major > current.major
+            if (candidate.minor != current.minor) return candidate.minor > current.minor
+            if (candidate.patch != current.patch) return candidate.patch > current.patch
+            val cPre = candidate.preRelease
+            val bPre = current.preRelease
+            if (cPre.isNullOrEmpty()) return !bPre.isNullOrEmpty()
+            if (bPre.isNullOrEmpty()) return false
+            return comparePreRelease(cPre, bPre) > 0
+        }
+
+        /**
+         * Pragmatic semver-ish pre-release comparison: split on `.`/`-`,
+         * compare token-by-token with a natural (digit-aware) ordering.
+         * Not full SemVer 2.0.0, but correct for the `rcN` / `beta.N` shapes
+         * this repo actually ships.
+         */
+        private fun comparePreRelease(a: String, b: String): Int {
+            val pa = a.split('.', '-')
+            val pb = b.split('.', '-')
+            val n = minOf(pa.size, pb.size)
+            for (i in 0 until n) {
+                val xa = pa[i]; val xb = pb[i]
+                val na = xa.toIntOrNull(); val nb = xb.toIntOrNull()
+                val cmp = when {
+                    na != null && nb != null -> na.compareTo(nb)
+                    na != null -> -1 // numeric identifier < alphanumeric
+                    nb != null -> 1
+                    else -> naturalCompare(xa, xb)
+                }
+                if (cmp != 0) return cmp
+            }
+            return pa.size.compareTo(pb.size)
+        }
+
+        /** Natural (digit-run-aware) string compare: `rc10 > rc9`. */
+        private fun naturalCompare(a: String, b: String): Int {
+            var i = 0; var j = 0
+            while (i < a.length && j < b.length) {
+                val ca = a[i]; val cb = b[j]
+                if (ca.isDigit() && cb.isDigit()) {
+                    var ni = i; while (ni < a.length && a[ni].isDigit()) ni++
+                    var nj = j; while (nj < b.length && b[nj].isDigit()) nj++
+                    val na = a.substring(i, ni).trimStart('0').ifEmpty { "0" }
+                    val nb = b.substring(j, nj).trimStart('0').ifEmpty { "0" }
+                    val cmp = if (na.length != nb.length) na.length.compareTo(nb.length) else na.compareTo(nb)
+                    if (cmp != 0) return cmp
+                    i = ni; j = nj
+                } else {
+                    if (ca != cb) return ca.compareTo(cb)
+                    i++; j++
+                }
+            }
+            return a.length.compareTo(b.length)
         }
     }
 }

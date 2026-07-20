@@ -11,16 +11,30 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Tests the two-route update check: Releases API first, tags-page fallback
+ * Tests the two-route update check: Releases API first, git-refs fallback
  * when the API rate-limits (the real-world phone failure mode on shared
- * carrier IPs).
+ * carrier IPs — the phone's VPN/carrier IP gets HTTP 403 from GitHub's
+ * 60 req/hour unauthenticated API quota).
+ *
+ * The git smart-HTTP fallback (`/info/refs?service=git-upload-pack`) is NOT
+ * rate-limited and survives VPN interception, making it the reliable
+ * secondary route.
  */
 class UpdateCheckerTest {
 
     private lateinit var server: MockWebServer
     private lateinit var checker: UpdateChecker
-
     private val client = OkHttpClient()
+
+    /** Realistic pkt-line git smart-HTTP refs body. */
+    private fun gitRefsBody(vararg tags: String): String = buildString {
+        append("001e# service=git-upload-pack\n0000\n")
+        for (tag in tags) {
+            // sha + refname + optional peeled annotated-tag line
+            append("0041c20abd67aaa92ba1628c9cd358132549166f631f refs/tags/$tag\n")
+            append("0041003ee4c83897ab9047b82e73315b73f0e8f78ab9d242 refs/tags/$tag^{}\n")
+        }
+    }
 
     @Before
     fun setUp() {
@@ -65,14 +79,10 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 403 rate-limit falls back to tags page`() {
-        // Route 1: rate-limited.
+    fun `API 403 rate-limit falls back to git refs`() {
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"rate limit"}"""))
-        // Route 2: tags page with the newest tag.
         server.enqueue(
-            MockResponse().setResponseCode(200).setBody(
-                """<a href="/JesterkingLord/JKPHermex/releases/tag/v9.9.9">v9.9.9</a>""",
-            ),
+            MockResponse().setResponseCode(200).setBody(gitRefsBody("v0.5.0", "v9.9.9")),
         )
         val result = checker.checkAgainst("0.6.0-rc6")
         assertTrue("expected fallback UpdateAvailable, got $result", result is UpdateResult.UpdateAvailable)
@@ -80,12 +90,10 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 403 then tags page same version reports UpToDate`() {
+    fun `API 403 then git refs same version reports UpToDate`() {
         server.enqueue(MockResponse().setResponseCode(403))
         server.enqueue(
-            MockResponse().setResponseCode(200).setBody(
-                """<a href="/releases/tag/v0.6.0-rc6">v0.6.0-rc6</a>""",
-            ),
+            MockResponse().setResponseCode(200).setBody(gitRefsBody("v0.6.0-rc6")),
         )
         val result = checker.checkAgainst("0.6.0-rc6")
         assertTrue(result is UpdateResult.UpToDate)
@@ -102,34 +110,46 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun `API 404 reports no-releases reason when tags page also empty`() {
+    fun `API 404 reports no-releases reason when git refs also empty`() {
         server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setResponseCode(200).setBody("<html>no tags</html>"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("001e# service=git-upload-pack\n0000\n"))
         val result = checker.checkAgainst("0.6.0-rc6")
         assertTrue(result is UpdateResult.Failed)
         assertTrue((result as UpdateResult.Failed).reason.contains("No releases"))
     }
 
     @Test
-    fun `newestTagFromHtml picks first semver tag in document order`() {
-        val html = """
-            <a href="/o/r/releases/tag/v0.5.0">v0.5.0</a>
-            <a href="/o/r/releases/tag/v0.6.0-rc6">v0.6.0-rc6</a>
-        """.trimIndent()
-        assertEquals("v0.5.0", UpdateChecker.newestTagFromHtml(html))
+    fun `newestTagFromGitRefs picks highest semver tag`() {
+        val body = gitRefsBody("v0.3.0", "v0.4.0", "v0.4.1", "v0.5.0", "v0.6.0-rc6")
+        assertEquals("v0.6.0-rc6", UpdateChecker.newestTagFromGitRefs(body))
     }
 
     @Test
-    fun `newestTagFromHtml skips non-semver tags`() {
-        val html = """
-            <a href="/o/r/releases/tag/nightly-build">nightly</a>
-            <a href="/o/r/releases/tag/v1.2.3">v1.2.3</a>
-        """.trimIndent()
-        assertEquals("v1.2.3", UpdateChecker.newestTagFromHtml(html))
+    fun `newestTagFromGitRefs orders pre-releases correctly (rc6 greater than rc1)`() {
+        val body = gitRefsBody("v0.6.0-rc1", "v0.6.0-rc6", "v0.6.0-rc3")
+        assertEquals("v0.6.0-rc6", UpdateChecker.newestTagFromGitRefs(body))
     }
 
     @Test
-    fun `newestTagFromHtml returns null when no tags present`() {
-        assertNull(UpdateChecker.newestTagFromHtml("<html>nothing here</html>"))
+    fun `newestTagFromGitRefs prefers stable release over pre-release`() {
+        val body = gitRefsBody("v1.0.0-rc1", "v1.0.0")
+        assertEquals("v1.0.0", UpdateChecker.newestTagFromGitRefs(body))
+    }
+
+    @Test
+    fun `newestTagFromGitRefs skips non-semver tags`() {
+        val body = gitRefsBody("nightly-build", "v1.2.3", "latest")
+        assertEquals("v1.2.3", UpdateChecker.newestTagFromGitRefs(body))
+    }
+
+    @Test
+    fun `newestTagFromGitRefs returns null when no tags present`() {
+        assertNull(UpdateChecker.newestTagFromGitRefs("001e# service=git-upload-pack\n0000\n"))
+    }
+
+    @Test
+    fun `newestTagFromGitRefs handles natural numeric ordering (rc10 greater than rc9)`() {
+        val body = gitRefsBody("v0.6.0-rc9", "v0.6.0-rc10", "v0.6.0-rc2")
+        assertEquals("v0.6.0-rc10", UpdateChecker.newestTagFromGitRefs(body))
     }
 }
