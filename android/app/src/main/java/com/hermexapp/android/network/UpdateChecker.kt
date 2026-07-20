@@ -44,6 +44,12 @@ sealed class UpdateResult {
  *
  * The HTTP timeout is intentionally short (10s) so a stuck network call
  * doesn't leave the settings screen looking frozen.
+ *
+ * **Route 0 (backend):** If the app is connected to a JKP host (Tailscale or
+ * LAN), it asks the host for the latest version. The host fetches from GitHub
+ * on its own network (no phone VPN issues), caches the result for 5 minutes,
+ * and returns it. This is the primary route and the only one that works when
+ * the phone's VPN blocks GitHub entirely. Falls back to Routes 1+2 on failure.
  */
 class UpdateChecker(
     private val owner: String,
@@ -53,6 +59,12 @@ class UpdateChecker(
     private val apiBase: String = "https://api.github.com",
     /** Injectable for tests (MockWebServer). Production: github.com. */
     private val webBase: String = "https://github.com",
+    /**
+     * JKP backend base URL (e.g. "https://farouk.tail6197e7.ts.net"). When set,
+     * the checker asks the backend first — the only route that works when the
+     * phone's VPN blocks GitHub entirely. Pass null to skip Route 0.
+     */
+    private val backendBaseUrl: String? = null,
 ) {
 
     /**
@@ -102,13 +114,25 @@ class UpdateChecker(
     }
 
     /**
-     * Try the rich Releases API first; if it's unavailable (rate-limit 403,
-     * any non-2xx, or a transient network error) fall back to scraping the
-     * tags page. Only returns [SourceResult.Err] when BOTH routes fail,
-     * carrying the underlying reason so the dialog is self-diagnosing
-     * instead of the old generic "Couldn't reach GitHub".
+     * Try the backend first (Route 0), then the Releases API (Route 1), then
+     * git smart-HTTP refs (Route 2). The backend route is the only one that
+     * works when the phone's VPN blocks GitHub entirely — the phone can always
+     * reach its own JKP host over Tailscale/LAN.
+     *
+     * Only returns [SourceResult.Err] when ALL routes fail, carrying the
+     * underlying reason so the dialog is self-diagnosing instead of the old
+     * generic "Couldn't reach GitHub".
      */
     private fun fetchLatest(): SourceResult {
+        // Route 0: ask the connected JKP backend (works through VPNs).
+        if (backendBaseUrl != null) {
+            val backend = fetchFromBackend(backendBaseUrl)
+            if (backend is SourceResult.Ok) return backend
+            // Backend unreachable or returned no tag — fall through to direct
+            // GitHub routes. The backend's error reason is discarded; if all
+            // direct routes also fail, we surface the API/git reason instead.
+        }
+
         val api = fetchFromApi()
         when (api) {
             is SourceResult.Ok -> return api
@@ -118,6 +142,51 @@ class UpdateChecker(
                 // Both failed — surface the API reason (the primary route).
                 return api
             }
+        }
+    }
+
+    /**
+     * Route 0: ask the connected JKP backend for the latest version. The
+     * backend fetches from GitHub on the host side (no phone VPN issues)
+     * and caches the result for 5 minutes. Returns [SourceResult.Ok] with
+     * a [GitHubRelease] (no per-release asset URL — download links to the
+     * release page), or [SourceResult.Err] if the backend is unreachable
+     * or returns no tag.
+     */
+    private fun fetchFromBackend(baseUrl: String): SourceResult {
+        val url = baseUrl.trimEnd('/') + "/api/hermex/latest-version"
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "JKPHermex-Android/$owner")
+            .build()
+        return try {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return SourceResult.Err("Backend returned HTTP ${response.code}.")
+                }
+                val body = response.body?.string() ?: return SourceResult.Err(
+                    "Backend returned an empty response.",
+                )
+                val info = runCatching { BackendLatestVersionJson.parse(body) }.getOrNull()
+                    ?: return SourceResult.Err("Couldn't read backend's version info.")
+                val tag = info.tag
+                    ?: return SourceResult.Err("Backend has no version info yet.")
+                SourceResult.Ok(
+                    GitHubRelease(
+                        tagName = tag,
+                        name = tag,
+                        body = "",
+                        htmlUrl = info.url.ifBlank {
+                            "$webBase/$owner/$repo/releases/tag/$tag"
+                        },
+                    ),
+                )
+            }
+        } catch (_: IOException) {
+            SourceResult.Err("Couldn't reach the JKP host.")
+        } catch (_: RuntimeException) {
+            SourceResult.Err("Couldn't read the JKP host's version info.")
         }
     }
 

@@ -85,7 +85,11 @@ fun SettingsScreen(
     var checking by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<com.hermexapp.android.network.UpdateResult?>(null) }
     val checker = remember {
-        com.hermexapp.android.network.UpdateChecker(owner = "JesterkingLord", repo = "JKPHermex")
+        com.hermexapp.android.network.UpdateChecker(
+            owner = "JesterkingLord",
+            repo = "JKPHermex",
+            backendBaseUrl = serverUrl,
+        )
     }
     val servers by (registry?.servers
         ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<com.hermexapp.android.config.ServerEntry>()))

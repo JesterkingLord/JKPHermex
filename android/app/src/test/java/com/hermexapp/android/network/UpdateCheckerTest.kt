@@ -152,4 +152,81 @@ class UpdateCheckerTest {
         val body = gitRefsBody("v0.6.0-rc9", "v0.6.0-rc10", "v0.6.0-rc2")
         assertEquals("v0.6.0-rc10", UpdateChecker.newestTagFromGitRefs(body))
     }
+
+    // ── Route 0: backend ──────────────────────────────────────────────────
+
+    private fun backendChecker(): UpdateChecker {
+        val base = server.url("/").toString().trimEnd('/')
+        return UpdateChecker(
+            owner = "JesterkingLord", repo = "JKPHermex",
+            httpClient = client, apiBase = base, webBase = base,
+            backendBaseUrl = base,
+        )
+    }
+
+    @Test
+    fun `backend route returns UpdateAvailable when tag is newer`() {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"tag":"v9.9.9","url":"https://x","source":"host","cached":false}""",
+            ),
+        )
+        val result = backendChecker().checkAgainst("0.6.0-rc6")
+        assertTrue("expected UpdateAvailable, got $result", result is UpdateResult.UpdateAvailable)
+        assertEquals("v9.9.9", (result as UpdateResult.UpdateAvailable).latestVersion)
+    }
+
+    @Test
+    fun `backend route returns UpToDate when tag matches`() {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"tag":"v0.6.0-rc6","url":"https://x","source":"host","cached":true}""",
+            ),
+        )
+        val result = backendChecker().checkAgainst("0.6.0-rc6")
+        assertTrue("expected UpToDate, got $result", result is UpdateResult.UpToDate)
+    }
+
+    @Test
+    fun `backend unreachable falls back to API`() {
+        // Route 0: backend fails.
+        server.enqueue(MockResponse().setResponseCode(500))
+        // Route 1: API succeeds.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """[{"tag_name":"v9.9.9","name":"x","body":"","html_url":"","assets":[]}]""",
+            ),
+        )
+        val result = backendChecker().checkAgainst("0.6.0-rc6")
+        assertTrue("expected UpdateAvailable via API fallback, got $result", result is UpdateResult.UpdateAvailable)
+    }
+
+    @Test
+    fun `backend returns null tag falls back to API`() {
+        // Route 0: backend returns no tag.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"tag":null,"url":"","source":"host","cached":false}""",
+            ),
+        )
+        // Route 1: API succeeds.
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """[{"tag_name":"v9.9.9","name":"x","body":"","html_url":"","assets":[]}]""",
+            ),
+        )
+        val result = backendChecker().checkAgainst("0.6.0-rc6")
+        assertTrue("expected UpdateAvailable via API fallback, got $result", result is UpdateResult.UpdateAvailable)
+    }
+
+    @Test
+    fun `all routes fail reports the API reason`() {
+        server.enqueue(MockResponse().setResponseCode(500)) // backend
+        server.enqueue(MockResponse().setResponseCode(403)) // API
+        server.enqueue(MockResponse().setResponseCode(500)) // git-refs
+        val result = backendChecker().checkAgainst("0.6.0-rc6")
+        assertTrue(result is UpdateResult.Failed)
+        val reason = (result as UpdateResult.Failed).reason
+        assertTrue("expected rate-limit reason, got: $reason", reason.contains("rate limit"))
+    }
 }

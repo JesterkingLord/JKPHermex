@@ -73,6 +73,24 @@ object GitHubReleaseJson {
 }
 
 /**
+ * Response from the JKP backend's `/api/hermex/latest-version` endpoint
+ * (Route 0 of the update checker). The backend fetches from GitHub on the
+ * host side (no phone VPN issues) and caches the result for 5 minutes.
+ */
+@Serializable
+data class BackendLatestVersion(
+    @SerialName("tag") val tag: String? = null,
+    @SerialName("url") val url: String = "",
+    @SerialName("source") val source: String = "host",
+    @SerialName("cached") val cached: Boolean = false,
+)
+
+object BackendLatestVersionJson {
+    fun parse(json: String): BackendLatestVersion =
+        ApiJson.decodeFromString(BackendLatestVersion.serializer(), json)
+}
+
+/**
  * Minimal `MAJOR.MINOR.PATCH[-PRERELEASE]` parser. Handles `0.1.0`,
  * `0.2.0-rc1`, `1.10.4-beta.2`. Not full SemVer 2.0.0 — we don't need
  * build metadata or complex pre-release ordering. Returns null on garbage.
