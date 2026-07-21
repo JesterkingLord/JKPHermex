@@ -4,7 +4,7 @@ Status: **historical + phase ledger**.
 **What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-07-16).  
 This file remains the architecture and phases 0–11 delivery ledger.
 
-**Current ship baseline:** Android **`0.5.0`** (`versionCode` 6) — math-lite chat, auto-update check, 255 unit tests, signed release path verified (2026-07-15). Physical phone chat against live JKP first proven at **0.3.0** (2026-07-14).
+**Current ship baseline:** Android **`0.6.0`** (`versionCode` 13) — 0.6.0 final cut 2026-07-21; Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 auto-reconnect + 6.6 camera QR scanner + 13.10 stream recovery; 519 unit tests. Prior baseline `0.5.0` (versionCode 6, 2026-07-15). Physical phone chat against live JKP first proven at **0.3.0** (2026-07-14).
 
 ## 0. Current verified state (2026-07-14 device + 2026-07-16 roadmap)
 

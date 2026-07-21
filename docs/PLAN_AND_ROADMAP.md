@@ -173,7 +173,7 @@ python -m jkp pair
 
 | Metric | Target |
 |---|---|
-| Unit tests | ≥ 255 green (0.5.0 baseline) |
+| Unit tests | ≥ 519 green (0.6.0; was ≥ 255 at 0.5.0 baseline) |
 | Install → first chat on physical phone | &lt; 10 minutes on known host |
 | Pairing secret leakage | Never in logs, UI state, backups, or non-fragment URLs |
 | False “agent crashed” while host waits on approval | 0 (honest status copy) |
