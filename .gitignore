@@ -20,7 +20,7 @@ Package.resolved
 .env.*.local
 
 # Per-machine signing overrides (see CONTRIBUTING.md)
-Config/Local.xcconfig
+ios/Config/Local.xcconfig
 
 # Local reference material
 UPDATES.md
@@ -57,3 +57,8 @@ fastlane/test_output/
 
 # Local session-handoff state (read at session start, overwritten at wrap-up; not tracked)
 /CURRENT.md
+
+# Python bytecode (repo scripts)
+__pycache__/
+*.pyc
+*.apk

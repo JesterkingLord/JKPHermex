@@ -30,7 +30,7 @@ When a smoke is skipped or held, the pin stays and the reason is recorded (in
 
 **How to advance.** Replace the SHA in `UPSTREAM_TESTED_SHA` with the peeled
 commit of the validated release, then update the human-readable tag references
-in this file, `README.md`, and `DEVELOPMENT.md` to match. Commit the pin move
+in this file, `README.md`, and `ios/DEVELOPMENT.md` to match. Commit the pin move
 together with a one-line note of which smoke validated it. `PROJECT_SPEC.md`
 §16 now points at the pin file instead of carrying its own copy, so it needs no
 update on advance.
@@ -52,7 +52,7 @@ time the owner runs a green smoke.
 This slice adds lightweight readiness coverage, not the full Docker-backed CI contract target from `PROJECT_SPEC.md`.
 
 Implemented now:
-- `HermesMobileTests/APIClientTests.swift` contains a contract-readiness matrix for every app-used `Endpoint` case.
+- `ios/HermesMobileTests/APIClientTests.swift` contains a contract-readiness matrix for every app-used `Endpoint` case.
 - The matrix asserts HTTP method intent, path, and query parameters for health, auth, sessions, destructive session actions, streaming, uploads, workspaces/files, models/providers/profiles/reasoning, slash-command endpoints, read-only server panels, skills, memory, and analytics source endpoints.
 - Focused request tests assert native POST calls do not send `Origin` or `Referer`, preserving the upstream CSRF contract for non-browser clients.
 - Multipart upload request tests also assert no `Origin` or `Referer`.

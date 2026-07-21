@@ -293,7 +293,7 @@ def extract_app_sse_cases(repo_root: Path) -> set[str]:
     Degrades to an empty set when the file is absent so a moved/renamed client
     never fails the digest (mirrors the other Swift-side extractors).
     """
-    sse_file = repo_root / "HermesMobile/Networking/SSEClient.swift"
+    sse_file = repo_root / "ios/HermesMobile/Networking/SSEClient.swift"
     if not sse_file.exists():
         return set()
     text = sse_file.read_text(encoding="utf-8")
@@ -304,7 +304,7 @@ def extract_app_sse_cases(repo_root: Path) -> set[str]:
 
 
 def extract_mobile_paths(repo_root: Path) -> set[str]:
-    endpoints_file = repo_root / "HermesMobile/Networking/Endpoints.swift"
+    endpoints_file = repo_root / "ios/HermesMobile/Networking/Endpoints.swift"
     if not endpoints_file.exists():
         return set()
     text = endpoints_file.read_text(encoding="utf-8")
@@ -317,7 +317,7 @@ def extract_mobile_paths(repo_root: Path) -> set[str]:
 
 
 def extract_contract_test_paths(repo_root: Path) -> set[str]:
-    test_file = repo_root / "HermesMobileTests/APIEndpointContractTests.swift"
+    test_file = repo_root / "ios/HermesMobileTests/APIEndpointContractTests.swift"
     if not test_file.exists():
         return set()
     text = test_file.read_text(encoding="utf-8")

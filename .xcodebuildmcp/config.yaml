@@ -3,7 +3,7 @@ enabledWorkflows:
   - simulator
   - ui-automation
 sessionDefaults:
-  projectPath: "./HermesMobile.xcodeproj"
+  projectPath: "./ios/HermesMobile.xcodeproj"
   scheme: "HermesMobile"
   configuration: "Debug"
   simulatorName: "iPhone 17"

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths for the in-app APK updater.
+
+    The app downloads update APKs to cacheDir/apk/ and then hands the file
+    to Android's package installer via a content:// URI (required since
+    Android 7.0 / API 24 — direct file:// URIs are blocked for inter-app
+    sharing).
+
+    Only the apk/ subdirectory under cache is exposed. No other app can
+    access any other part of our private storage through this provider.
+-->
+<paths>
+    <cache-path
+        name="apk"
+        path="apk/" />
+</paths>

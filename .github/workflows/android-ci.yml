@@ -1,0 +1,109 @@
+# Android CI: build the app and run the unit-test suite on every pull request
+# that touches the Android project, the shared contract artifacts, or the
+# upstream pin. Everything else (iOS-only changes, docs) skips the build and
+# passes via the cheap gate job.
+#
+# The required branch-protection check is "Android CI Gate", mirroring the
+# iOS "CI Gate" pattern: a skipped required check would block merges forever,
+# so the gate always runs and passes when the build either succeeded or was
+# legitimately skipped.
+#
+# Uses no repository secrets, so PRs from forks get green CI too.
+
+name: Android CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_android: ${{ steps.filter.outputs.run_android }}
+    steps:
+      - name: Classify changed files
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')
+          echo "Changed files:"
+          echo "${files}"
+          # Run when the Android project, the shared contract corpus, the
+          # upstream pin, or this workflow change. Markdown inside those
+          # paths still triggers the build — cheap on a Linux runner, and
+          # AGENTS.md/plan edits ride along with code changes anyway.
+          android=$(echo "${files}" | grep -E '^(android/|shared/|UPSTREAM_TESTED_SHA$|\.github/workflows/android-ci\.yml$)' || true)
+          if [[ -n "${android}" ]]; then
+            echo "Android-relevant changes detected — running the build:"
+            echo "${android}"
+            echo "run_android=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Android-relevant changes — skipping the build."
+            echo "run_android=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and Test (Android)
+    needs: changes
+    if: needs.changes.outputs.run_android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        working-directory: android
+        run: ./gradlew build --stacktrace
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-test-reports
+          path: android/app/build/reports
+          if-no-files-found: ignore
+
+  gate:
+    name: Android CI Gate
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        run: |
+          set -euo pipefail
+          echo "changes: ${{ needs.changes.result }}"
+          echo "build: ${{ needs.build.result }}"
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "Path detection failed — failing the gate." >&2
+            exit 1
+          fi
+          case "${{ needs.build.result }}" in
+            success|skipped) echo "Gate passed." ;;
+            *) echo "Build and Test (Android) did not pass — failing the gate." >&2; exit 1 ;;
+          esac

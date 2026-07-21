@@ -835,9 +835,9 @@ duplicating the numbers here — duplicated copies rot.
 ```
 UPSTREAM_TESTED_SHA / UPSTREAM_TESTED_TAG / TESTED_AGAINST_VERSION:
   read the root `UPSTREAM_TESTED_SHA` file (machine-readable pin) and the
-  human-readable tag in `CONTRACT_TESTS.md` / `DEVELOPMENT.md`. Do not
+  human-readable tag in `CONTRACT_TESTS.md` / `ios/DEVELOPMENT.md`. Do not
   duplicate the values here — they rot.
 APP_VERSION / APP_BUILD:
   read MARKETING_VERSION / CURRENT_PROJECT_VERSION from
-  `HermesMobile.xcodeproj/project.pbxproj`.
+  `ios/HermesMobile.xcodeproj/project.pbxproj`.
 ```

@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+
+# Per-machine SDK location — never committed
+local.properties
+
+# IDE state
+.idea/
+*.iml
+.kotlin/
+
+# Signing material
+*.keystore
+*.jks

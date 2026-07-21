@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Network: Hermex talks to the operator's own JKP gateway. The
+        networkSecurityConfig (res/xml/network_security_config.xml)
+        explicitly trusts the operator's Tailscale / self-signed certs
+        while keeping the default strict transport for the public
+        internet. See network_security_config.xml for the rules.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!--
+        Camera: used ONLY by the optional QR-pairing scanner (6.6). We never
+        record or upload frames — the camera pipeline decodes QR codes
+        locally with ZXing and discards every frame immediately. required=
+        "false" keeps the app installable on devices without a camera; the
+        scanner UI hides itself and falls back to paste-URL when the camera
+        is unavailable or permission is denied.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- In-app updater: lets us hand a downloaded APK to Android's package
+         installer. On first update the user grants "install from this app"
+         via the standard system prompt (we check canRequestPackageInstalls
+         and route to Settings if not). Never auto-installs — always shows
+         the standard install-confirmation dialog. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:name=".HermexApp"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Hermex"
+        tools:targetApi="34">
+
+        <!--
+            FileProvider for the in-app APK updater. We download update APKs
+            to our private cache and hand them to Android's package installer
+            via content:// URIs (required since API 24). Only the cache/apk/
+            directory is exposed — nothing else in our private storage.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!--
+            ActiveRunService: background data sync so an in-flight chat
+            response can complete after the app is backgrounded. Not
+            exported — only invoked by us.
+        -->
+        <service
+            android:name=".platform.ActiveRunService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!--
+            HermexWidgetProvider: homescreen widget. exported="true" is
+            required so the system's AppWidgetHost can deliver the
+            APPWIDGET_UPDATE broadcast. The intent-filter is locked
+            down to the single system action; we never accept external
+            data through this receiver.
+        -->
+        <receiver
+            android:name=".platform.HermexWidgetProvider"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/hermex_widget_info" />
+        </receiver>
+
+        <!--
+            MainActivity: singleTask so the share-target path lands on
+            the existing chat screen instead of stacking a new activity.
+            exported="true" is required for the LAUNCHER intent-filter
+            (so the system can launch us from the home screen) and for
+            the SEND / SEND_MULTIPLE share-target filters (so other apps
+            can share text / images / PDFs into a new chat). The
+            share-target is harmless: it accepts a single
+            EXTRA_STREAM / EXTRA_TEXT and hands it to the chat
+            composer; we do not execute or render external content
+            automatically.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Share target: text, an image, or a PDF shared from other apps starts a new chat. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <!-- Multiple images / PDFs shared at once. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

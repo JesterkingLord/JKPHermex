@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hermex backup rules — Android <12 (auto-backup to Google Drive).
+
+  EXCLUDED from backup (anything that touches credentials or PII):
+    - hermex_secrets   : pairing grant, server tokens, session cookies
+    - hermex_prefs     : server URL, model ID, last-session ID, reasoning effort
+    - hermex_servers   : server registry (url + nickname + last-seen)
+    - hermex.db        : cached payloads may include chat history
+
+  Nothing is INCLUDED — we don't back up the in-memory SharedDraftStore
+  (it's transient by design, see SharedDraftStore.kt).
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="hermex_secrets.xml" />
+    <exclude domain="sharedpref" path="hermex_prefs.xml" />
+    <exclude domain="sharedpref" path="hermex_servers.xml" />
+    <exclude domain="file" path="databases/hermex.db" />
+</full-backup-content>

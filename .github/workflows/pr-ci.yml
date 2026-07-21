@@ -1,6 +1,8 @@
 # Contributor CI: build and run the full XCTest suite on every pull request
-# that touches app code. Docs-only PRs (markdown, docs/, community files) skip
-# the macOS runner entirely and pass via the cheap gate job.
+# that touches iOS-relevant code. PRs that only touch docs (markdown, docs/,
+# community files) or the Android project skip the macOS runner entirely and
+# pass via the cheap gate job; the Android project has its own workflow
+# (android-ci.yml).
 #
 # The required branch-protection check is "CI Gate", not "Build and Test":
 # a skipped required check would block merges forever, so the gate always
@@ -9,7 +11,7 @@
 # Uses no repository secrets, so PRs from forks get green CI too.
 #
 # Code signing is disabled (CODE_SIGNING_ALLOWED=NO) — fine for compile/test
-# runs per TESTFLIGHT.md; the "simulator installs must be signed" rule applies
+# runs per ios/TESTFLIGHT.md; the "simulator installs must be signed" rule applies
 # to manual simulator testing, not CI.
 
 name: PR CI
@@ -43,15 +45,17 @@ jobs:
             --paginate --jq '.[].filename')
           echo "Changed files:"
           echo "${files}"
-          # Fail closed: anything NOT on the docs-only allowlist triggers the
-          # full suite (including workflow, project, and config changes).
-          non_docs=$(echo "${files}" | grep -vE '^(docs/.*|LICENSE|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/CODEOWNERS|\.github/dependabot\.yml|\.github/FUNDING\.yml|.*\.md)$' || true)
-          if [[ -n "${non_docs}" ]]; then
-            echo "Non-docs changes detected — running the full suite:"
-            echo "${non_docs}"
+          # Fail closed: anything NOT on the allowlist of paths that can't
+          # affect the iOS build (docs, community files, the Android project
+          # and its workflow) triggers the full suite — including workflow,
+          # project, and config changes.
+          non_ios=$(echo "${files}" | grep -vE '^(docs/.*|LICENSE|\.gitignore|\.github/ISSUE_TEMPLATE/.*|\.github/CODEOWNERS|\.github/dependabot\.yml|\.github/FUNDING\.yml|android/.*|\.github/workflows/android-ci\.yml|.*\.md)$' || true)
+          if [[ -n "${non_ios}" ]]; then
+            echo "iOS-relevant changes detected — running the full suite:"
+            echo "${non_ios}"
             echo "run_ios=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Docs-only change — skipping the macOS runner."
+            echo "No iOS-relevant changes — skipping the macOS runner."
             echo "run_ios=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -63,7 +67,7 @@ jobs:
     timeout-minutes: 90
 
     env:
-      PROJECT_PATH: HermesMobile.xcodeproj
+      PROJECT_PATH: ios/HermesMobile.xcodeproj
       SCHEME: HermesMobile
 
     steps:
