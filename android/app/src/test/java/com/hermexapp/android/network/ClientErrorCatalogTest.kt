@@ -123,4 +123,60 @@ class ClientErrorCatalogTest {
         assertTrue(bare.code != "invalid_device_grant")
         assertTrue(bare.code != "invalid_api_key")
     }
+
+    // ── Wave 2.4: cross-surface drop-classification parity with host
+    //    jkp.client_errors.classify + PWA userMessageForError. Each case
+    //    mirrors a host test_client_errors_catalog.py assertion so the three
+    //    surfaces cannot silently drift. ──
+
+    @Test
+    fun `classify admin auth signal routes to admin_key_required`() {
+        assertEquals(
+            "admin_key_required",
+            ClientErrorCatalog.classify(status = 401, message = "needs admin credentials").code,
+        )
+    }
+
+    @Test
+    fun `classify device grant via status and detail`() {
+        assertEquals(
+            "invalid_device_grant",
+            ClientErrorCatalog.classify(status = 401, message = "device grant expired").code,
+        )
+    }
+
+    @Test
+    fun `classify quota and network via message keywords`() {
+        assertEquals(
+            "billing_quota",
+            ClientErrorCatalog.classify(message = "you are out of quota").code,
+        )
+        assertEquals(
+            "network_unreachable",
+            ClientErrorCatalog.classify(message = "fetch failed").code,
+        )
+        assertEquals(
+            "network_unreachable",
+            ClientErrorCatalog.classify(message = "host unreachable").code,
+        )
+    }
+
+    @Test
+    fun `classify server error on 5xx`() {
+        assertEquals("server_error", ClientErrorCatalog.classify(status = 500).code)
+        assertEquals(
+            "server_error",
+            ClientErrorCatalog.classify(status = 503, message = "bad gateway").code,
+        )
+    }
+
+    @Test
+    fun `classify unknown code falls through to heuristics`() {
+        // A structured code absent from the catalog must not crash — it falls
+        // through to message/status heuristics and lands on `unknown`.
+        assertEquals(
+            "unknown",
+            ClientErrorCatalog.classify(code = "definitely_not_a_real_code").code,
+        )
+    }
 }
