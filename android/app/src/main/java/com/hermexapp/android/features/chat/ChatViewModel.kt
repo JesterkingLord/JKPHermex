@@ -161,6 +161,17 @@ class ChatViewModel(
      */
     private val hangScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * Excellence 13.9 / 7.4: dedicated Default-dispatcher scope for best-effort
+     * post-drop session re-fetch. Uses Default (not Main) so JVM unit tests
+     * without a Main dispatcher still exercise the recovery path. SupervisorJob
+     * isolates a recovery failure from the rest of the ViewModel.
+     */
+    private val reconnectScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Reconnect attempts used for the current run (reset in [sendNow]). */
+    private var reconnectAttemptCount: Int = 0
+
     private fun nextId(prefix: String): String = "$prefix-${entryCounter++}"
 
     private fun markStreamActivity() {
@@ -471,6 +482,8 @@ class ChatViewModel(
             )
         }
 
+        // Reset the reconnect budget for this fresh run (13.9 / 7.4).
+        reconnectAttemptCount = 0
         try {
             val response = client.startChat(
                 sessionId = sessionId,
@@ -574,10 +587,16 @@ class ChatViewModel(
             is SseEvent.TransportError ->
                 if (_uiState.value.isStreaming) {
                     // 0.6.0-rc3 / 7.4 / 13.9: honest stream-drop copy, not raw OkHttp.
+                    // failStream runs first so the honest banner shows immediately;
+                    // then best-effort reconnect re-fetches a turn that may have
+                    // completed on the host while the wire was down (13.9 / 7.4).
                     failStream(
                         HangHonesty.transportFailureMessage(event.message),
                         isTransportDrop = true,
                     )
+                    reconnectScope.launch {
+                        maybeAttemptReconnectRecovery(reconnectAttemptCount++)
+                    }
                 } else {
                     Unit
                 }
@@ -800,6 +819,76 @@ class ChatViewModel(
                     null
                 },
             )
+        }
+    }
+
+    /**
+     * Excellence 13.9 / 7.4 — after a transport drop, attempt to recover a turn
+     * that completed on the host while the wire was down.
+     *
+     * Ground truth (verified against the live JKP host `api_server.py`,
+     * 2026-07-21): the chat-start + SSE path CANCEL the agent run on client
+     * disconnect and have NO mid-stream resume. So "reconnect" never means
+     * resume-mid-token — it means re-fetch the session to recover a turn that
+     * finished just as we dropped. This NEVER re-POSTs the user message (that
+     * would duplicate it on the host). Auth failures are routed to onAuthError
+     * by the caller and are never auto-retried here.
+     *
+     * Best-effort: on any failure the honest [failStream] banner already shown
+     * stays in place. The pure decision (backoff 1/2/4s, never-retry on auth)
+     * lives in [HangHonesty.reconnectPolicy], shared with desktop stream-
+     * reconnect.ts and the PWA `reconnectPolicy`.
+     *
+     * `internal` + suspend so JVM unit tests can drive it deterministically via
+     * `runTest` (virtual clock) without a Main dispatcher or wall-clock delays.
+     */
+    internal suspend fun maybeAttemptReconnectRecovery(
+        attempt: Int,
+        delaysS: List<Int> = HangHonesty.RECONNECT_DELAYS_S,
+    ) {
+        val partial = _uiState.value.entries
+            .filterIsInstance<TimelineEntry.AssistantMessage>()
+            .lastOrNull()
+            ?.text
+            .orEmpty()
+            .trim()
+        val policy = HangHonesty.reconnectPolicy(
+            isTransportDrop = true,
+            isAuthFailure = false, // auth drops go to onAuthError, never retried here
+            attempt = attempt,
+            delaysS = delaysS,
+        )
+        if (!policy.shouldReconnect) return
+        delay(policy.delayS * 1000L)
+        // Re-fetch the session (network; falls back to cache offline). Best-effort:
+        // if the host is still unreachable this throws and we keep the banner.
+        val recovered = try {
+            repository.loadSession(sessionId).first
+        } catch (_: Exception) {
+            null
+        } ?: return
+        val full = entriesFromDetail(recovered)
+            .filterIsInstance<TimelineEntry.AssistantMessage>()
+            .lastOrNull()
+            ?.text
+            ?.trim()
+            .orEmpty()
+        // Same-turn guard: only recover a completed turn that extends what we
+        // already rendered (the host finished the reply just as the wire dropped).
+        if (full.isNotBlank() && partial.isNotBlank() && full.startsWith(partial) && full.length > partial.length) {
+            _uiState.update { state ->
+                val entries = state.entries.toMutableList()
+                val idx = entries.indexOfLast { it is TimelineEntry.AssistantMessage }
+                if (idx >= 0) {
+                    entries[idx] = TimelineEntry.AssistantMessage(entries[idx].id, full)
+                }
+                state.copy(
+                    entries = entries,
+                    errorMessage = null,
+                    streamRecoveryOffer = false,
+                    streamRecoveryTip = null,
+                )
+            }
         }
     }
 

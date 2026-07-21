@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -255,6 +256,86 @@ class ChatViewModelTest {
 
         assertEquals("no such session", viewModel.uiState.value.errorMessage)
         assertFalse(viewModel.uiState.value.isStreaming)
+    }
+
+    // ── Excellence 13.9 / 7.4: stream auto-reconnect recovery ──
+
+    @Test
+    fun `reconnect recovery replaces the draft with a completed host turn`() = runBlocking {
+        // Start a run and stream a partial draft.
+        server.enqueue(json("""{"stream_id": "st1", "session_id": "abc"}"""))
+        viewModel.updateComposerText("go")
+        viewModel.sendNow()
+        sse.emit(SseEvent.Token("Working on"))
+
+        // Host completed the turn while the wire was down — re-fetch returns the
+        // full assistant text extending our partial.
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "t", "messages": [
+                    {"role": "user", "content": "go", "_ts": 1.0},
+                    {"role": "assistant", "content": "Working on the full answer", "_ts": 2.0}
+                ]}}
+                """,
+            ),
+        )
+
+        // delaysS=[0] → no wall-clock delay; drive the suspend fn directly.
+        viewModel.maybeAttemptReconnectRecovery(attempt = 0, delaysS = listOf(0))
+
+        val state = viewModel.uiState.value
+        val assistant = state.entries.filterIsInstance<TimelineEntry.AssistantMessage>().last()
+        assertEquals("Working on the full answer", assistant.text)
+        assertNull(state.errorMessage)
+        assertFalse(state.streamRecoveryOffer)
+        assertNull(state.streamRecoveryTip)
+    }
+
+    @Test
+    fun `reconnect recovery keeps the banner when the host turn does not extend the draft`() =
+        runBlocking {
+            server.enqueue(json("""{"stream_id": "st1", "session_id": "abc"}"""))
+            viewModel.updateComposerText("go")
+            viewModel.sendNow()
+            sse.emit(SseEvent.Token("Working on"))
+
+            // Host persisted an UNRELATED assistant turn (different conversation) —
+            // same-turn guard must reject it so we never overwrite with foreign text.
+            server.enqueue(
+                json(
+                    """
+                    {"session": {"session_id": "abc", "title": "t", "messages": [
+                        {"role": "user", "content": "go", "_ts": 1.0},
+                        {"role": "assistant", "content": "Something completely different", "_ts": 2.0}
+                    ]}}
+                    """,
+                ),
+            )
+
+            viewModel.maybeAttemptReconnectRecovery(attempt = 0, delaysS = listOf(0))
+
+            val state = viewModel.uiState.value
+            val assistant = state.entries.filterIsInstance<TimelineEntry.AssistantMessage>().last()
+            // Draft unchanged — foreign turn not substituted.
+            assertEquals("Working on", assistant.text)
+        }
+
+    @Test
+    fun `reconnect recovery keeps the banner when the budget is exhausted`() = runBlocking {
+        server.enqueue(json("""{"stream_id": "st1", "session_id": "abc"}"""))
+        viewModel.updateComposerText("go")
+        viewModel.sendNow()
+        sse.emit(SseEvent.Token("Working on"))
+
+        // attempt >= schedule size → policy.shouldReconnect = false → no re-fetch,
+        // draft and any prior banner untouched. No session response enqueued on
+        // purpose: if the code wrongly re-fetched, MockWebServer would hang.
+        viewModel.maybeAttemptReconnectRecovery(attempt = 3, delaysS = listOf(0))
+
+        val assistant =
+            viewModel.uiState.value.entries.filterIsInstance<TimelineEntry.AssistantMessage>().last()
+        assertEquals("Working on", assistant.text)
     }
 
     private fun json(body: String): MockResponse =
