@@ -7,18 +7,22 @@ Security sections per release.
 
 ## [Unreleased]
 
+### Added
+- **Full auto-reconnect (7.4)** — `ConnectionSupervisor` + `ReconnectController` drive the full reconnect lifecycle end-to-end with backoff (1s/2s/4s), jitter, and host-grant refresh on transport drops. Best-effort session re-fetch recovers a turn that completed while the wire was down (same-turn guard); auth errors clear grant + route to re-pair; never re-POSTs the user message. Pure `reconnectPolicy` shared contract with desktop + PWA. Shipped in **v0.5.0**.
+- **Live camera QR scanner (6.6)** — commit `fd50355`. Local-only decode via **CameraX 1.4.1** + **ZXing 3.5.3** (no network round-trip for the QR contents). `CameraQrScannerView` wires preview + `ImageAnalysis` frame decode + runtime `CAMERA` permission + torch toggle + viewfinder reticle, with a paste fallback when the user prefers the clipboard or the device has no camera. `QrDecoderTest` adds 8 unit tests covering decode happy-path, malformed payloads, and empty frames; camera-less devices route straight to the paste dialog.
+- **Session model preference parity (7.3)** — the chat composer seeds the model/provider from the host session when the user has not picked one yet (user pick still wins; catalog default stays display-only). Model switch propagates to the active session without re-pair.
+
 ### Planned (operator-blocked)
 - Play Store upload: Developer account, real release keystore (1Password),
   mipmap icons, feature graphic, screenshots, listing from
   `docs/PLAY_STORE_LISTING.md`, privacy URL from `PRIVACY.md`
 - Physical QA matrix on device
-- Optional camera QR pairing
 
 ## [0.6.0-rc6] - 2026-07-18
 
 ### Added
 - **Stream recovery offer UI** (excellence 13.10) — after transport/stream
-  drops, `streamRecoveryOffer` + tip “Partial reply kept. Edit or resend…”
+  drops, `streamRecoveryOffer` + tip "Partial reply kept. Edit or resend…"
   on chat screen; pure helpers from 13.9 drive the decision.
 
 ### Changed

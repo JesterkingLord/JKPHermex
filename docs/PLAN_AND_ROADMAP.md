@@ -2,8 +2,8 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android version:** **`0.6.0-rc6`** (`versionCode` 12) — Bearer + hang honesty + catalog + model parity (7.3) + stream recovery UI (13.10)  
-**Last roadmap refresh:** `2026-07-18` (host excellence **13.10**)  
+**Current Android version:** **`0.6.0-rc6`** (`versionCode` 12) — Bearer + hang honesty + catalog + model parity (7.3) + stream recovery UI (13.10) + full auto-reconnect (7.4) + live camera QR scanner (6.6)  
+**Last roadmap refresh:** `2026-07-21` (production excellence sprint — 7.4 + 6.6 shipped)
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
@@ -27,7 +27,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 | Version | Highlights |
 |---|---|
-| **0.6.0-rc6** | Stream recovery offer UI after drops (13.10) — partial-kept + resend tip banner |
+| **0.6.0-rc6** | Full auto-reconnect (7.4) + live camera QR scanner (6.6, commit `fd50355` — CameraX 1.4.1 + ZXing 3.5.3) + stream recovery offer UI (13.10) |
 | **0.6.0-rc5** | SSE error catalog honesty + free-text classify + streamDropRecovery pure helpers (13.9) |
 | **0.6.0-rc4** | Session model preference parity (7.3) — composer seeds from host `session.model`; `invalid_api_key` + required-code catalog lock (host excellence 13.8a/b) |
 | **0.6.0-rc3** | SSE transport failure → network honesty + resend tip (7.4 early) |
