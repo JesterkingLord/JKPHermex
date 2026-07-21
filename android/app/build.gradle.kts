@@ -163,6 +163,14 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // 6.6 QR camera pairing (operator-approved 2026-07-21). CameraX drives the
+    // preview + frame analysis; ZXing decodes the QR payload locally.
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
+
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)

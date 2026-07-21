@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import com.hermexapp.android.features.pairing.CameraQrScannerView
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,27 +51,55 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun OnboardingScreen(viewModel: OnboardingViewModel) {
     val state by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Camera availability gates the scanner affordance: full-screen scanner
+    // when a camera exists, paste-URL dialog otherwise. Rechecked per
+    // composition so it tracks the device reality (never the manifest feature,
+    // which is required=false).
+    val hasCamera = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)
+    }
+    var showScanner by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = com.hermexapp.android.ui.theme.LocalHermexPalette.current.canvas,
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            when (state.step) {
-                OnboardingViewModel.Step.WELCOME -> WelcomePage(onContinue = viewModel::advanceToGuidance)
-                OnboardingViewModel.Step.GUIDANCE -> GuidancePage(
-                    onContinue = viewModel::advanceToConnect,
-                    onBack = viewModel::backToWelcome,
-                )
-                OnboardingViewModel.Step.CONNECT -> ConnectPage(state = state, viewModel = viewModel)
+        when {
+            // Full-screen scanner replaces the onboarding chrome. CameraQrScannerView
+            // handles permission, torch, reticle, and its own paste fallback; a
+            // decoded code posts straight to pairFromText (the same seam the paste
+            // dialog uses).
+            showScanner -> CameraQrScannerView(
+                onQrDetected = { text ->
+                    showScanner = false
+                    viewModel.pairFromText(text)
+                },
+                onUsePasteInstead = { showScanner = false },
+                onDismiss = { showScanner = false },
+            )
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                when (state.step) {
+                    OnboardingViewModel.Step.WELCOME -> WelcomePage(onContinue = viewModel::advanceToGuidance)
+                    OnboardingViewModel.Step.GUIDANCE -> GuidancePage(
+                        onContinue = viewModel::advanceToConnect,
+                        onBack = viewModel::backToWelcome,
+                    )
+                    OnboardingViewModel.Step.CONNECT -> ConnectPage(
+                        state = state,
+                        viewModel = viewModel,
+                        hasCamera = hasCamera,
+                        onLaunchScanner = { showScanner = true },
+                    )
+                }
             }
         }
     }
@@ -147,7 +176,12 @@ private fun GuidanceItem(title: String, detail: String) {
 }
 
 @Composable
-private fun ConnectPage(state: OnboardingViewModel.UiState, viewModel: OnboardingViewModel) {
+private fun ConnectPage(
+    state: OnboardingViewModel.UiState,
+    viewModel: OnboardingViewModel,
+    hasCamera: Boolean,
+    onLaunchScanner: () -> Unit,
+) {
     var showPairDialog by remember { mutableStateOf(false) }
 
     Text("Connect", style = MaterialTheme.typography.headlineMedium)
@@ -202,10 +236,15 @@ private fun ConnectPage(state: OnboardingViewModel.UiState, viewModel: Onboardin
     ) { Text("Connect") }
 
     TextButton(
-        onClick = { showPairDialog = true },
+        onClick = {
+            // Launch the live camera scanner when the device has one; the
+            // paste dialog remains the path (and the scanner's own fallback)
+            // for camera-less devices or when the operator prefers pasting.
+            if (hasCamera) onLaunchScanner() else showPairDialog = true
+        },
         modifier = Modifier.fillMaxWidth(),
         enabled = !state.isWorking,
-    ) { Text("Scan QR or paste pairing URL") }
+    ) { Text(if (hasCamera) "Scan QR or paste pairing URL" else "Paste pairing URL") }
 
     TextButton(onClick = viewModel::backToGuidance) { Text("Back") }
 

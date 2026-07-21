@@ -73,7 +73,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 | 6.3 | Store listing from `docs/PLAY_STORE_LISTING.md` + `PRIVACY.md` URL | **BLOCKED — Play console** |
 | 6.4 | **`ApiClient` prefers JKP pairing grant** → `Authorization: Bearer <grant>` (no log/URL leak). **Host freeze:** JKP `docs/PAIRING_CONTRACT.md` + `python -m jkp pair contract` / `GET /v1/pair/contract` | **SHIPPED in 0.6.0-rc1** |
 | 6.5 | Password/cookie fallback for non-JKP hermes-webui servers | **SHIPPED** (AuthManager password + SessionCookieJar) |
-| 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | **Paste fallback VERIFIED** (PairingIntentParser 18 tests + PairUrlDialog + tested `pairFromText` seam); **camera scanner BLOCKED — needs operator approval to add CameraX + QR decoder** (neither in `libs.versions.toml`, per no-new-deps rule) |
+| 6.6 | Camera QR for `PairingIntentParser` (paste/manual fallback remains) | **SHIPPED (operator-approved 2026-07-21).** Live CameraX scanner: `QrDecoder` (ZXing, local-only decode) + `CameraQrScannerView` (preview + `ImageAnalysis` frame decode + runtime permission + torch + reticle + paste fallback) wired into the Connect page's "Scan QR or paste pairing URL" affordance; decoded code posts to the existing tested `pairFromText` seam. Paste/manual fallback preserved (camera-less devices route to paste dialog). JVM-testable `decodeArgb` seam: `QrDecoderTest` round-trips pairing URLs (https/Tailscale/unicode) + rejects non-QR/noise. Deps added: CameraX (core/camera2/lifecycle/view 1.4.1) + ZXing core 3.5.3; `CAMERA` permission + `camera.any` feature `required=false`. |
 | 6.7 | Device UI: local “Forget this JKP device” (local grant clear only — **not** host revoke) | **SHIPPED in 0.6.0-rc2** (Settings copy + host-revoke tip) |
 | 6.8 | Physical QA matrix: revoke, expired pair, offline reconnect, model switch, multi-device isolation | **BLOCKED — physical device session** |
 
@@ -200,6 +200,7 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-07-21 | **6.6 camera QR scanner SHIPPED (operator-approved).** Live CameraX scanner: `QrDecoder` (ZXing local-only decode, JVM-testable `decodeArgb` seam) + `CameraQrScannerView` (preview + `ImageAnalysis` frame decode + runtime permission + torch + reticle + paste fallback) wired into the Connect page. Deps added: CameraX 1.4.1 (core/camera2/lifecycle/view) + ZXing core 3.5.3; `CAMERA` permission + `camera.any` feature `required=false`. `QrDecoderTest` round-trips pairing URLs + rejects non-QR/noise. Paste/manual fallback preserved. |
 | 2026-07-21 | **6.6 status:** paste/manual fallback VERIFIED (PairingIntentParser 18 tests + PairUrlDialog + tested `pairFromText` seam); camera scanner BLOCKED pending operator approval to add CameraX + QR decoder (7.4 auto-reconnect shipped on this device — see HangHonesty.reconnectPolicy + ChatViewModel.maybeAttemptReconnectRecovery, 310 tests 0-fail) |
 | 2026-07-18 | **0.6.0-rc6**: stream recovery offer UI (host excellence 13.10) |
 | 2026-07-18 | **0.6.0-rc5**: SSE error catalog + classify free-text + streamDropRecovery pure helpers (13.9) |

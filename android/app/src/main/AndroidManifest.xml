@@ -14,6 +14,16 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!--
+        Camera: used ONLY by the optional QR-pairing scanner (6.6). We never
+        record or upload frames — the camera pipeline decodes QR codes
+        locally with ZXing and discards every frame immediately. required=
+        "false" keeps the app installable on devices without a camera; the
+        scanner UI hides itself and falls back to paste-URL when the camera
+        is unavailable or permission is denied.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!-- In-app updater: lets us hand a downloaded APK to Android's package
          installer. On first update the user grants "install from this app"
          via the standard system prompt (we check canRequestPackageInstalls
