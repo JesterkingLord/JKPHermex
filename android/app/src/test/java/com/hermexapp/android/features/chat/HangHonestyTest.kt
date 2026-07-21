@@ -91,4 +91,67 @@ class HangHonestyTest {
         assertTrue(HangHonesty.shouldKeepPartialTranscript(true))
         assertTrue(HangHonesty.shouldKeepPartialTranscript(false)) // contract: never wipe policy
     }
+
+    // ---------------------------------------------------------------------
+    // Auto-reconnect policy (excellence 13.9 / 7.4 — Wave 2)
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `reconnect first transport drop uses smallest delay`() {
+        val r = HangHonesty.reconnectPolicy(isTransportDrop = true, isAuthFailure = false, attempt = 0)
+        assertTrue(r.shouldReconnect)
+        assertEquals(1, r.delayS)
+        assertEquals(1, r.nextAttempt)
+    }
+
+    @Test
+    fun `reconnect backs off through the schedule`() {
+        assertEquals(1, HangHonesty.reconnectPolicy(true, false, 0).delayS)
+        assertEquals(2, HangHonesty.reconnectPolicy(true, false, 1).delayS)
+        assertEquals(4, HangHonesty.reconnectPolicy(true, false, 2).delayS)
+        assertTrue(HangHonesty.reconnectPolicy(true, false, 2).shouldReconnect)
+    }
+
+    @Test
+    fun `reconnect stops once budget exhausted`() {
+        val r = HangHonesty.reconnectPolicy(isTransportDrop = true, isAuthFailure = false, attempt = 3)
+        assertTrue(!r.shouldReconnect)
+        assertEquals(0, r.delayS)
+        assertTrue(r.reason.contains("exhausted"))
+    }
+
+    @Test
+    fun `auth failure never reconnects`() {
+        val r = HangHonesty.reconnectPolicy(isTransportDrop = true, isAuthFailure = true, attempt = 0)
+        assertTrue(!r.shouldReconnect)
+        assertTrue(r.reason.contains("auth"))
+    }
+
+    @Test
+    fun `in-band error never reconnects`() {
+        val r = HangHonesty.reconnectPolicy(isTransportDrop = false, isAuthFailure = false, attempt = 0)
+        assertTrue(!r.shouldReconnect)
+        assertTrue(r.reason.contains("in-band"))
+    }
+
+    @Test
+    fun `auth classification wins over transport drop`() {
+        val r = HangHonesty.reconnectPolicy(isTransportDrop = true, isAuthFailure = true, attempt = 2)
+        assertTrue(!r.shouldReconnect)
+    }
+
+    @Test
+    fun `custom delay schedule honored`() {
+        val r = HangHonesty.reconnectPolicy(true, false, 1, delaysS = listOf(5, 10))
+        assertTrue(r.shouldReconnect)
+        assertEquals(10, r.delayS)
+        assertTrue(!HangHonesty.reconnectPolicy(true, false, 2, delaysS = listOf(5, 10)).shouldReconnect)
+    }
+
+    @Test
+    fun `reconnect budget matches schedule length`() {
+        assertEquals(3, HangHonesty.reconnectBudget())
+        assertEquals(2, HangHonesty.reconnectBudget(listOf(1, 2)))
+        assertEquals(HangHonesty.RECONNECT_DELAYS_S.size, HangHonesty.reconnectBudget())
+    }
 }

@@ -132,4 +132,78 @@ object HangHonesty {
             isTransportDrop = true,
         ).keepPartial
     }
+
+    // ---------------------------------------------------------------------
+    // Auto-reconnect policy (excellence 13.9 / 7.4 — Wave 2).
+    //
+    // Ground truth (verified against the live JKP host
+    // hermes/gateway/platforms/api_server.py, 2026-07-21):
+    //   `POST /api/sessions/{id}/chat/stream` CANCELS the agent run on client
+    //   disconnect and has NO mid-stream resume. So "reconnect" never means
+    //   resume-mid-token — [ChatViewModel] re-establishes connectivity and
+    //   re-fetches `GET /api/sessions/{id}/messages` to recover a turn that
+    //   completed while the wire was down, else surfaces streamDropRecovery().tip.
+    //   Auth failures clear the grant + re-pair and are NEVER auto-retried.
+    // ---------------------------------------------------------------------
+
+    /** Default reconnect backoff schedule in seconds. */
+    val RECONNECT_DELAYS_S: List<Int> = listOf(1, 2, 4)
+
+    /**
+     * Pure reconnect-policy decision. [ChatViewModel] drives the real
+     * re-establish + session re-fetch; this only answers "should I retry now?"
+     *
+     * @param isTransportDrop true only for an SSE/OkHttp transport-level drop
+     * @param isAuthFailure true when the drop was classified as an auth failure
+     *   (see [isAuthFailureMessage]) — 401 / invalid grant / invalid key
+     * @param attempt how many reconnect attempts have already been made (0 = none)
+     * @param delaysS optional custom backoff schedule (seconds)
+     */
+    data class ReconnectPolicy(
+        val shouldReconnect: Boolean,
+        val delayS: Int,
+        val nextAttempt: Int,
+        val reason: String,
+    )
+
+    fun reconnectPolicy(
+        isTransportDrop: Boolean,
+        isAuthFailure: Boolean,
+        attempt: Int,
+        delaysS: List<Int> = RECONNECT_DELAYS_S,
+    ): ReconnectPolicy {
+        if (isAuthFailure) {
+            return ReconnectPolicy(
+                shouldReconnect = false,
+                delayS = 0,
+                nextAttempt = attempt + 1,
+                reason = "auth-failure: clear grant and re-pair (never auto-retry)",
+            )
+        }
+        if (!isTransportDrop) {
+            return ReconnectPolicy(
+                shouldReconnect = false,
+                delayS = 0,
+                nextAttempt = attempt + 1,
+                reason = "in-band error: not a transport drop (no reconnect)",
+            )
+        }
+        if (attempt < delaysS.size) {
+            return ReconnectPolicy(
+                shouldReconnect = true,
+                delayS = delaysS[attempt],
+                nextAttempt = attempt + 1,
+                reason = "transport drop: reconnect attempt ${attempt + 1}/${delaysS.size}",
+            )
+        }
+        return ReconnectPolicy(
+            shouldReconnect = false,
+            delayS = 0,
+            nextAttempt = attempt + 1,
+            reason = "transport drop: reconnect budget exhausted (${delaysS.size} attempts)",
+        )
+    }
+
+    /** Total reconnect attempts available for a schedule (default 3). */
+    fun reconnectBudget(delaysS: List<Int> = RECONNECT_DELAYS_S): Int = delaysS.size
 }
