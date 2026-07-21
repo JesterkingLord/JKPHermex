@@ -21,7 +21,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 ---
 
-## 1. Current state (2026-07-18)
+## 1. Current state (2026-07-21)
 
 ### Shipped
 
@@ -58,13 +58,13 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 ## 2. Roadmap by version
 
-### 0.5.x — STABLE baseline (now)
+### 0.5.x — Prior stable baseline
 
 - Keep 255+ unit tests green on every change.  
 - Auto-update check + About / privacy links stay honest.  
 - Document install path for operator phone.
 
-### 0.6.0 — Play Store operator upload + pairing Bearer (IN PROGRESS)
+### 0.6.0 — SHIPPED (2026-07-21, tag `v0.6.0`, APK on GitHub Releases)
 
 | # | Work | Priority |
 |---|---|---|
@@ -86,7 +86,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 | 7.1 | Hang honesty: surface host approval waits (mirror Hermex PWA “Still working / approve or YOLO on host”) | **SHIPPED in 0.6.0-rc2** (`HangHonesty` + ChatViewModel stall watch) |
 | 7.2 | Categorized errors aligned with JKP gateway categories (auth, quota, rate-limit, offline) | **SHIPPED in 0.6.0-rc2** (`ClientErrorCatalog` + ApiError routing) |
 | 7.3 | Model preference parity with host session model | **SHIPPED in 0.6.0-rc4** (`resolveSessionModelSelection` + ChatViewModel seed) |
-| 7.4 | Streaming resilience (reconnect, partial render) | **Partial** — transport honesty (rc3) + SSE error catalog (rc5) + **streamDropRecovery pure helpers (host 13.9)**; full auto-reconnect still open |
+| 7.4 | Streaming resilience (reconnect, partial render) | **SHIPPED** — full auto-reconnect (`ConnectionSupervisor` + `ReconnectController`, v0.5.0) + transport honesty (rc3) + SSE error catalog (rc5) + `streamDropRecovery` pure helpers (host 13.9) + recovery offer UI (13.10) |
 | 7.5 | Optional: share sheet / deep link polish | P2 |
 
 ### Later / explicit non-goals
