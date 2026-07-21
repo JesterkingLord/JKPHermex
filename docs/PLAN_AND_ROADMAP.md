@@ -79,7 +79,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 **Depends on host JKP:** stable `/v1/pair/*`, grant revoke, session ownership (v1.12 track); freeze contract **v1.13.1**; host revoke UX **v1.13.1c**; host discovery **v1.13.2a** (`python -m jkp pair probe`, `GET /v1/pair/contract`, `GET /v1/client-errors`, capabilities advertises device grant). Before phone QA: `python -m jkp pair probe --url <host>`. Mirror: local forget ≠ host revoke; on 401 `invalid_device_grant` clear grant and re-pair.
 
-### 0.7.0 — Operator quality (partially pulled into 0.6.0-rc2)
+### 0.7.0 — Operator quality (7.1–7.4 SHIPPED across 0.6.0-rc2..final; 7.5 P2 open)
 
 | # | Work | Priority |
 |---|---|---|
