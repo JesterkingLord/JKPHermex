@@ -135,7 +135,7 @@ fun ComposerBar(
                         onClick = { openPicker = PickerKind.MODEL },
                     )
                     SelectorText(
-                        label = reasoningShortLabel(state.selectedReasoningEffort),
+                        label = "⚡ ${reasoningShortLabel(state.selectedReasoningEffort)}",
                         onClick = { openPicker = PickerKind.REASONING },
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
@@ -202,7 +202,7 @@ fun ComposerBar(
                 onClick = { openPicker = PickerKind.PROFILE },
             )
             PillChip(
-                text = "${if (state.showReasoning) "🧠" else "💭"} reasoning ${if (state.showReasoning) "on" else "off"}",
+                text = "${if (state.showReasoning) "🧠" else "💭"} show thinking ${if (state.showReasoning) "on" else "off"}",
                 onClick = { viewModel.setShowReasoning(!state.showReasoning) },
             )
         }
