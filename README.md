@@ -19,7 +19,8 @@ The agent does **not** run on the phone. The phone is a client. See:
 | Upstream [`PROJECT_SPEC.md`](https://github.com/super3/hermex/blob/master/PROJECT_SPEC.md) | Product/API source of truth |
 | JKP host roadmap | `E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md` |
 
-**Current Android version:** `0.6.0` (`versionCode` 13) — Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 full auto-reconnect + 6.6 live camera QR scanner + 13.10 stream recovery. Debug-signed sideload APK published via GitHub Releases (Play Store upload operator-blocked).
+**Current Android version:** `0.6.0-stable` (`versionCode` 13) — Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 full auto-reconnect + 6.6 live camera QR scanner + 13.10 stream recovery. Debug-signed sideload APK published via GitHub Releases (Play Store upload operator-blocked).  
+**Stable line:** tag `v0.6.0-stable`, branch `stable/v1.12.1-jkphermex-0.6.0` (coordinated with JKP `v1.12.1-stable`). Release notes: [`RELEASE_NOTES_v0.6.0-stable.md`](RELEASE_NOTES_v0.6.0-stable.md).
 
 ---
 

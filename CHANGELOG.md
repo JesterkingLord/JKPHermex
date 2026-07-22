@@ -5,6 +5,25 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [v0.6.0-stable] - 2026-07-22
+
+First stable tag cut since 0.6.0 final. Coordinated with JKP `v1.12.1-stable` (same stable branch name on both repos: `stable/v1.12.1-jkphermex-0.6.0`). APK already at `versionCode 13` on the operator's Tailscale phone — no rebuild required for the tag.
+
+Added in this cut:
+- 323/323 unit tests passing (verified 2026-07-22; `./gradlew.bat testDebugUnitTest` BUILD SUCCESSFUL in 14s across 39 test suites; exceeds the 255+ plan baseline)
+- Reasoning controls UX fix from `39aa194`: two reasoning controls (xhi picker + on/off pill) clarified so they no longer look like duplicates
+
+Carries from 0.6.0 base: Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 full auto-reconnect (1s/2s/4s backoff + best-effort session re-fetch + auth → re-pair) + 6.6 live camera QR (CameraX 1.4.1 + ZXing 3.5.3) + 13.10 stream recovery.
+
+Server-side improvements from `JKP v1.12.1-stable` apply automatically:
+- Telegram stuck-typing fix (JKP commit `c0a9f935d`) — multi-chunk replies no longer leak the typing bubble past the last message
+- Hermes v0.19.0 doc/version sync (JKP commit `81a4b527a`) — release lineage now agrees on `v0.19.0`
+- 90-second cloud-provider chat hang eliminated (JKP commit `cca2bf606` + `api_max_retries: 1`)
+
+Operator-blocked items unchanged: Play Store upload (6.1, secrets in 1Password), physical device QA matrix (6.8).
+
+Full release notes: [`RELEASE_NOTES_v0.6.0-stable.md`](RELEASE_NOTES_v0.6.0-stable.md).
+
 ## [Unreleased]
 
 ### Verified
