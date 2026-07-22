@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -89,6 +90,15 @@ fun ChatScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize().imePadding(),
+        // EXCELLENCE 0.6.1 — fix grey band below composer when the IME is up.
+        // The default (WindowInsets.systemBars) re-applies the nav-bar inset to
+        // the content PaddingValues, and since `.imePadding()` on the root has
+        // already pushed the entire scaffold up by the IME height, that bottom
+        // inset now sits *under* the keyboard as a visible (background-coloured)
+        // band between the composer and the keyboard. The top inset is owned by
+        // `HermexHeader.statusBarsPadding()`, so we zero the whole content-inset
+        // box and let `.imePadding()` on the root be the single source of truth.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = palette.canvas,
         topBar = {
             HermexHeader(

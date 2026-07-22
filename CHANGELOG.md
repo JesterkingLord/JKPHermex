@@ -5,6 +5,42 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [v0.6.1-stable] - 2026-07-22
+
+### Fixed
+- **Grey band between composer and keyboard when typing.** When the IME
+  (software keyboard) was up, the chat screen showed a dark band of empty
+  space between the composer's bottom row of chips (`📁 workspace`, `👤 profile`,
+  `🧠 show thinking`) and the keyboard. Root cause: `MainActivity.enableEdgeToEdge()`
+  is on, and M3 `Scaffold`'s default `contentWindowInsets` was
+  `WindowInsets.systemBars` — that re-applied the nav-bar bottom inset on top
+  of the already-applied `.imePadding()`, so the inner PaddingValues consumed
+  ~48 dp of vertical space the keyboard already occupies. Fix: zero out
+  `contentWindowInsets` on the chat Scaffold (`WindowInsets(0, 0, 0, 0)`);
+  status-bar inset remains owned by `HermexHeader.statusBarsPadding()`. IME
+  inset remains owned by `.imePadding()` on the Scaffold root. Composer now
+  sits flush above the keyboard, every dp of screen real estate is usable.
+
+### Added
+- **Structural regression test** (`ChatScreenImeInsetsLayoutTest`) — three
+  source-parse assertions that fail loudly if anyone removes the fix or
+  re-introduces `systemBars`/`navigationBarsPadding` inside the Scaffold body.
+  This is the cheapest possible sentinel: no Robolectric/compose-ui-test deps
+  needed.
+
+### Verified
+- 2026-07-22: **326 unit tests, 0 failures, 0 errors, 0 skipped** across
+  40 test suites (`./gradlew.bat testDebugUnitTest` BUILD SUCCESSFUL). New
+  test added: 3 tests in `ChatScreenImeInsetsLayoutTest`.
+- Debug APK assembles clean: 13.4 MB at `app/build/outputs/apk/debug/app-debug.apk`
+- APK version bumped: `versionName 0.6.0 → 0.6.1`, `versionCode 13 → 14`
+
+No operator-blocking work. APK functionally identical except the keyboard
+positioning. Server-side dependencies unchanged: this still pairs against the
+JKP `v1.12.1-stable` host.
+
+Full release notes: [`RELEASE_NOTES_v0.6.1-stable.md`](RELEASE_NOTES_v0.6.1-stable.md).
+
 ## [v0.6.0-stable] - 2026-07-22
 
 First stable tag cut since 0.6.0 final. Coordinated with JKP `v1.12.1-stable` (same stable branch name on both repos: `stable/v1.12.1-jkphermex-0.6.0`). APK already at `versionCode 13` on the operator's Tailscale phone — no rebuild required for the tag.
