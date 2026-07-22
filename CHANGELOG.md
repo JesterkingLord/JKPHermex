@@ -7,6 +7,9 @@ Security sections per release.
 
 ## [Unreleased]
 
+### Verified
+- 2026-07-22: 323 unit tests, 0 failures, 0 errors, 0 skipped (across 39 test suites; ./gradlew.bat testDebugUnitTest BUILD SUCCESSFUL in 14s; exceeds 255+ plan baseline). Includes `AuthManagerPairingTest`, `PairingIntentParserTest`, `HangHonestyTest`, `UpdateCheckerTest`, `AuthManagerTest` from the 7.4 / 6.6 / 7.3 ship slices.
+
 ### Planned (operator-blocked)
 - Play Store upload: Developer account, real release keystore (1Password),
   mipmap icons, feature graphic, screenshots, listing from
