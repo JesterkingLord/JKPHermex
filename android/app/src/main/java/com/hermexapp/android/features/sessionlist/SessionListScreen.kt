@@ -222,6 +222,20 @@ fun SessionListScreen(
                 }
             } else {
                 item(key = "wordmark-row") {
+                    // Wave 6 Slice 6.6 — small session-count header so the
+                    // user can see at-a-glance how busy their chat history
+                    // is. Single line above the wordmark row.
+                    if (state.sessions.isNotEmpty()) {
+                        Text(
+                            text = "${state.sessions.size} conversation" +
+                                if (state.sessions.size == 1) "" else "s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, top = 14.dp, bottom = 2.dp),
+                        )
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
