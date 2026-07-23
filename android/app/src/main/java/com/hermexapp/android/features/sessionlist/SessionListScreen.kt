@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -102,14 +104,19 @@ fun SessionListScreen(
     // Wave 2 reuses the same state pattern for the chat timeline.
     val listState = rememberLazyListState()
     // Letter-jump map for the Gmail-style rail. Recompute only when the
+    // Wave 7 Slice 7.2 — display list obeys the current filter pill; the
+    // bulk-action toolbar keeps using the full set so cross-filter
+    // selection isn't lost when the user toggles the pill mid-selection.
+    val visibleSessions = viewModel.filteredSessions
+
     // session list itself changes (cheap; O(N) on list mutation but the
     // list rarely exceeds ~100 rows in practice).
-    val letterIndex: Map<Char, Int> = remember(state.sessions) {
+    val letterIndex: Map<Char, Int> = remember(visibleSessions) {
         // Reduce titles to first-letter bucket indexes. `buildList`+Pair
         // was wrong because Pair doesn't have `.key`; just use a
         // MutableMap directly so `putIfAbsent` does exactly what we want.
         val out = sortedMapOf<Char, Int>()
-        for ((idx, title) in state.sessions.withIndex()) {
+        for ((idx, title) in visibleSessions.withIndex()) {
             val trimmed = title.title?.trim()?.takeIf(String::isNotEmpty) ?: continue
             val first = trimmed.first().uppercaseChar()
             if (first.isLetter()) out.putIfAbsent(first, idx)
@@ -120,8 +127,8 @@ fun SessionListScreen(
     // SessionGroups helper. Recompute only when the underlying session
     // list itself changes so LazyColumn keys stay stable; the bucketing
     // function uses Clock.systemUTC() for "now" by default.
-    val groups = remember(state.sessions) {
-        SessionGroups.groupSessions(state.sessions)
+    val groups = remember(visibleSessions) {
+        SessionGroups.groupSessions(visibleSessions)
     }
     var searchVisible by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<SessionSummary?>(null) }
@@ -242,10 +249,10 @@ fun SessionListScreen(
                     // Wave 6 Slice 6.6 — small session-count header so the
                     // user can see at-a-glance how busy their chat history
                     // is. Single line above the wordmark row.
-                    if (state.sessions.isNotEmpty()) {
+                    if (visibleSessions.isNotEmpty()) {
                         Text(
-                            text = "${state.sessions.size} conversation" +
-                                if (state.sessions.size == 1) "" else "s",
+                            text = "${visibleSessions.size} conversation" +
+                                if (visibleSessions.size == 1) "" else "s",
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.textSecondary,
                             modifier = Modifier
@@ -288,6 +295,21 @@ fun SessionListScreen(
                                 modifier = Modifier.size(20.dp),
                             )
                         }
+                    }
+                }
+                // Wave 7 Slice 7.2 — sidebar filter pills (All / Pinned /
+                // Archived). Hidden in bulk-selection mode so the user
+                // isn't distracted mid-action. Tapping the active pill
+                // returns to All so a pill always serves as both a filter
+                // and a toggle-off.
+                item(key = "filter-pills") {
+                    if (!state.selectionMode) {
+                        FilterPills(
+                            current = state.filterMode,
+                            onPick = { mode ->
+                                viewModel.setFilterMode(mode)
+                            },
+                        )
                     }
                 }
             }
@@ -356,25 +378,39 @@ fun SessionListScreen(
             }
 
             when {
-                state.isLoading && state.sessions.isEmpty() -> item {
+                state.isLoading && visibleSessions.isEmpty() -> item {
                     Box(
                         Modifier.fillMaxWidth().padding(vertical = 48.dp),
                         contentAlignment = Alignment.Center,
                     ) { CircularProgressIndicator(color = palette.accent) }
                 }
 
-                state.sessions.isEmpty() && state.errorMessage == null -> item {
+                visibleSessions.isEmpty() && state.errorMessage == null -> item {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            if (state.searchQuery.isBlank()) "No sessions yet" else "No matches",
+                            text = when {
+                                state.searchQuery.isNotBlank() -> "No matches"
+                                state.filterMode == SessionListViewModel.FilterMode.Pinned &&
+                                    viewModel.filteredSessions.isEmpty() &&
+                                    state.sessions.any { it.pinned == true } ->
+                                    "Nothing matches in Pinned"
+                                state.filterMode == SessionListViewModel.FilterMode.Archived &&
+                                    viewModel.filteredSessions.isEmpty() &&
+                                    state.sessions.any { it.archived == true } ->
+                                    "Nothing matches in Archived"
+                                else -> "No sessions yet"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            if (state.searchQuery.isBlank()) "Tap Chat to start one." else "Try another search.",
+                            when {
+                                state.searchQuery.isNotBlank() -> "Try another search."
+                                else -> "Tap Chat to start one."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = palette.textSecondary,
                         )
@@ -440,7 +476,7 @@ fun SessionListScreen(
             // us which row to scroll to, and we drive `listState.scrollToItem`
             // via the scope.
             FastScrollbar(
-                itemCount = state.sessions.size,
+                itemCount = visibleSessions.size,
                 firstVisibleIndex = listState.firstVisibleItemIndex,
                 firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
                 estimatedItemHeightPx = 72,
@@ -549,6 +585,72 @@ fun SessionListScreen(
             dismissButton = {
                 TextButton(onClick = { bulkDeleteOpen = false }) { Text("Cancel") }
             },
+        )
+    }
+}
+
+/**
+ * Wave 7 Slice 7.2 — sidebar filter pill row. Three pills: All / Pinned /
+ * Archived. Tapping the active pill returns to All. Material3
+ * `FilterChip` for each, wrapped in a `Row` with 12dp horizontal padding.
+ * The vertical padding sits between the wordmark row and the section
+ * headers so the pills don't crowd either neighbour.
+ */
+@Composable
+private fun FilterPills(
+    current: SessionListViewModel.FilterMode,
+    onPick: (SessionListViewModel.FilterMode) -> Unit,
+) {
+    val palette = LocalHermexPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(
+            selected = current == SessionListViewModel.FilterMode.All,
+            onClick = { onPick(SessionListViewModel.FilterMode.All) },
+            label = { Text("All") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = palette.accent.copy(alpha = 0.18f),
+                selectedLabelColor = palette.accent,
+            ),
+        )
+        FilterChip(
+            selected = current == SessionListViewModel.FilterMode.Pinned,
+            onClick = {
+                onPick(
+                    if (current == SessionListViewModel.FilterMode.Pinned) {
+                        SessionListViewModel.FilterMode.All
+                    } else {
+                        SessionListViewModel.FilterMode.Pinned
+                    },
+                )
+            },
+            label = { Text("Pinned") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = palette.accent.copy(alpha = 0.18f),
+                selectedLabelColor = palette.accent,
+            ),
+        )
+        FilterChip(
+            selected = current == SessionListViewModel.FilterMode.Archived,
+            onClick = {
+                onPick(
+                    if (current == SessionListViewModel.FilterMode.Archived) {
+                        SessionListViewModel.FilterMode.All
+                    } else {
+                        SessionListViewModel.FilterMode.Archived
+                    },
+                )
+            },
+            label = { Text("Archived") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = palette.accent.copy(alpha = 0.18f),
+                selectedLabelColor = palette.accent,
+            ),
         )
     }
 }

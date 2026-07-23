@@ -32,7 +32,28 @@ class SessionListViewModel(
         val selectionMode: Boolean = false,
         /** Stable session ids currently selected. Empty when not in selection mode. */
         val selectedIds: Set<String> = emptySet(),
+        /**
+         * Wave 7 Slice 7.2 — sidebar filter pill, choosing which sessions
+         * show in the list. `All` is the default (no filtering). `Pinned`
+         * and `Archived` are subset filters; they don't replace search.
+         */
+        val filterMode: FilterMode = FilterMode.All,
     )
+
+    /**
+     * Wave 7 Slice 7.2 — sidebar filter pill states. The pill row above
+     * the wordmark renders one chip per non-empty state; tapping a chip
+     * swaps [UiState.filterMode]. Tapping the currently-active chip
+     * returns to [FilterMode.All] (toggle-off affordance).
+     *
+     * Only states the model can express today are listed. `Shared`
+     * (multi-user invite) is reserved for a future model field.
+     */
+    enum class FilterMode {
+        All,
+        Pinned,
+        Archived,
+    }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -336,4 +357,32 @@ class SessionListViewModel(
 
     /** Convenience accessor used by the screen's snackbar formatting. */
     val selectedCount: Int get() = _uiState.value.selectedIds.size
+
+    /**
+     * Wave 7 Slice 7.2 — set the sidebar filter pill. [mode] replaces
+     * the current filter; passing the already-active mode is a no-op
+     * (the screen renders toggle-off separately by re-tapping the chip
+     * itself, which calls this with [FilterMode.All]).
+     *
+     * Pure local state — does not hit the network. The grouped-bucket
+     * computed view (see [filteredSessions]) re-derives from
+     * [UiState.sessions] on every read.
+     */
+    fun setFilterMode(mode: FilterMode) {
+        _uiState.update { it.copy(filterMode = mode) }
+    }
+
+    /**
+     * Wave 7 Slice 7.2 — sessions visible under the current
+     * [UiState.filterMode]. Empty list is preserved verbatim (the
+     * LazyColumn already handles the empty-state item). [FilterMode.All]
+     * returns the full list unsorted — the caller's grouping helper
+     * owns the actual ordering.
+     */
+    val filteredSessions: List<SessionSummary>
+        get() = when (_uiState.value.filterMode) {
+            FilterMode.All -> _uiState.value.sessions
+            FilterMode.Pinned -> _uiState.value.sessions.filter { it.pinned == true }
+            FilterMode.Archived -> _uiState.value.sessions.filter { it.archived == true }
+        }
 }
