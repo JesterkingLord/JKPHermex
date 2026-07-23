@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import com.hermexapp.android.model.Project
 import com.hermexapp.android.model.SessionSummary
 import com.hermexapp.android.ui.CircleButton
+import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexPickerSheet
 import com.hermexapp.android.ui.HermexWordmark
 import com.hermexapp.android.ui.PickerRow
@@ -88,6 +90,25 @@ fun SessionListScreen(
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
     val snackbarHostState = remember { SnackbarHostState() }
+    // Excellence v1 Wave 1: LazyListState for the FastScrollbar drag
+    // gestures. The session list is the scrollbar's first consumer;
+    // Wave 2 reuses the same state pattern for the chat timeline.
+    val listState = rememberLazyListState()
+    // Letter-jump map for the Gmail-style rail. Recompute only when the
+    // session list itself changes (cheap; O(N) on list mutation but the
+    // list rarely exceeds ~100 rows in practice).
+    val letterIndex: Map<Char, Int> = remember(state.sessions) {
+        // Reduce titles to first-letter bucket indexes. `buildList`+Pair
+        // was wrong because Pair doesn't have `.key`; just use a
+        // MutableMap directly so `putIfAbsent` does exactly what we want.
+        val out = sortedMapOf<Char, Int>()
+        for ((idx, title) in state.sessions.withIndex()) {
+            val trimmed = title.title?.trim()?.takeIf(String::isNotEmpty) ?: continue
+            val first = trimmed.first().uppercaseChar()
+            if (first.isLetter()) out.putIfAbsent(first, idx)
+        }
+        out
+    }
     var searchVisible by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var renameTarget by remember { mutableStateOf<SessionSummary?>(null) }
@@ -145,10 +166,16 @@ fun SessionListScreen(
             }
         },
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp),
+            ) {
             // Excellence v1 Wave 0: contextual action bar takes the header row
             // when bulk-select mode is active. Otherwise the existing wordmark +
             // search + settings row stays put. (Replaces the previous single
@@ -343,6 +370,25 @@ fun SessionListScreen(
                     )
                 }
             }
+            }
+            // Excellence v1 Wave 1: FastScrollbar overlays the list on the
+            // right edge. Hidden when there are fewer than 20 items (no UX
+            // value and saves the hit zone). Letter-jump rail snaps to the
+            // first index of each letter group's title. Drag is handled by
+            // the FastScrollbar's internal pointerInput; on release it tells
+            // us which row to scroll to, and we drive `listState.scrollToItem`
+            // via the scope.
+            FastScrollbar(
+                itemCount = state.sessions.size,
+                firstVisibleIndex = listState.firstVisibleItemIndex,
+                firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
+                estimatedItemHeightPx = 72,
+                letterIndex = letterIndex,
+                onScrollToIndex = { target ->
+                    scope.launch { listState.scrollToItem(target) }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
         }
     }
 
