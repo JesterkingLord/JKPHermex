@@ -68,6 +68,8 @@ That audit is the from-state. Every wave below addresses a row.
 
 ## 2. Wave 6 — `v0.8.0` ChatGPT-class sidebar
 
+**Status (2026-07-23, on `feat/wave-6-sidebar`):** slices **6.1 ✅, 6.2 ✅, 6.4 ✅, 6.6 ✅ shipped.** 6.3 (swipes) was already shipped before this branch (Archive + Delete on `SwipeableSessionRow`, Pin/Unpin in long-press menu). 6.5 (reconnect pulse) deferred — needs new connection-state plumbing, logged as a follow-up. Test count: 428 (was 398 baseline).
+
 ### Goal
 
 Make the sidebar feel like a real first-class citizen — always present, instantly navigable, with inline row actions and date grouping.
