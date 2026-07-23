@@ -346,6 +346,108 @@ class SessionListViewModelTest {
         assertTrue(viewModel.uiState.value.errorMessage!!.isNotEmpty())
         assertEquals(0, viewModel.uiState.value.sessions.size)
     }
+
+    // ---------------- Wave 7 Slice 7.2 — filter pills ----------------
+
+    /** Pure copy of a session with a chosen pinned / archived state. */
+    private fun fakeSession(
+        id: String,
+        pinned: Boolean = false,
+        archived: Boolean = false,
+    ): SessionSummary = SessionSummary(
+        sessionId = id,
+        title = id,
+        pinned = pinned,
+        archived = archived,
+    )
+
+    /** Helper to seed a VM with a chosen sessions list — single-call factory. */
+    private fun seededVmWith(
+        list: List<SessionSummary>,
+    ): SessionListViewModel {
+        val repo = FakeSessionRepository().also { it.sessions = list }
+        return SessionListViewModel(repository = repo, onAuthError = {})
+    }
+
+    @Test
+    fun `setFilterMode stores mode in UiState`() = runTest(dispatcher) {
+        val viewModel = SessionListViewModel(
+            repository = FakeSessionRepository(),
+            onAuthError = {},
+        )
+        assertEquals(SessionListViewModel.FilterMode.All, viewModel.uiState.value.filterMode)
+        viewModel.setFilterMode(SessionListViewModel.FilterMode.Pinned)
+        assertEquals(SessionListViewModel.FilterMode.Pinned, viewModel.uiState.value.filterMode)
+        viewModel.setFilterMode(SessionListViewModel.FilterMode.Archived)
+        assertEquals(SessionListViewModel.FilterMode.Archived, viewModel.uiState.value.filterMode)
+        viewModel.setFilterMode(SessionListViewModel.FilterMode.All)
+        assertEquals(SessionListViewModel.FilterMode.All, viewModel.uiState.value.filterMode)
+    }
+
+    @Test
+    fun `filteredSessions defaults to All (the empty case is empty)`() = runTest(dispatcher) {
+        // Default state has zero sessions and the All filter, so
+        // filteredSessions returns an empty list verbatim — the
+        // LazyColumn's own empty-state item renders the "No sessions yet" copy.
+        val viewModel = SessionListViewModel(
+            repository = FakeSessionRepository(),
+            onAuthError = {},
+        )
+        assertEquals(emptyList<SessionSummary>(), viewModel.filteredSessions)
+    }
+
+    @Test
+    fun `filteredSessions on All returns the full list verbatim`() = runTest(dispatcher) {
+        val a = fakeSession("a", pinned = true)
+        val b = fakeSession("b", archived = true)
+        val c = fakeSession("c")
+        val all = listOf(a, b, c)
+        val seeded = seededVmWith(all)
+        seeded.refreshNow()
+        advanceUntilIdle()
+
+        assertEquals(all, seeded.filteredSessions)
+    }
+
+    @Test
+    fun `filteredSessions on Pinned returns only pinned items`() = runTest(dispatcher) {
+        val a = fakeSession("a", pinned = true)
+        val b = fakeSession("b", archived = true)
+        val c = fakeSession("c")
+        val all = listOf(a, b, c)
+        val seeded = seededVmWith(all)
+        seeded.refreshNow()
+        advanceUntilIdle()
+
+        seeded.setFilterMode(SessionListViewModel.FilterMode.Pinned)
+        assertEquals(listOf(a), seeded.filteredSessions)
+    }
+
+    @Test
+    fun `filteredSessions on Archived returns only archived items`() = runTest(dispatcher) {
+        val a = fakeSession("a", pinned = true)
+        val b = fakeSession("b", archived = true)
+        val c = fakeSession("c")
+        val all = listOf(a, b, c)
+        val seeded = seededVmWith(all)
+        seeded.refreshNow()
+        advanceUntilIdle()
+
+        seeded.setFilterMode(SessionListViewModel.FilterMode.Archived)
+        assertEquals(listOf(b), seeded.filteredSessions)
+    }
+
+    @Test
+    fun `filteredSessions on a filter with zero matches returns empty`() = runTest(dispatcher) {
+        val a = fakeSession("a")
+        val all = listOf(a)
+        val seeded = seededVmWith(all)
+        seeded.refreshNow()
+        advanceUntilIdle()
+
+        seeded.setFilterMode(SessionListViewModel.FilterMode.Pinned)
+        assertEquals(emptyList<SessionSummary>(), seeded.filteredSessions)
+    }
 }
 
 /**
