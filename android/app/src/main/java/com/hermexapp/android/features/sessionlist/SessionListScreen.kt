@@ -41,6 +41,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Surface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -48,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,6 +112,13 @@ fun SessionListScreen(
             if (first.isLetter()) out.putIfAbsent(first, idx)
         }
         out
+    }
+    // Wave 6 Slice 6.2 — date-grouped section buckets from the pure
+    // SessionGroups helper. Recompute only when the underlying session
+    // list itself changes so LazyColumn keys stay stable; the bucketing
+    // function uses Clock.systemUTC() for "now" by default.
+    val groups = remember(state.sessions) {
+        SessionGroups.groupSessions(state.sessions)
     }
     var searchVisible by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<SessionSummary?>(null) }
@@ -211,6 +222,20 @@ fun SessionListScreen(
                 }
             } else {
                 item(key = "wordmark-row") {
+                    // Wave 6 Slice 6.6 — small session-count header so the
+                    // user can see at-a-glance how busy their chat history
+                    // is. Single line above the wordmark row.
+                    if (state.sessions.isNotEmpty()) {
+                        Text(
+                            text = "${state.sessions.size} conversation" +
+                                if (state.sessions.size == 1) "" else "s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, top = 14.dp, bottom = 2.dp),
+                        )
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -218,6 +243,10 @@ fun SessionListScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         HermexWordmark()
+                        // Wave 6 Slice 6.4 — small "HH:mm" clock beside the
+                        // wordmark; ticks once per minute.
+                        Spacer(Modifier.size(12.dp))
+                        LiveClock()
                         Spacer(Modifier.weight(1f))
                         CircleButton(
                             onClick = {
@@ -335,39 +364,53 @@ fun SessionListScreen(
                     }
                 }
 
-                else -> items(state.sessions, key = { it.stableId }) { session ->
-                    val sessionId = session.sessionId ?: return@items
-                    val isSelected = state.selectedIds.contains(sessionId)
-                    SwipeableSessionRow(
-                        session = session,
-                        isSelected = isSelected,
-                        selectionMode = state.selectionMode,
-                        modifier = Modifier.animateItem(),
-                        onClick = {
-                            if (state.selectionMode) {
-                                viewModel.toggleSelection(sessionId)
-                            } else {
-                                onOpenSession(sessionId)
-                            }
-                        },
-                        onLongClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (state.selectionMode) {
-                                viewModel.toggleSelection(sessionId)
-                            } else {
-                                // First long-press enters selection mode + selects this row.
-                                viewModel.beginSelection(sessionId)
-                            }
-                        },
-                        onArchive = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.archiveSession(sessionId, session.archived != true)
-                        },
-                        onDelete = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            deleteTarget = session
-                        },
-                    )
+                else -> {
+                    // Wave 6 Slice 6.2 — date-grouped section headers. The
+                    // `groups` list is computed once above (keyed on
+                    // state.sessions) so we don't churn on every recompose.
+                    // Each group emits a sticky header row, then its sessions.
+                    groups.forEach { group ->
+                        item(key = "section-${group.section.label}") {
+                            SectionHeader(
+                                title = group.section.label,
+                                count = group.sessions.size,
+                            )
+                        }
+                        items(group.sessions, key = { it.stableId }) { session ->
+                            val sessionId = session.sessionId ?: return@items
+                            val isSelected = state.selectedIds.contains(sessionId)
+                            SwipeableSessionRow(
+                                session = session,
+                                isSelected = isSelected,
+                                selectionMode = state.selectionMode,
+                                modifier = Modifier.animateItem(),
+                                onClick = {
+                                    if (state.selectionMode) {
+                                        viewModel.toggleSelection(sessionId)
+                                    } else {
+                                        onOpenSession(sessionId)
+                                    }
+                                },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (state.selectionMode) {
+                                        viewModel.toggleSelection(sessionId)
+                                    } else {
+                                        // First long-press enters selection mode + selects this row.
+                                        viewModel.beginSelection(sessionId)
+                                    }
+                                },
+                                onArchive = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.archiveSession(sessionId, session.archived != true)
+                                },
+                                onDelete = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    deleteTarget = session
+                                },
+                            )
+                        }
+                    }
                 }
             }
             }
@@ -491,6 +534,75 @@ fun SessionListScreen(
         )
     }
 }
+
+/**
+ * Wave 6 Slice 6.2 — small section header row between grouped session lists.
+ * Renders the bucket title (Pinned / Today / Yesterday / Previous 7 days /
+ * Earlier) and a count badge on the trailing edge. 16dp horizontal / 12dp top
+ * / 4dp bottom; sits inline in the same LazyColumn as the rows beneath it.
+ * Visual identity comes from the existing palette (`textSecondary` is the
+ * muted-text style used elsewhere on this screen — `Sessions` heading +
+ * offline banner).
+ */
+@Composable
+private fun SectionHeader(title: String, count: Int) {
+    val palette = LocalHermexPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        if (count > 0) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.textSecondary,
+            )
+        }
+    }
+}
+
+/**
+ * Wave 6 Slice 6.4 — small live "HH:mm" clock that ticks every minute.
+ *
+ * Re-composes only when the rounded minute changes (not every second).
+ * Format uses [Locale.getDefault] so the user's regional preferences
+ * (12-hour vs 24-hour) are honored — Material-style.
+ */
+@Composable
+private fun LiveClock() {
+    val palette = LocalHermexPalette.current
+    var minuteEpoch by remember { mutableIntStateOf(minuteBucket(nowMillis())) }
+    LaunchedEffect(Unit) {
+        // First tick happens on the next minute boundary. We poll every
+        // 10 seconds, which is cheap (no recomposition) and tolerant to
+        // device wake/sleep + system clock changes.
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            val current = minuteBucket(nowMillis())
+            if (current != minuteEpoch) minuteEpoch = current
+        }
+    }
+    val formatted = remember(minuteEpoch) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowMillis()))
+    }
+    Text(
+        text = formatted,
+        style = MaterialTheme.typography.labelMedium,
+        color = palette.textSecondary,
+    )
+}
+
+internal fun minuteBucket(epochMs: Long): Int = (epochMs / 60_000L).toInt()
+
+private fun nowMillis(): Long = java.lang.System.currentTimeMillis()
 
 /** The icon + label menu rows under the wordmark (Tasks / Skills / Memory / Insights). */
 @Composable

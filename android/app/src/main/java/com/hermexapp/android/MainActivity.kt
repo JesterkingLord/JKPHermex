@@ -39,6 +39,7 @@ import com.hermexapp.android.features.onboarding.OnboardingScreen
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import com.hermexapp.android.features.onboarding.OnboardingViewModel
 import com.hermexapp.android.features.panels.PanelKind
@@ -278,50 +279,61 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
      * Wave 5 Slice 5.6 — tablet two-pane layout. When the device has 600dp+
      * of horizontal width (`sw >= 600dp`), the session list is always pinned
      * on the left (40% width) and the current screen renders on the right
-     * (60%). On a phone, this passes through to the existing single-pane
-     * Crossfade behavior.
+     * (60%).
      *
-     * We use [LocalConfiguration.screenWidthDp] instead of pulling in
-     * material3-window-size-class (which would add a dependency) — the
-     * 600dp breakpoint is the canonical "tablet" boundary per the
-     * Android Material spec and matches what `WindowSizeClass` would
-     * report for `Expanded` vs `Medium`.
+     * Wave 6 Slice 6.1 — every layout now begins with a permanent left sidebar
+     * (always visible, ~88dp on phones / 300dp on tablets). On phones, tapping a
+     * session replaces the rail with the chat; the back affordance returns to
+     * the rail. On tablets (sw >= 600dp), sessions open in the right pane while
+     * the rail stays visible — the existing ChatScreen-/-Files-/-Git behavior.
      */
     val configuration = LocalConfiguration.current
     val onTablet = configuration.screenWidthDp >= 600
+    val sidebarWidth = if (onTablet) 300.dp else 88.dp
+    // Right-pane screens that always live alongside the rail (chat, files,
+    // git, project files). On the literal session list, Settings, Panels, or
+    // Projects we treat the SessionListScreen itself as the right pane — the
+    // "rail" only ever shows on screens where the right pane is showing a
+    // chat-shaped document.
+    val railScreens = screen is Screen.Chat || screen is Screen.Files || screen is Screen.Git
 
-    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
-        // The right-pane screen content lives in renderScreen(); the
-        // lambda closes over `screen`/`sharePrefill`/`shareFileUploads` so
-        // state changes propagate. Each renderScreen invocation receives
-        // the current target via Crossfade.
-        val setScreen: (Screen) -> Unit = { screen = it }
-        val rightPane: @Composable () -> Unit = {
-            Crossfade(targetState = screen, label = "screens") { current ->
-                renderScreen(
-                    current = current,
-                    container = container,
-                    server = server,
-                    sessionListViewModel = sessionListViewModel,
-                    sharePrefillRef = { sharePrefill },
-                    consumeSharePrefill = { sharePrefill = null },
-                    shareFileUploadsRef = { shareFileUploads },
-                    consumeShareFileUploads = {
-                        val u = shareFileUploads; shareFileUploads = emptyList(); u
-                    },
-                    setScreen = setScreen,
-                )
-            }
+androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+    // The right-pane screen content lives in renderScreen(); the
+    // lambda closes over `screen`/`sharePrefill`/`shareFileUploads` so
+    // state changes propagate. Each renderScreen invocation receives
+    // the current target via Crossfade.
+    val setScreen: (Screen) -> Unit = { screen = it }
+    val rightPane: @Composable () -> Unit = {
+        Crossfade(targetState = screen, label = "screens") { current ->
+            renderScreen(
+                current = current,
+                container = container,
+                server = server,
+                sessionListViewModel = sessionListViewModel,
+                sharePrefillRef = { sharePrefill },
+                consumeSharePrefill = { sharePrefill = null },
+                shareFileUploadsRef = { shareFileUploads },
+                consumeShareFileUploads = {
+                    val u = shareFileUploads; shareFileUploads = emptyList(); u
+                },
+                setScreen = setScreen,
+            )
         }
-        val onTabletPane = (screen is Screen.Chat || screen is Screen.Files || screen is Screen.Git) && onTablet
-        if (onTabletPane) {
-            // Tablet two-pane: SessionList (left) + current screen (right).
-            androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .weight(0.4f)
-                        .fillMaxSize(),
-                ) {
+    }
+    if (railScreens) {
+        // Sidebar rail + right pane (chat/files/git).
+        // Wave 6 Slice 6.1 — tablet gains a 300dp session list; phone gets an
+        // 88dp Wordmark-only rail with a "Switch conversation" pill that pops
+        // an overlay picker. Back from chat returns the user to the literal
+        // SessionList (settings/projects/panels don't show a rail).
+        androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .width(sidebarWidth)
+                    .fillMaxSize(),
+            ) {
+                if (onTablet) {
+                    // Wide tablet rail: full session list.
                     SessionListScreen(
                         viewModel = sessionListViewModel,
                         onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
@@ -329,18 +341,33 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
                         onOpenSettings = { setScreen(Screen.Settings) },
                         onOpenProjects = { setScreen(Screen.Projects) },
                     )
-                }
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .weight(0.6f)
-                        .fillMaxSize(),
-                ) {
-                    rightPane()
+                } else {
+                    // Phone rail: minimal Wordmark + back-to-list affordance +
+                    // a compact "Switch chat" pill.
+                    SidebarRailCompact(
+                        onBackToList = { setScreen(Screen.SessionList) },
+                        onNewChat = {
+                            scope.launch {
+                                sessionListViewModel.createSessionNow()?.also { sid ->
+                                    setScreen(Screen.Chat(sid))
+                                }
+                            }
+                        },
+                        onOpenSettings = { setScreen(Screen.Settings) },
+                    )
                 }
             }
-        } else {
-            rightPane()
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                rightPane()
+            }
         }
+    } else {
+        // Settings / Projects / Panels / SessionList itself: full-width rail.
+        // (Wave 6.2's section headers will live inside this rail.)
+        rightPane()
+    }
         // Auto-update Snackbar — overlaid on every screen so the user
         // sees the "new version" prompt regardless of which screen
         // they're on when the check completes.
