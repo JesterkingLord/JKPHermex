@@ -190,8 +190,22 @@ fun NotesScreen(
                     state = state,
                     viewModel = viewModel,
                     onSwipeDelete = { id ->
+                        // Capture the row BEFORE delete so we can restore on UNDO.
+                        val deleted = state.notes.firstOrNull { it.id == id }
                         viewModel.delete(id)
-                        scope.launch { snackbarHost.showSnackbar("Note deleted.") }
+                        scope.launch {
+                            val result = snackbarHost.showSnackbar(
+                                message = "Note deleted.",
+                                actionLabel = "Undo",
+                                withDismissAction = true,
+                                duration = androidx.compose.material3.SnackbarDuration.Short,
+                            )
+                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed
+                                && deleted != null
+                            ) {
+                                viewModel.upsert(deleted)
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )

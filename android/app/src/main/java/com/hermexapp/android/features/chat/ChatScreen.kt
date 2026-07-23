@@ -424,6 +424,7 @@ fun ChatScreen(
                 state = state,
                 onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                 onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                onLongPressSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                 onLongPressSend = onLongPressSend,
             )
             // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after

@@ -59,6 +59,7 @@ fun ComposerBar(
     state: ChatViewModel.UiState,
     onSendHaptic: () -> Unit = {},
     onStopHaptic: () -> Unit = {},
+    onLongPressSendHaptic: () -> Unit = {},
     onLongPressSend: (() -> Unit)? = null,
 ) {
     val palette = LocalHermexPalette.current
@@ -185,7 +186,10 @@ fun ComposerBar(
                                                 viewModel.send()
                                             }
                                         },
-                                        onLongClick = { onLongPressSend?.invoke() },
+                                        onLongClick = {
+                                            onLongPressSendHaptic()
+                                            onLongPressSend?.invoke()
+                                        },
                                     )
                                 } else {
                                     Modifier.clickable(enabled = enabled) {

@@ -192,8 +192,22 @@ fun PromptsScreen(
                 else -> PromptsList(
                     state = state,
                     onSwipeDelete = { id ->
+                        // Capture before delete so UNDO can restore the row.
+                        val deleted = state.prompts.firstOrNull { it.id == id }
                         viewModel.delete(id)
-                        scope.launch { snackbarHost.showSnackbar("Prompt deleted.") }
+                        scope.launch {
+                            val result = snackbarHost.showSnackbar(
+                                message = "Prompt deleted.",
+                                actionLabel = "Undo",
+                                withDismissAction = true,
+                                duration = androidx.compose.material3.SnackbarDuration.Short,
+                            )
+                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed
+                                && deleted != null
+                            ) {
+                                viewModel.upsert(deleted)
+                            }
+                        }
                     },
                     onInsert = { prompt ->
                         viewModel.requestInsert(prompt)
