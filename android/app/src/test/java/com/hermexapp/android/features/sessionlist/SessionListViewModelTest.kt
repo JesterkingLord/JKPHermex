@@ -6,6 +6,8 @@ import com.hermexapp.android.model.SessionBranchResponse
 import com.hermexapp.android.model.SessionDetail
 import com.hermexapp.android.model.SessionMutationResponse
 import com.hermexapp.android.model.SessionSummary
+import com.hermexapp.android.network.ApiError
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -272,6 +274,78 @@ class SessionListViewModelTest {
         assertEquals(2, viewModel.uiState.value.sessions.size)
         assertEquals("alpha", viewModel.uiState.value.searchQuery)
     }
+
+    // ---------------- Wave 7: pull-to-refresh contract ----------------
+    // These tests pin the state contract that SessionListScreen's
+    // PullToRefreshBox depends on:
+    //   * refresh() flips state.isLoading true synchronously on entry
+    //     (before the suspend repository call) so the indicator visualizes
+    //     the in-flight network call without waiting for it to return.
+    //   * refreshNow() returns state.isLoading to false on completion
+    //     whether the call succeeded or threw.
+    //   * On a thrown ApiError the same finally block writes
+    //     state.errorMessage (for the retry banner) and clears isLoading.
+
+    @Test
+    fun `refresh_togglesIsLoading_duringNetworkCall`() = runTest(dispatcher) {
+        // Gate the fake repo so refreshNow()'s suspend loadSessions() call
+        // parks on a deferred we control. Lets us observe the
+        // entry-state (isLoading=true) before the call completes.
+        val gate = CompletableDeferred<Unit>()
+        repo.loadSessionsGate = gate
+
+        // refresh() launches viewModelScope.launch { refreshNow() } which
+        // sets isLoading=true synchronously then suspends on the gate.
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        // While the gate is closed, the network call is in-flight and the
+        // screen-observable state must already reflect the loading flip.
+        // This is the property PullToRefreshBox needs to render its
+        // spinner instead of an empty list during a swipe-down refresh.
+        assertTrue(
+            "isLoading should be true while refreshNow is suspended on the network call",
+            viewModel.uiState.value.isLoading,
+        )
+
+        // Release the gate, advance past the network return, and verify
+        // isLoading flips back to false and the new sessions land.
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(
+            "isLoading should reset to false once the network call returns",
+            viewModel.uiState.value.isLoading,
+        )
+        assertEquals(3, viewModel.uiState.value.sessions.size)
+        assertEquals(null, viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `refreshNow_emitsErrorMessage_onServerFailure`() = runTest(dispatcher) {
+        // Script the fake to throw an ApiError on the next loadSessions()
+        // call. The VM's catch block is what populates state.errorMessage
+        // and clears isLoading; that's exactly the contract PullToRefreshBox
+        // trusts when its isRefreshing binding flips back to false.
+        repo.loadSessionsError = ApiError.Network(IllegalStateException("simulated"))
+
+        viewModel.refreshNow()
+        advanceUntilIdle()
+
+        // On failure: isLoading is back to false (so the indicator hides),
+        // errorMessage is populated (so the inline Retry banner shows),
+        // and sessions remain empty (no successful load).
+        assertFalse(
+            "isLoading should be false after a failed refresh",
+            viewModel.uiState.value.isLoading,
+        )
+        assertNotNull(
+            "errorMessage should be populated when refreshNow throws ApiError",
+            viewModel.uiState.value.errorMessage,
+        )
+        assertTrue(viewModel.uiState.value.errorMessage!!.isNotEmpty())
+        assertEquals(0, viewModel.uiState.value.sessions.size)
+    }
 }
 
 /**
@@ -292,8 +366,20 @@ private class FakeSessionRepository(
     var errorOnNextDelete: String? = null
     val nextDeleteError: String? get() = errorOnNextDelete.also { errorOnNextDelete = null }
 
-    override suspend fun loadSessions() =
-        SessionRepository.SessionsResult(sessions = sessions, fromCache = false)
+    // Wave 7 pull-to-refresh test hooks. When set, loadSessions() suspends
+    // on the gate before returning (lets tests observe the entry-state
+    // isLoading=true while the network call is still in-flight); when set
+    // the error is thrown instead of returning a successful result (lets
+    // tests pin the errorMessage/clear-isLoading path).
+    var loadSessionsGate: CompletableDeferred<Unit>? = null
+    var loadSessionsError: ApiError? = null
+
+    override suspend fun loadSessions(): SessionRepository.SessionsResult {
+        loadSessionsGate?.await()
+        val err = loadSessionsError
+        if (err != null) throw err
+        return SessionRepository.SessionsResult(sessions = sessions, fromCache = false)
+    }
 
     override suspend fun search(query: String): List<SessionSummary> = searchHits
 

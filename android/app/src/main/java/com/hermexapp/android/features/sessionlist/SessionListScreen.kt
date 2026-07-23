@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +42,8 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,7 +83,7 @@ import kotlinx.coroutines.launch
  * The iOS home screen: HERMEX wordmark, panel menu rows, a "Sessions" section
  * with relative timestamps, and the floating "✎ Chat" pill.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListScreen(
     viewModel: SessionListViewModel,
@@ -182,6 +185,20 @@ fun SessionListScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            // Wave 7: material3 PullToRefreshBox wraps the LazyColumn so a
+            // swipe-down gesture calls viewModel.refresh() (the non-suspend
+            // public entry — PullToRefreshBox.onRefresh is `() -> Unit`,
+            // which lines up with `refresh()`; `refreshNow()` is suspend).
+            // `isRefreshing` is bound to the existing state.isLoading flag so
+            // the spinner the screen already shows for first-paint loads is
+            // the same one the indicator visualizes — no new loading state.
+            // Inner LazyColumn is unchanged; FastScrollbar remains a sibling
+            // overlay on the right edge of the Box.
+            PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 state = listState,
@@ -412,6 +429,7 @@ fun SessionListScreen(
                         }
                     }
                 }
+            }
             }
             }
             // Excellence v1 Wave 1: FastScrollbar overlays the list on the
