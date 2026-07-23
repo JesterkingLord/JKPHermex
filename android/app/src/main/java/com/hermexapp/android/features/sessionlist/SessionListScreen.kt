@@ -93,6 +93,9 @@ fun SessionListScreen(
     var renameTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var moveTarget by remember { mutableStateOf<SessionSummary?>(null) }
+    /** Confirm-only state: holds the session-id list we are about to bulk-delete.
+     *  Different from [deleteTarget] which is for the single-row confirm flow. */
+    var bulkDeleteOpen by remember { mutableStateOf(false) }
 
     // Excellence v1 Wave 0: snackbar event collector. We launch a single
     // long-lived collection so each VM-emitted event fires exactly one snackbar.
@@ -146,37 +149,72 @@ fun SessionListScreen(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp),
         ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    HermexWordmark()
-                    Spacer(Modifier.weight(1f))
-                    CircleButton(
-                        onClick = {
-                            searchVisible = !searchVisible
-                            if (!searchVisible) viewModel.updateSearchQuery("")
+            // Excellence v1 Wave 0: contextual action bar takes the header row
+            // when bulk-select mode is active. Otherwise the existing wordmark +
+            // search + settings row stays put. (Replaces the previous single
+            // Row block; behaviour otherwise identical.)
+            if (state.selectionMode) {
+                item(key = "bulk-bar") {
+                    BulkSessionActionsBar(
+                        selectedCount = state.selectedIds.size,
+                        totalVisible = state.sessions.count { it.sessionId != null },
+                        onCancel = { viewModel.clearSelection() },
+                        onToggleSelectAll = {
+                            if (state.selectedIds.size == state.sessions.count { it.sessionId != null }) {
+                                viewModel.clearSelection()
+                            } else {
+                                viewModel.selectAllVisible()
+                            }
                         },
-                        icon = Icons.Filled.Search,
-                        size = 40,
+                        onPin = {
+                            viewModel.pinSessions(state.selectedIds.toList(), pinned = true)
+                            viewModel.clearSelection()
+                        },
+                        onArchive = {
+                            // Use archive=true for the bulk path; mixed state
+                            // is rare and the server's archive endpoint is
+                            // idempotent on idempotent=true.
+                            viewModel.archiveSessions(state.selectedIds.toList(), archived = true)
+                            viewModel.clearSelection()
+                        },
+                        onDelete = {
+                            bulkDeleteOpen = true
+                        },
                     )
-                    Spacer(Modifier.size(8.dp))
-                    Box(
+                }
+            } else {
+                item(key = "wordmark-row") {
+                    Row(
                         modifier = Modifier
-                            .size(40.dp)
-                            .background(palette.accent, CircleShape)
-                            .clickable(onClick = onOpenSettings),
-                        contentAlignment = Alignment.Center,
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = "Settings",
-                            tint = palette.canvas,
-                            modifier = Modifier.size(20.dp),
+                        HermexWordmark()
+                        Spacer(Modifier.weight(1f))
+                        CircleButton(
+                            onClick = {
+                                searchVisible = !searchVisible
+                                if (!searchVisible) viewModel.updateSearchQuery("")
+                            },
+                            icon = Icons.Filled.Search,
+                            size = 40,
                         )
+                        Spacer(Modifier.size(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(palette.accent, CircleShape)
+                                .clickable(onClick = onOpenSettings),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.Settings,
+                                contentDescription = "Settings",
+                                tint = palette.canvas,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -271,17 +309,32 @@ fun SessionListScreen(
                 }
 
                 else -> items(state.sessions, key = { it.stableId }) { session ->
+                    val sessionId = session.sessionId ?: return@items
+                    val isSelected = state.selectedIds.contains(sessionId)
                     SwipeableSessionRow(
                         session = session,
+                        isSelected = isSelected,
+                        selectionMode = state.selectionMode,
                         modifier = Modifier.animateItem(),
-                        onClick = { session.sessionId?.let(onOpenSession) },
+                        onClick = {
+                            if (state.selectionMode) {
+                                viewModel.toggleSelection(sessionId)
+                            } else {
+                                onOpenSession(sessionId)
+                            }
+                        },
                         onLongClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            actionTarget = session
+                            if (state.selectionMode) {
+                                viewModel.toggleSelection(sessionId)
+                            } else {
+                                // First long-press enters selection mode + selects this row.
+                                viewModel.beginSelection(sessionId)
+                            }
                         },
                         onArchive = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            session.sessionId?.let { viewModel.archiveSession(it, session.archived != true) }
+                            viewModel.archiveSession(sessionId, session.archived != true)
                         },
                         onDelete = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -358,6 +411,37 @@ fun SessionListScreen(
                 }) { Text("Delete", color = palette.destructive) }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
+        )
+    }
+
+    // Wave 0: bulk-delete confirm. `bulkDeleteOpen` is set true by the bar's
+    // Delete icon, which stashes the *current* selectedIds via the screen's
+    // own state (we snapshot at that moment so the dialog is stable even if
+    // the user taps Cancel elsewhere during the dialog).
+    if (bulkDeleteOpen) {
+        val snapshot = state.selectedIds
+        AlertDialog(
+            onDismissRequest = { bulkDeleteOpen = false },
+            title = { Text("Delete ${snapshot.size} session${if (snapshot.size == 1) "" else "s"}?") },
+            text = {
+                Text(
+                    if (snapshot.isEmpty()) "No sessions selected."
+                    else "These sessions will be removed from the server. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = snapshot.isNotEmpty(),
+                    onClick = {
+                        viewModel.deleteSessions(snapshot.toList())
+                        viewModel.clearSelection()
+                        bulkDeleteOpen = false
+                    },
+                ) { Text("Delete", color = palette.destructive) }
+            },
+            dismissButton = {
+                TextButton(onClick = { bulkDeleteOpen = false }) { Text("Cancel") }
+            },
         )
     }
 }
@@ -487,6 +571,8 @@ private fun RenameDialog(
 @Composable
 private fun SwipeableSessionRow(
     session: SessionSummary,
+    isSelected: Boolean,
+    selectionMode: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -494,6 +580,24 @@ private fun SwipeableSessionRow(
     onDelete: () -> Unit,
 ) {
     val palette = LocalHermexPalette.current
+    // Wave 0: in bulk-select mode the swipe gestures are disabled. The
+    // SessionRow itself is the only hit area, and tap toggles selection,
+    // long-press toggles too. No SwipeToDismissBox wrapper, no haptics
+    // piling up from accidental swipes.
+    if (selectionMode) {
+        Surface(
+            color = if (isSelected) palette.accent.copy(alpha = 0.12f) else palette.canvas,
+            modifier = modifier.fillMaxWidth(),
+        ) {
+            SessionRow(
+                session = session,
+                isSelected = isSelected,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+        }
+        return
+    }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
@@ -524,7 +628,12 @@ private fun SwipeableSessionRow(
         },
     ) {
         Surface(color = palette.canvas) {
-            SessionRow(session = session, onClick = onClick, onLongClick = onLongClick)
+            SessionRow(
+                session = session,
+                isSelected = false,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
         }
     }
 }
@@ -534,6 +643,7 @@ private fun SwipeableSessionRow(
 @Composable
 private fun SessionRow(
     session: SessionSummary,
+    isSelected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -547,6 +657,28 @@ private fun SessionRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
+        // Wave 0: a small leading checkmark slot. When isSelected it shows a
+        // filled accent dot (✓); when not (and not in selection mode) the
+        // slot is invisible — keeps spacing identical to the old row.
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(palette.accent, CircleShape),
+                    contentAlignment = androidx.compose.ui.Alignment.Center,
+                ) {
+                    Text(
+                        "✓",
+                        color = palette.canvas,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (session.pinned == true) {
