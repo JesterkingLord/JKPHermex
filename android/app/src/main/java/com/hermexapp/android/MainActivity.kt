@@ -13,6 +13,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,6 +58,8 @@ import com.hermexapp.android.features.workspace.FileBrowserScreen
 import com.hermexapp.android.features.workspace.GitScreen
 import com.hermexapp.android.features.workspace.WorkspaceViewModel
 import com.hermexapp.android.platform.RunNotifications
+import com.hermexapp.android.ui.MainScreenTab
+import com.hermexapp.android.ui.PhoneDrawerScaffold
 import com.hermexapp.android.ui.theme.HermexTheme
 import com.hermexapp.android.ui.theme.accentColorFromHex
 import kotlinx.coroutines.launch
@@ -185,6 +193,20 @@ private sealed class Screen {
     data class Panel(val kind: PanelKind) : Screen()
     data object Settings : Screen()
     data object Projects : Screen()
+
+    /**
+     * Wave 8 — local notes (offline-first, persisted in app-private storage).
+     * Surfaced via the phone drawer and the tablet rail. Tapping a row in the
+     * future opens [NoteEditor]; for now the list screen is the destination.
+     */
+    data object Notes : Screen()
+
+    /**
+     * Wave 8 — local prompt library (offline-first). Same storage model as
+     * [Notes]. The chat composer reads from this store to offer one-tap
+     * insertion via the slash-palette (Wave 8.6).
+     */
+    data object Prompts : Screen()
 }
 
 @Composable
@@ -326,14 +348,19 @@ androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
         // 88dp Wordmark-only rail with a "Switch conversation" pill that pops
         // an overlay picker. Back from chat returns the user to the literal
         // SessionList (settings/projects/panels don't show a rail).
-        androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .width(sidebarWidth)
-                    .fillMaxSize(),
-            ) {
-                if (onTablet) {
-                    // Wide tablet rail: full session list.
+        //
+        // Wave 8 Slice 8.1 — phone rail is upgraded to a ModalNavigationDrawer.
+        // The drawer hosts all five tools (new chat, sessions, notes, prompts,
+        // settings) and slides in over the chat from a ☰ button in the top-left
+        // of the right pane. Tablet keeps the always-on rail verbatim — no
+        // behaviour change for big screens.
+        if (onTablet) {
+            androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .width(sidebarWidth)
+                        .fillMaxSize(),
+                ) {
                     SessionListScreen(
                         viewModel = sessionListViewModel,
                         onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
@@ -341,26 +368,27 @@ androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
                         onOpenSettings = { setScreen(Screen.Settings) },
                         onOpenProjects = { setScreen(Screen.Projects) },
                     )
-                } else {
-                    // Phone rail: minimal Wordmark + back-to-list affordance +
-                    // a compact "Switch chat" pill.
-                    SidebarRailCompact(
-                        onBackToList = { setScreen(Screen.SessionList) },
-                        onNewChat = {
-                            scope.launch {
-                                sessionListViewModel.createSessionNow()?.also { sid ->
-                                    setScreen(Screen.Chat(sid))
-                                }
-                            }
-                        },
-                        onOpenSettings = { setScreen(Screen.Settings) },
-                    )
+                }
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    rightPane()
                 }
             }
-            androidx.compose.foundation.layout.Box(
+        } else {
+            PhoneDrawerScaffold(
+                selected = drawerSelectedFor(screen),
+                onSelect = { tab ->
+                    onDrawerSelect(tab, setScreen, sessionListViewModel, scope)
+                },
                 modifier = Modifier.fillMaxSize(),
             ) {
-                rightPane()
+                // ☰ button overlayed top-left → toggles drawer. Lives at
+                // compose-tree-top so it never lands inside a chat LazyColumn
+                // that could eat it.
+                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+                    rightPane()
+                }
             }
         }
     } else {
@@ -506,12 +534,67 @@ private fun renderScreen(
                 onForgetServer = { scope.launch { container.authManager.forgetServer(it) } },
             )
         }
+        Screen.Notes -> {
+            BackHandler { setScreen(Screen.SessionList) }
+            com.hermexapp.android.features.notes.NotesScreen(
+                onClose = { setScreen(Screen.SessionList) },
+            )
+        }
+        Screen.Prompts -> {
+            BackHandler { setScreen(Screen.SessionList) }
+            com.hermexapp.android.features.prompts.PromptsScreen(
+                onClose = { setScreen(Screen.SessionList) },
+            )
+        }
     }
 }
 
 /** Composer prefill + file handoff from a share, consumed on the next chat open. */
 private var sharePrefill: String? = null
 private var shareFileUploads: List<Pair<ByteArray, String>> = emptyList()
+
+/**
+ * drawerSelectedFor — translates the active [Screen] into the highlighted
+ * drawer tile. Lives at file scope so both ConnectedRoot and the renderScreen
+ * tests can reach it without exposing the private `Screen` type.
+ */
+private fun drawerSelectedFor(screen: Screen): MainScreenTab = when (screen) {
+    Screen.SessionList -> MainScreenTab.Sessions
+    is Screen.Chat -> MainScreenTab.Sessions
+    is Screen.Files -> MainScreenTab.Sessions
+    is Screen.Git -> MainScreenTab.Sessions
+    is Screen.Panel -> MainScreenTab.Sessions
+    Screen.Settings -> MainScreenTab.Settings
+    Screen.Notes -> MainScreenTab.Notes
+    Screen.Prompts -> MainScreenTab.Prompts
+    Screen.Projects -> MainScreenTab.Sessions
+}
+
+/**
+ * onDrawerSelect — handler for a tap in the phone drawer. NewChat requires a
+ * suspending session-create API call, so the parent must invoke this from a
+ * coroutine scope; the wrapper below absorbs that.
+ */
+private fun onDrawerSelect(
+    tab: MainScreenTab,
+    setScreen: (Screen) -> Unit,
+    sessionListViewModel: SessionListViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    when (tab) {
+        MainScreenTab.NewChat -> {
+            scope.launch {
+                sessionListViewModel.createSessionNow()?.let { sid ->
+                    setScreen(Screen.Chat(sid))
+                }
+            }
+        }
+        MainScreenTab.Sessions -> setScreen(Screen.SessionList)
+        MainScreenTab.Notes -> setScreen(Screen.Notes)
+        MainScreenTab.Prompts -> setScreen(Screen.Prompts)
+        MainScreenTab.Settings -> setScreen(Screen.Settings)
+    }
+}
 
 /** Best-effort human filename for a shared content URI (falls back to a guess). */
 private fun resolveDisplayName(context: android.content.Context, uri: android.net.Uri): String {
