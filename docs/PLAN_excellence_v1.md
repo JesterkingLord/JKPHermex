@@ -32,8 +32,8 @@ That maps to 6 user-facing capabilities and several hidden bug fixes. I'll ship 
 | 1 | ✅ SHIPPED | `v0.7.1-stable` (commit `be2e629`) |
 | 2 | ✅ SHIPPED | `v0.7.2-stable` (commit `f58ca96`) |
 | 3 | ✅ SHIPPED | `v0.7.3-stable` (commit `8ebd757`) |
-| 4 | ✅ SHIPPED | `v0.7.4-stable` (commit pending — see Wave 4 §6 below) |
-| 5 | 🚧 PENDING | `v0.7.5` — Pro polish pass |
+| 4 | ✅ SHIPPED | `v0.7.4-stable` (commit `9b1cf2c`) |
+| 5 | ✅ SHIPPED — partial (5.1 + 5.2; **5.3/5.4/5.5/5.6 deferred**) | `v0.7.5-stable` (commit pending — see Wave 5 §7 below) |
 
 **Important guardrails:**
 
