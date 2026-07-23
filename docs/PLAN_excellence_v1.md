@@ -16,13 +16,24 @@ You asked for an app that feels like **ChatGPT-class polished**:
 That maps to 6 user-facing capabilities and several hidden bug fixes. I'll ship them in **6 waves**. Each wave ships behind its own version tag (v0.7.0 → v0.7.6). The first wave is the visible-from-day-one milestone; later waves layer polish, edge cases, and pro-grade touches.
 
 | Wave | Tag | Headline | Lines changed (≈) |
-|---|---|---|---|
+|------|-----|---------|--------------------|
 | 0 | `v0.7.0` | **Delete with Undo** (snackbar pattern) + multi-select bulk ops + new "select all / clear all" toolbar | 800 |
 | 1 | `v0.7.1` | **Fast scroll for session list** + first-character jump (Gmail-style) | 400 |
 | 2 | `v0.7.2` | **Chat timeline scrollbar + jump-to-top/bottom + scroll position memory** | 600 |
 | 3 | `v0.7.3` | **Message-level actions** (copy/edit-and-resend/regenerate/share, polished) | 700 |
 | 4 | `v0.7.4` | **In-chat search** (find within a session, jump to match, ↑↓ between matches) | 800 |
 | 5 | `v0.7.5` | **Pro polish pass** (animations, empty states, focus, a11y, multi-window) | 600 |
+
+### Status
+
+| Wave | Status | Tag |
+|------|--------|-----|
+| 0 | ✅ SHIPPED | `v0.7.0-stable` (commit `0967844`) |
+| 1 | ✅ SHIPPED | `v0.7.1-stable` (commit `be2e629`) |
+| 2 | ✅ SHIPPED | `v0.7.2-stable` (commit `f58ca96`) |
+| 3 | ✅ SHIPPED | `v0.7.3-stable` (commit pending — see Wave 3 §5 below) |
+| 4 | 🚧 PENDING | `v0.7.4` — In-chat search |
+| 5 | 🚧 PENDING | `v0.7.5` — Pro polish pass |
 
 **Important guardrails:**
 
