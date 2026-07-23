@@ -41,6 +41,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Surface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -48,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -225,6 +229,10 @@ fun SessionListScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         HermexWordmark()
+                        // Wave 6 Slice 6.4 — small "HH:mm" clock beside the
+                        // wordmark; ticks once per minute.
+                        Spacer(Modifier.size(12.dp))
+                        LiveClock()
                         Spacer(Modifier.weight(1f))
                         CircleButton(
                             onClick = {
@@ -546,6 +554,41 @@ private fun SectionHeader(title: String, count: Int) {
         }
     }
 }
+
+/**
+ * Wave 6 Slice 6.4 — small live "HH:mm" clock that ticks every minute.
+ *
+ * Re-composes only when the rounded minute changes (not every second).
+ * Format uses [Locale.getDefault] so the user's regional preferences
+ * (12-hour vs 24-hour) are honored — Material-style.
+ */
+@Composable
+private fun LiveClock() {
+    val palette = LocalHermexPalette.current
+    var minuteEpoch by remember { mutableIntStateOf(minuteBucket(nowMillis())) }
+    LaunchedEffect(Unit) {
+        // First tick happens on the next minute boundary. We poll every
+        // 10 seconds, which is cheap (no recomposition) and tolerant to
+        // device wake/sleep + system clock changes.
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            val current = minuteBucket(nowMillis())
+            if (current != minuteEpoch) minuteEpoch = current
+        }
+    }
+    val formatted = remember(minuteEpoch) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowMillis()))
+    }
+    Text(
+        text = formatted,
+        style = MaterialTheme.typography.labelMedium,
+        color = palette.textSecondary,
+    )
+}
+
+internal fun minuteBucket(epochMs: Long): Int = (epochMs / 60_000L).toInt()
+
+private fun nowMillis(): Long = java.lang.System.currentTimeMillis()
 
 /** The icon + label menu rows under the wordmark (Tasks / Skills / Memory / Insights). */
 @Composable
