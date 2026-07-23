@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +52,8 @@ import com.hermexapp.android.ui.CircleButton
 import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexHeader
 import com.hermexapp.android.ui.JumpFab
+import com.hermexapp.android.ui.markdown.MarkdownText
+import com.hermexapp.android.ui.shareAsMarkdown
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import kotlinx.coroutines.launch
 
@@ -75,6 +79,7 @@ fun ChatScreen(
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
     val speech = rememberSpeechController()
+    val context = LocalContext.current
     // Wave 2: needed for the FastScrollbar + JumpFab callbacks, which
     // call `LazyListState.animateScrollToItem(target)` from a regular
     // click handler (not a LaunchedEffect / coroutine context).
@@ -240,9 +245,30 @@ fun ChatScreen(
                             TimelineEntryView(
                                 entry = entry,
                                 isStreamingRun = state.isStreaming,
+                                viewModel = viewModel,
                                 showReasoning = state.showReasoning,
+                                sessionTitle = state.title,
                                 onRegenerate = viewModel::regenerate,
                                 onListen = { speech.speak(it) },
+                                onShare = { id ->
+                                    // Wave 3 Slice 3.1: ship a Markdown
+                                    // transcript of this assistant message via
+                                    // the system share sheet. `id` lets us look
+                                    // up the entry text inside the VM (the
+                                    // dialog holds a snapshot, so we re-read
+                                    // state to share the final text even on
+                                    // streaming dismiss).
+                                    val text = viewModel.findEntryText(id).orEmpty()
+                                    if (text.isNotBlank()) {
+                                        context.startActivity(
+                                            shareAsMarkdown(
+                                                context = context,
+                                                assistantText = text,
+                                                sessionTitle = state.title,
+                                            ),
+                                        )
+                                    }
+                                },
                             )
                         }
                     }
@@ -314,37 +340,70 @@ fun ChatScreen(
 private fun TimelineEntryView(
     entry: TimelineEntry,
     isStreamingRun: Boolean,
+    viewModel: ChatViewModel,
     showReasoning: Boolean = true,
+    sessionTitle: String? = null,
     onRegenerate: () -> Unit = {},
     onListen: (String) -> Unit = {},
+    onShare: (String) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
 
-    fun copyModifier(text: String): Modifier = Modifier.combinedClickable(
-        onClick = {},
-        onLongClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            clipboard.setText(AnnotatedString(text))
-        },
-    )
+    // Wave 3: long-press handlers on User/Assistant bubbles now route into
+    // Compose dialogs (`EditUserMessageDialog`, `AssistantActionsDialog`).
+    // The user bubble's plain-text copy is also exposed via the dialog
+    // (tap "Copy" in the Edit dialog) so we no longer need `copyModifier`.
 
     when (entry) {
         // iOS user bubble: gray rounded, right-aligned, ~80% max width.
-        is TimelineEntry.UserMessage -> Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Surface(
-                color = palette.bubble,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.widthIn(max = 320.dp).then(copyModifier(entry.text)),
+        is TimelineEntry.UserMessage -> {
+            // Wave 3 Slice 3.2: long-press a user bubble to edit-and-resend
+            // (append-as-new-turn). The dialog is a single TextField so the
+            // flow is one tap → edit → "Resend", mirroring iOS Chat.
+            var showEdit by remember(entry.id) { mutableStateOf(false) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
             ) {
-                Text(
-                    entry.text,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyLarge,
+                Surface(
+                    color = palette.bubble,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showEdit = true
+                            },
+                        ),
+                ) {
+                    Text(
+                        entry.text,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
+            if (showEdit) {
+                EditUserMessageDialog(
+                    initialText = entry.text,
+                    onDismiss = { showEdit = false },
+                    onSubmit = { edited ->
+                        showEdit = false
+                        // Set the composer text and auto-resend (append-as-
+                        // new-turn). sendNow() observes a streaming run by
+                        // issuing a steer instead of starting a new turn.
+                        viewModel.loadUserMessageIntoComposer(entry.id)
+                        if (edited != entry.text) {
+                            viewModel.setComposerText(edited)
+                        }
+                        // Kick the resend — viewModelScope ensures it survives
+                        // recomposition; the dialog has already dismissed.
+                        viewModel.resendFromComposer()
+                    },
                 )
             }
         }
@@ -372,6 +431,7 @@ private fun TimelineEntryView(
                     onCopy = {
                         clipboard.setText(AnnotatedString(entry.text)); showActions = false
                     },
+                    onShare = { onShare(entry.id); showActions = false },
                     onRegenerate = { onRegenerate(); showActions = false },
                     onListen = { onListen(entry.text); showActions = false },
                     showRegenerate = !isStreamingRun,
@@ -515,11 +575,18 @@ private fun ThinkingCard(
     }
 }
 
-/** Long-press menu on an assistant message: Copy / Regenerate / Listen (iOS §8.3). */
+/**
+ * Long-press menu on an assistant message: Copy / Share / Listen / Regenerate
+ * (iOS §8.3, extended with Share-as-Markdown in Wave 3).
+ *
+ * `onShare` ships a Markdown-formatted transcript of the single message via
+ * `Intent.ACTION_SEND`; the share sheet picks the user's target app.
+ */
 @Composable
 private fun AssistantActionsDialog(
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
+    onShare: () -> Unit,
     onRegenerate: () -> Unit,
     onListen: () -> Unit,
     showRegenerate: Boolean,
@@ -531,11 +598,60 @@ private fun AssistantActionsDialog(
         text = {
             Column {
                 TextButton(onClick = onCopy) { Text("Copy") }
+                TextButton(onClick = onShare) { Text("Share as Markdown") }
                 TextButton(onClick = onListen) { Text("Listen") }
                 if (showRegenerate) {
                     TextButton(onClick = onRegenerate) { Text("Regenerate") }
                 }
             }
+        },
+    )
+}
+
+/**
+ * Wave 3 Slice 3.2: edit-and-resend dialog for a past user bubble.
+ *
+ * Pre-fills an [OutlinedTextField] with the original text. Submit copies the
+ * new text into the composer and triggers an append-as-new-turn send. The
+ * Copy button mirrors iOS Chat's edit affordance (the bubble's long-press
+ * previously exposed plain-text copy).
+ */
+@Composable
+private fun EditUserMessageDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+) {
+    var text by remember(initialText) { mutableStateOf(initialText) }
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit message") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 8,
+                )
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(initialText))
+                    onDismiss()
+                }) { Text("Copy original") }
+            }
+        },
+        confirmButton = {
+            val isEdited = text.trim().isNotBlank() && text.trim() != initialText.trim()
+            TextButton(
+                onClick = { onSubmit(text.trim()) },
+                enabled = isEdited,
+            ) { Text("Resend") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }

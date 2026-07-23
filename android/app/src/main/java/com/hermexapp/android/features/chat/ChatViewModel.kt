@@ -837,6 +837,52 @@ class ChatViewModel(
     }
 
     /**
+     * Wave 3 Slice 3.2: load a past user message into the composer so the
+     * user can edit and re-send. Per the standing plan, edit-and-resend is
+     * implemented as **append-as-new-turn** — we never mutate history, we
+     * just pre-fill the composer. Returns the resolved text (trimmed) so the
+     * UI can decide whether to open the edit dialog at all.
+     */
+    fun loadUserMessageIntoComposer(id: String): String? {
+        val entry = _uiState.value.entries.firstOrNull { it.id == id } ?: return null
+        if (entry !is TimelineEntry.UserMessage) return null
+        val text = entry.text
+        _uiState.update { it.copy(composerText = text, errorMessage = null) }
+        return text
+    }
+
+    /** Wave 3 Slice 3.2: replace composer text (called by Edit dialog after edits). */
+    fun setComposerText(text: String) {
+        _uiState.update { it.copy(composerText = text) }
+    }
+
+    /**
+     * Wave 3 Slice 3.2: fire `sendNow()` from outside the UI thread so the
+     * long-press → edit → resend flow survives composition. Guarded against
+     * emptiness so a Cancel that clears the text can't accidentally send.
+     */
+    fun resendFromComposer() {
+        viewModelScope.launch { sendNow() }
+    }
+
+    /**
+     * Wave 3 Slice 3.1: resolves a timeline entry's plain text by id so the
+     * Share-as-Markdown dialog can re-read the latest snapshot of a message
+     * (the dialog itself holds a stale closure). Returns null for unknown
+     * or non-text entries so callers can `orEmpty()` defensively.
+     */
+    fun findEntryText(id: String): String? {
+        val entry = _uiState.value.entries.firstOrNull { it.id == id } ?: return null
+        return when (entry) {
+            is TimelineEntry.UserMessage -> entry.text
+            is TimelineEntry.AssistantMessage -> entry.text
+            is TimelineEntry.Reasoning -> entry.text
+            is TimelineEntry.Notice -> entry.text
+            is TimelineEntry.ToolCall -> entry.preview
+        }
+    }
+
+    /**
      * Regenerate: drop the last assistant turn via `/api/session/retry`, then
      * re-run the returned user text through the normal start/stream path
      * (mirrors the iOS regenerate flow).

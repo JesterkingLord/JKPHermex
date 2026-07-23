@@ -395,6 +395,98 @@ class ChatViewModelTest {
         assertEquals("Working on", assistant.text)
     }
 
+    // ─── Wave 3 — message-level actions (Slice 3.1 + 3.2) ───────────────
+
+    @Test
+    fun `loadUserMessageIntoComposer returns the text and updates composerText`() = runBlocking {
+        // SessionRepository maps to /api/sessions/{id}; the response shape is
+        // {"session": {..., "messages": [...]}}. `messages[]` is parsed by
+        // SessionDetail.chatMessages into ChatMessage rows.
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "build me a thing", "_ts": 1.0}
+                              ]}}
+                """,
+            ),
+        )
+        viewModel.loadNow()
+
+        val userMsg = viewModel.uiState.value.entries
+            .filterIsInstance<TimelineEntry.UserMessage>().single()
+        assertEquals("build me a thing", userMsg.text)
+        assertEquals("", viewModel.uiState.value.composerText)
+
+        val loaded = viewModel.loadUserMessageIntoComposer(userMsg.id)
+        assertEquals("build me a thing", loaded)
+        assertEquals("build me a thing", viewModel.uiState.value.composerText)
+    }
+
+    @Test
+    fun `loadUserMessageIntoComposer returns null for assistant entries and leaves composer untouched`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "hi", "_ts": 1.0},
+                                {"role": "assistant", "content": "hello", "message_id": "m1"}
+                              ]}}
+                """,
+            ),
+        )
+        viewModel.loadNow()
+
+        val before = viewModel.uiState.value.composerText
+        val assistant = viewModel.uiState.value.entries
+            .filterIsInstance<TimelineEntry.AssistantMessage>().single()
+
+        val loaded = viewModel.loadUserMessageIntoComposer(assistant.id)
+        assertEquals(null, loaded)
+        // Composer untouched — we never overwrite it with a non-user entry.
+        assertEquals(before, viewModel.uiState.value.composerText)
+    }
+
+    @Test
+    fun `loadUserMessageIntoComposer returns null for unknown id`() {
+        assertEquals(null, viewModel.loadUserMessageIntoComposer("does-not-exist"))
+    }
+
+    @Test
+    fun `setComposerText overwrites composer without side effects`() {
+        viewModel.setComposerText("draft one")
+        assertEquals("draft one", viewModel.uiState.value.composerText)
+        viewModel.setComposerText("draft two — longer")
+        assertEquals("draft two — longer", viewModel.uiState.value.composerText)
+    }
+
+    @Test
+    fun `findEntryText returns the entry's text or preview`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "hi", "_ts": 1.0},
+                                {"role": "assistant", "content": "hello", "message_id": "m1"}
+                              ]}}
+                """,
+            ),
+        )
+        viewModel.loadNow()
+
+        val userId = viewModel.uiState.value.entries
+            .filterIsInstance<TimelineEntry.UserMessage>().single().id
+        val assistantId = viewModel.uiState.value.entries
+            .filterIsInstance<TimelineEntry.AssistantMessage>().single().id
+
+        assertEquals("hi", viewModel.findEntryText(userId))
+        assertEquals("hello", viewModel.findEntryText(assistantId))
+        assertEquals(null, viewModel.findEntryText("unknown"))
+    }
+
     private fun json(body: String): MockResponse =
         MockResponse()
             .setResponseCode(200)
