@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,12 +52,14 @@ import kotlinx.coroutines.withContext
  * ("Ask anything... /commands") and a control row (+ attach, model selector,
  * send circle), with workspace/profile pills beneath it.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ComposerBar(
     viewModel: ChatViewModel,
     state: ChatViewModel.UiState,
     onSendHaptic: () -> Unit = {},
     onStopHaptic: () -> Unit = {},
+    onLongPressSend: (() -> Unit)? = null,
 ) {
     val palette = LocalHermexPalette.current
     val config = state.composerConfig
@@ -156,6 +159,12 @@ fun ComposerBar(
                     val showStop = state.isStreaming &&
                         state.composerText.isBlank() && state.attachments.isEmpty()
                     val canSend = state.composerText.isNotBlank() || state.attachments.isNotEmpty()
+                    // Long-press to open the insert palette. We map this to the
+                    // Show ↑, not Show ■, so a long-press during a run does
+                    // nothing — it's discoverable, but doesn't conflict with the
+                    // "stop" affordance.
+                    val enabled = showStop || canSend
+                    val longPressEnabled = onLongPressSend != null && !showStop && canSend
                     Box(
                         modifier = Modifier
                             .size(38.dp)
@@ -163,15 +172,33 @@ fun ComposerBar(
                                 if (showStop) palette.destructive else palette.control,
                                 CircleShape,
                             )
-                            .clickable(enabled = showStop || canSend) {
-                                if (showStop) {
-                                    onStopHaptic()
-                                    viewModel.stop()
+                            .then(
+                                if (longPressEnabled) {
+                                    Modifier.combinedClickable(
+                                        enabled = true,
+                                        onClick = {
+                                            if (showStop) {
+                                                onStopHaptic()
+                                                viewModel.stop()
+                                            } else {
+                                                onSendHaptic()
+                                                viewModel.send()
+                                            }
+                                        },
+                                        onLongClick = { onLongPressSend?.invoke() },
+                                    )
                                 } else {
-                                    onSendHaptic()
-                                    viewModel.send()
+                                    Modifier.clickable(enabled = enabled) {
+                                        if (showStop) {
+                                            onStopHaptic()
+                                            viewModel.stop()
+                                        } else {
+                                            onSendHaptic()
+                                            viewModel.send()
+                                        }
+                                    }
                                 }
-                            },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(

@@ -477,6 +477,18 @@ private fun renderScreen(
                     com.hermexapp.android.platform.ActiveRunService.stop(appContext)
                 }
             }
+            // Wave 8.5 — long-press on the chat send button opens the
+            // insert palette (notes + prompts). The chat VM lives at
+            // this scope so the picked text can update it directly via
+            // setComposerText when the user dismisses the sheet.
+            var insertSheetOpen by remember { mutableStateOf(false) }
+            val paletteVm = remember {
+                com.hermexapp.android.features.composer.InsertPaletteViewModel.Factory(
+                    noteStore = container.noteStore,
+                    promptStore = container.promptStore,
+                ).create(com.hermexapp.android.features.composer.InsertPaletteViewModel::class.java)
+            }
+            BackHandler(enabled = insertSheetOpen) { insertSheetOpen = false }
             BackHandler { setScreen(Screen.SessionList) }
             ChatScreen(
                 viewModel = chatViewModel,
@@ -488,7 +500,18 @@ private fun renderScreen(
                         container.notifications?.notifyRunComplete(title, current.sessionId)
                     }
                 },
+                onLongPressSend = { insertSheetOpen = true },
             )
+            if (insertSheetOpen) {
+                com.hermexapp.android.features.composer.InsertPaletteSheet(
+                    viewModel = paletteVm,
+                    onPick = { body ->
+                        chatViewModel.setComposerText(body)
+                        insertSheetOpen = false
+                    },
+                    onDismiss = { insertSheetOpen = false },
+                )
+            }
         }
         is Screen.Files -> {
             val workspaceViewModel = remember(server, current.sessionId, "files") {
@@ -547,7 +570,12 @@ private fun renderScreen(
         }
         Screen.Prompts -> {
             BackHandler { setScreen(Screen.SessionList) }
+            val promptsVm = remember {
+                com.hermexapp.android.features.prompts.PromptsViewModel.Factory(container.promptStore)
+                    .create(com.hermexapp.android.features.prompts.PromptsViewModel::class.java)
+            }
             com.hermexapp.android.features.prompts.PromptsScreen(
+                viewModel = promptsVm,
                 onClose = { setScreen(Screen.SessionList) },
             )
         }

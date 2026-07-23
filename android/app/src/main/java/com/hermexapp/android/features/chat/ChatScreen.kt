@@ -73,6 +73,7 @@ fun ChatScreen(
     onOpenFiles: () -> Unit = {},
     onOpenGit: () -> Unit = {},
     onRunFinished: (String?) -> Unit = {},
+    onLongPressSend: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
@@ -423,6 +424,7 @@ fun ChatScreen(
                 state = state,
                 onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                 onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                onLongPressSend = onLongPressSend,
             )
             // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after
             // the most recent empty send. Computed via a local ticking
