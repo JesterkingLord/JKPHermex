@@ -158,6 +158,20 @@ class ChatViewModel(
         val searchQuery: String = "",
         val searchMatchEntries: List<Int> = emptyList(),
         val searchCurrentIndex: Int = -1,
+        /**
+         * Wave 5 Slice 5.2 — count of new timeline entries that arrived
+         * while the user was scrolled up. The Chat screen bumps this via
+         * [bumpUnreadCount] when a new entry lands while the user is not
+         * at the bottom, and resets via [markSeen] when the user scrolls
+         * near the bottom. Surfaced as a "↓ N new" pill above the JumpFab.
+         */
+        val unreadCount: Int = 0,
+        /**
+         * Wave 5 Slice 5.1 — wall-clock ms of the most recent empty-send
+         * attempt. The Chat screen reads this and shows a "Type something
+         * first" caption for ~2 seconds. `null` means no recent attempt.
+         */
+        val lastEmptySendAtMs: Long? = null,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
@@ -169,6 +183,14 @@ class ChatViewModel(
                 searchQuery.isBlank() -> "Type to search"
                 searchMatchEntries.isEmpty() -> "No matches"
                 else -> "${searchCurrentIndex + 1} / ${searchMatchEntries.size}"
+            }
+
+        /** "3 new" — precomputed pill label, empty string when 0. */
+        val unreadCountLabel: String
+            get() = when {
+                unreadCount <= 0 -> ""
+                unreadCount == 1 -> "1 new"
+                else -> "$unreadCount new"
             }
     }
 
@@ -490,7 +512,13 @@ class ChatViewModel(
     suspend fun sendNow() {
         val state = _uiState.value
         val draft = state.composerText.trim()
-        if (draft.isEmpty() && state.attachments.isEmpty()) return
+        if (draft.isEmpty() && state.attachments.isEmpty()) {
+            // Wave 5 Slice 5.1 — surface empty-send attempts to the user
+            // instead of silently dropping. The Chat screen reads
+            // [lastEmptySendAtMs] and shows a transient caption.
+            _uiState.update { it.copy(lastEmptySendAtMs = System.currentTimeMillis()) }
+            return
+        }
 
         if (state.isStreaming) {
             steerNow(draft)
@@ -981,6 +1009,21 @@ class ChatViewModel(
     fun currentSearchEntryId(): String? {
         val idx = currentSearchEntryIndex() ?: return null
         return _uiState.value.entries.getOrNull(idx)?.id
+    }
+
+    // ─── Wave 5 — pro polish: smart auto-scroll unread pill ──────────
+
+    /** Increment the unread counter when a new entry arrives while the user
+     *  is not at the bottom. Called from the Chat screen, which owns the
+     *  scroll-position snapshot. Pure side-effect on UI state. */
+    fun bumpUnreadCount() {
+        _uiState.update { it.copy(unreadCount = it.unreadCount + 1) }
+    }
+
+    /** Reset the unread counter when the user scrolls near the bottom or
+     *  taps the JumpFab. */
+    fun markSeen() {
+        _uiState.update { it.copy(unreadCount = 0) }
     }
 
     /**

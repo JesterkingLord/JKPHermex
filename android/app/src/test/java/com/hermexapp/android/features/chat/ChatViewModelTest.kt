@@ -638,6 +638,54 @@ class ChatViewModelTest {
         assertEquals(assistantId, viewModel.currentSearchEntryId())
     }
 
+    // ─── Wave 5 — smart auto-scroll unread counter ──────────────────
+
+    @Test
+    fun `bumpUnreadCount increments and markSeen resets`() {
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+        viewModel.bumpUnreadCount()
+        viewModel.bumpUnreadCount()
+        viewModel.bumpUnreadCount()
+        assertEquals(3, viewModel.uiState.value.unreadCount)
+        // Label shows '3 new'.
+        assertEquals("3 new", viewModel.uiState.value.unreadCountLabel)
+        viewModel.markSeen()
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+        // Empty label is the empty string (drives the pill to hidden).
+        assertEquals("", viewModel.uiState.value.unreadCountLabel)
+    }
+
+    @Test
+    fun `markSeen at zero is a no-op`() {
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+        viewModel.markSeen()
+        assertEquals(0, viewModel.uiState.value.unreadCount)
+    }
+
+    @Test
+    fun `unreadCountLabel pluralizes correctly`() {
+        viewModel.bumpUnreadCount()
+        assertEquals("1 new", viewModel.uiState.value.unreadCountLabel)
+        viewModel.bumpUnreadCount()
+        assertEquals("2 new", viewModel.uiState.value.unreadCountLabel)
+    }
+
+    // ─── Wave 5 Slice 5.1 — empty-send toast ─────────────────────────
+
+    @Test
+    fun `sending empty text records lastEmptySendAtMs and does not start a stream`() = runBlocking {
+        // No request enqueued on purpose: if anything hits the wire, we'd
+        // hang (MockWebServer would block on the next request).
+        viewModel.updateComposerText("   \n   ")
+        assertEquals(null, viewModel.uiState.value.lastEmptySendAtMs)
+        val before = System.currentTimeMillis()
+        viewModel.sendNow()
+        val after = System.currentTimeMillis()
+        val ts = viewModel.uiState.value.lastEmptySendAtMs
+        assertTrue("expected timestamp in window", ts != null && ts in before..after)
+        assertEquals(false, viewModel.uiState.value.isStreaming)
+    }
+
     private fun json(body: String): MockResponse =
         MockResponse()
             .setResponseCode(200)

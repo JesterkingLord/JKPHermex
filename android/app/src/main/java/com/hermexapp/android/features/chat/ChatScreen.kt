@@ -123,10 +123,34 @@ fun ChatScreen(
         }
     }
 
-    // Follow the stream: keep the newest entry visible as it grows.
-    LaunchedEffect(state.entries.size, (state.entries.lastOrNull() as? TimelineEntry.AssistantMessage)?.text?.length) {
-        if (state.entries.isNotEmpty()) {
-            listState.animateScrollToItem(state.entries.lastIndex)
+    // Wave 5 Slice 5.2 — smart auto-scroll. Track whether the user is
+    // pinned to the bottom; if so, follow new entries, otherwise keep their
+    // place and surface an unread pill.
+    val isAtBottom = remember(state.entries.size, listState.firstVisibleItemIndex) {
+        // True when the bottom entry is on screen. Tolerance of `1` so a
+        // mid-render scroll-up doesn't break the auto-follow.
+        state.entries.isEmpty() ||
+            listState.firstVisibleItemIndex >= state.entries.lastIndex - 1
+    }
+    val previousSize = remember { mutableStateOf(0) }
+    LaunchedEffect(state.entries.size) {
+        val current = state.entries.size
+        val grew = current > previousSize.value
+        previousSize.value = current
+        if (grew && state.entries.isNotEmpty()) {
+            if (isAtBottom) {
+                listState.animateScrollToItem(state.entries.lastIndex)
+                viewModel.markSeen()
+            } else {
+                viewModel.bumpUnreadCount()
+            }
+        }
+    }
+    // Reset unread when the user scrolls back to the bottom (covers cases
+    // where they don't send — just scroll up to read).
+    LaunchedEffect(isAtBottom, state.entries.size) {
+        if (isAtBottom && viewModel.uiState.value.unreadCount > 0) {
+            viewModel.markSeen()
         }
     }
 
@@ -334,6 +358,35 @@ fun ChatScreen(
                         },
                         modifier = Modifier.align(Alignment.CenterEnd),
                     )
+                    // Wave 5 Slice 5.2 — unread pill above the JumpFab.
+                    // Shows "↓ N new" when the user scrolled up and new
+                    // entries arrived. Tapping it scrolls to the bottom
+                    // AND marks seen (so the pill disappears). Uses a
+                    // plain `if` rather than `AnimatedVisibility` because
+                    // BoxScope doesn't expose the ColumnScope-aligned
+                    // overload of AnimatedVisibility.
+                    if (!isAtBottom && state.unreadCountLabel.isNotEmpty()) {
+                        Surface(
+                            color = palette.accent,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = 96.dp)
+                                .clickable {
+                                    scope.launch {
+                                        listState.animateScrollToItem(state.entries.lastIndex)
+                                        viewModel.markSeen()
+                                    }
+                                },
+                        ) {
+                            Text(
+                                "↓ ${state.unreadCountLabel}",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.canvas,
+                            )
+                        }
+                    }
                     // Wave 2: jump-to-bottom (or top) FAB. Hidden until the
                     // user has scrolled away from an edge.
                     JumpFab(
@@ -371,6 +424,28 @@ fun ChatScreen(
                 onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                 onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
             )
+            // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after
+            // the most recent empty send. Computed via a local ticking
+            // remember so we don't need to poll the VM.
+            val emptySentAt = state.lastEmptySendAtMs
+            if (emptySentAt != null) {
+                val now = remember { mutableStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(emptySentAt) {
+                    while (true) {
+                        now.value = System.currentTimeMillis()
+                        if (now.value - emptySentAt > 2_000L) break
+                        kotlinx.coroutines.delay(200L)
+                    }
+                }
+                if (now.value - emptySentAt <= 2_000L) {
+                    Text(
+                        "Type something first.",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.warning,
+                    )
+                }
+            }
         }
     }
 
