@@ -3,6 +3,7 @@ package com.hermexapp.android.features.chat
 import com.hermexapp.android.auth.InMemorySecretStore
 import com.hermexapp.android.features.chat.ChatViewModel.TimelineEntry
 import com.hermexapp.android.features.sessionlist.SessionRepository
+import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ClientErrorCatalog
 import com.hermexapp.android.network.SessionCookieJar
@@ -60,7 +61,7 @@ class ChatViewModelTest {
         sse = FakeSse()
         viewModel = ChatViewModel(
             sessionId = "abc",
-            repository = SessionRepository(client, InMemoryCacheStore()),
+            repository = SessionRepositoryImpl(client, InMemoryCacheStore()),
             client = client,
             sse = sse,
         )
@@ -256,6 +257,62 @@ class ChatViewModelTest {
 
         assertEquals("no such session", viewModel.uiState.value.errorMessage)
         assertFalse(viewModel.uiState.value.isStreaming)
+    }
+
+    // ── Excellence v1 Wave 0: Retry / Dismiss banner ──
+
+    @Test
+    fun `failed send stashes the draft in lastFailedDraft for retry`() = runBlocking {
+        server.enqueue(json("""{"error": "no such session"}"""))
+        viewModel.updateComposerText("retry me!")
+        viewModel.sendNow()
+
+        val state = viewModel.uiState.value
+        assertEquals("no such session", state.errorMessage)
+        // The retry affordance is set so the screen renders Retry + Dismiss.
+        assertEquals("retry me!", state.lastFailedDraft)
+    }
+
+    @Test
+    fun `lastFailedDraft stays populated after a failed send until retry or dismiss`() = runBlocking {
+        // First send fails and stashes the draft.
+        server.enqueue(json("""{"error": "broken"}"""))
+        viewModel.updateComposerText("please retry")
+        viewModel.sendNow()
+
+        val afterFailure = viewModel.uiState.value
+        assertEquals("broken", afterFailure.errorMessage)
+        assertEquals("please retry", afterFailure.lastFailedDraft)
+        // composerText is empty because sendNow() clears it on commit;
+        // the draft is the source of truth for what to refill on retry.
+        assertEquals("", afterFailure.composerText)
+    }
+
+    @Test
+    fun `dismissRetryBanner clears the error and lastFailedDraft`() = runBlocking {
+        server.enqueue(json("""{"error": "nope"}"""))
+        viewModel.updateComposerText("hi")
+        viewModel.sendNow()
+
+        viewModel.dismissRetryBanner()
+
+        val state = viewModel.uiState.value
+        assertNull(state.errorMessage)
+        assertNull(state.lastFailedDraft)
+        // Note: the failed-send UserMessage remains in `entries` because
+        // `sendNow` commits it before the network call. The user keeps the
+        // context, which is the whole point of dismissing rather than
+        // retrying.
+        assertTrue(state.entries.any { it is TimelineEntry.UserMessage && it.text == "hi" })
+    }
+
+    @Test
+    fun `retryLastSend is a no-op when lastFailedDraft is null`() = runBlocking {
+        // No failed send happened.
+        viewModel.retryLastSend()
+        // No exceptions; nothing changes.
+        assertNull(viewModel.uiState.value.lastFailedDraft)
+        assertEquals("", viewModel.uiState.value.composerText)
     }
 
     // ── Excellence 13.9 / 7.4: stream auto-reconnect recovery ──
