@@ -174,7 +174,9 @@ Phone screenshot before/after: sidebar now has section headers, pin-section at t
 
 ---
 
-## 3. Wave 7 — `v0.8.1` Sidebar polish
+## 3. Wave 7 — `v0.8.1` QOL polish
+
+**Status (2026-07-23, on `feat/wave-7-pull-to-refresh`):** slice **7.3 ✅ shipped.** 7.2 (filter pills), 7.4 (drag-to-reorder), 7.5 (overscroll glow), 7.6 (smooth inertia) deferred. Test count: 430 (was 398 baseline, +32 across Wave 6+7.3).
 
 ### Slices
 
