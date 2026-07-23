@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -20,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -272,126 +274,211 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
         }
     }
 
+    /**
+     * Wave 5 Slice 5.6 — tablet two-pane layout. When the device has 600dp+
+     * of horizontal width (`sw >= 600dp`), the session list is always pinned
+     * on the left (40% width) and the current screen renders on the right
+     * (60%). On a phone, this passes through to the existing single-pane
+     * Crossfade behavior.
+     *
+     * We use [LocalConfiguration.screenWidthDp] instead of pulling in
+     * material3-window-size-class (which would add a dependency) — the
+     * 600dp breakpoint is the canonical "tablet" boundary per the
+     * Android Material spec and matches what `WindowSizeClass` would
+     * report for `Expanded` vs `Medium`.
+     */
+    val configuration = LocalConfiguration.current
+    val onTablet = configuration.screenWidthDp >= 600
+
     androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
-        Crossfade(targetState = screen, label = "screens") { current ->
-        when (current) {
-            Screen.SessionList -> SessionListScreen(
-                viewModel = sessionListViewModel,
-                onOpenSession = { screen = Screen.Chat(it) },
-                onOpenPanel = { kind -> screen = Screen.Panel(PanelKind.valueOf(kind)) },
-                onOpenSettings = { screen = Screen.Settings },
-                onOpenProjects = { screen = Screen.Projects },
-            )
-            Screen.Projects -> {
-                BackHandler { screen = Screen.SessionList }
-                com.hermexapp.android.features.sessionlist.ProjectsScreen(
-                    viewModel = sessionListViewModel,
-                    onOpenSession = { screen = Screen.Chat(it) },
-                    onClose = { screen = Screen.SessionList },
-                )
-            }
-
-            is Screen.Chat -> {
-                val appContext = LocalContext.current.applicationContext
-                val chatViewModel = remember(server, current.sessionId) {
-                    ChatViewModel(
-                        sessionId = current.sessionId,
-                        repository = repository,
-                        client = client,
-                        sse = container.sseClient(),
-                        prefs = container.prefs,
-                        onAuthError = container.authManager::handleApiError,
-                    ).also { vm ->
-                        sharePrefill?.let { vm.updateComposerText(it); sharePrefill = null }
-                        if (shareFileUploads.isNotEmpty()) {
-                            val uploads = shareFileUploads
-                            shareFileUploads = emptyList()
-                            vm.viewModelScope.launch {
-                                uploads.forEach { (bytes, name) -> vm.addAttachmentNow(bytes, name) }
-                            }
-                        }
-                    }
-                }
-                val chatState by chatViewModel.uiState.collectAsState()
-                // Ongoing-run foreground service: alive only while streaming.
-                LaunchedEffect(chatState.isStreaming) {
-                    if (chatState.isStreaming) {
-                        com.hermexapp.android.platform.ActiveRunService.start(appContext, chatState.title)
-                    } else {
-                        com.hermexapp.android.platform.ActiveRunService.stop(appContext)
-                    }
-                }
-                BackHandler { screen = Screen.SessionList }
-                ChatScreen(
-                    viewModel = chatViewModel,
-                    onBack = { screen = Screen.SessionList },
-                    onOpenFiles = { screen = Screen.Files(current.sessionId) },
-                    onOpenGit = { screen = Screen.Git(current.sessionId) },
-                    onRunFinished = { title ->
-                        if (container.prefs?.notificationsEnabled?.value != false) {
-                            container.notifications?.notifyRunComplete(title, current.sessionId)
-                        }
+        // The right-pane screen content lives in renderScreen(); the
+        // lambda closes over `screen`/`sharePrefill`/`shareFileUploads` so
+        // state changes propagate. Each renderScreen invocation receives
+        // the current target via Crossfade.
+        val setScreen: (Screen) -> Unit = { screen = it }
+        val rightPane: @Composable () -> Unit = {
+            Crossfade(targetState = screen, label = "screens") { current ->
+                renderScreen(
+                    current = current,
+                    container = container,
+                    server = server,
+                    sessionListViewModel = sessionListViewModel,
+                    sharePrefillRef = { sharePrefill },
+                    consumeSharePrefill = { sharePrefill = null },
+                    shareFileUploadsRef = { shareFileUploads },
+                    consumeShareFileUploads = {
+                        val u = shareFileUploads; shareFileUploads = emptyList(); u
                     },
-                )
-            }
-
-            is Screen.Files -> {
-                val workspaceViewModel = remember(server, current.sessionId, "files") {
-                    WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
-                }
-                FileBrowserScreen(
-                    viewModel = workspaceViewModel,
-                    onClose = { screen = Screen.Chat(current.sessionId) },
-                )
-            }
-
-            is Screen.Git -> {
-                val workspaceViewModel = remember(server, current.sessionId, "git") {
-                    WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
-                }
-                GitScreen(
-                    viewModel = workspaceViewModel,
-                    onClose = { screen = Screen.Chat(current.sessionId) },
-                )
-            }
-
-            is Screen.Panel -> {
-                val panelsViewModel = remember(server, current.kind) {
-                    PanelsViewModel(client, container.authManager::handleApiError)
-                }
-                BackHandler { screen = Screen.SessionList }
-                PanelScreen(
-                    kind = current.kind,
-                    viewModel = panelsViewModel,
-                    onClose = { screen = Screen.SessionList },
-                )
-            }
-
-            Screen.Settings -> {
-                BackHandler { screen = Screen.SessionList }
-                SettingsScreen(
-                    client = client,
-                    prefs = container.prefs ?: return@Crossfade,
-                    serverUrl = server.toString(),
-                    onSignOut = { scope.launch { container.authManager.signOut() } },
-                    onClose = { screen = Screen.SessionList },
-                    registry = container.serverRegistry,
-                    onSwitchServer = { container.authManager.switchTo(it) },
-                    onAddServer = { container.authManager.beginAddServer() },
-                    onForgetServer = { scope.launch { container.authManager.forgetServer(it) } },
+                    setScreen = setScreen,
                 )
             }
         }
+        val onTabletPane = (screen is Screen.Chat || screen is Screen.Files || screen is Screen.Git) && onTablet
+        if (onTabletPane) {
+            // Tablet two-pane: SessionList (left) + current screen (right).
+            androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .weight(0.4f)
+                        .fillMaxSize(),
+                ) {
+                    SessionListScreen(
+                        viewModel = sessionListViewModel,
+                        onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
+                        onOpenPanel = { kind -> setScreen(Screen.Panel(PanelKind.valueOf(kind))) },
+                        onOpenSettings = { setScreen(Screen.Settings) },
+                        onOpenProjects = { setScreen(Screen.Projects) },
+                    )
+                }
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier
+                        .weight(0.6f)
+                        .fillMaxSize(),
+                ) {
+                    rightPane()
+                }
+            }
+        } else {
+            rightPane()
         }
         // Auto-update Snackbar — overlaid on every screen so the user
         // sees the "new version" prompt regardless of which screen
         // they're on when the check completes.
-        androidx.compose.material3.SnackbarHost(
+        SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.BottomCenter)
                 .padding(16.dp),
         )
+    }
+}
+
+/**
+ * Single-screen render for [Crossfade] (used in both single-pane and as the
+ * right pane in two-pane tablet layout). Keeps ConnectedRoot's screen
+ * switching logic in one place.
+ *
+ * Reads everything it needs from the captured values + `container`/`server`
+ * thread-through; the `setScreen` callback closes over the parent's
+ * `screen` mutableState.
+ */
+@Composable
+private fun renderScreen(
+    current: Screen,
+    container: com.hermexapp.android.AppContainer,
+    server: HttpUrl,
+    sessionListViewModel: SessionListViewModel,
+    sharePrefillRef: () -> String?,
+    consumeSharePrefill: () -> Unit,
+    shareFileUploadsRef: () -> List<Pair<ByteArray, String>>,
+    consumeShareFileUploads: () -> List<Pair<ByteArray, String>>,
+    setScreen: (Screen) -> Unit,
+) {
+    val client = remember(server) { container.apiClient(server) }
+    val repository = remember(server) { container.sessionRepository(server) }
+    val scope = rememberCoroutineScope()
+    when (current) {
+        Screen.SessionList -> SessionListScreen(
+            viewModel = sessionListViewModel,
+            onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
+            onOpenPanel = { kind -> setScreen(Screen.Panel(PanelKind.valueOf(kind))) },
+            onOpenSettings = { setScreen(Screen.Settings) },
+            onOpenProjects = { setScreen(Screen.Projects) },
+        )
+        Screen.Projects -> {
+            BackHandler { setScreen(Screen.SessionList) }
+            com.hermexapp.android.features.sessionlist.ProjectsScreen(
+                viewModel = sessionListViewModel,
+                onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
+                onClose = { setScreen(Screen.SessionList) },
+            )
+        }
+        is Screen.Chat -> {
+            val appContext = LocalContext.current.applicationContext
+            val chatViewModel = remember(server, current.sessionId) {
+                ChatViewModel(
+                    sessionId = current.sessionId,
+                    repository = repository,
+                    client = client,
+                    sse = container.sseClient(),
+                    prefs = container.prefs,
+                    onAuthError = container.authManager::handleApiError,
+                ).also { vm ->
+                    sharePrefillRef()?.let { vm.updateComposerText(it); consumeSharePrefill() }
+                    if (shareFileUploadsRef().isNotEmpty()) {
+                        val uploads = consumeShareFileUploads()
+                        vm.viewModelScope.launch {
+                            uploads.forEach { (bytes, name) -> vm.addAttachmentNow(bytes, name) }
+                        }
+                    }
+                }
+            }
+            val chatState by chatViewModel.uiState.collectAsState()
+            // Ongoing-run foreground service: alive only while streaming.
+            LaunchedEffect(chatState.isStreaming) {
+                if (chatState.isStreaming) {
+                    com.hermexapp.android.platform.ActiveRunService.start(appContext, chatState.title)
+                } else {
+                    com.hermexapp.android.platform.ActiveRunService.stop(appContext)
+                }
+            }
+            BackHandler { setScreen(Screen.SessionList) }
+            ChatScreen(
+                viewModel = chatViewModel,
+                onBack = { setScreen(Screen.SessionList) },
+                onOpenFiles = { setScreen(Screen.Files(current.sessionId)) },
+                onOpenGit = { setScreen(Screen.Git(current.sessionId)) },
+                onRunFinished = { title ->
+                    if (container.prefs?.notificationsEnabled?.value != false) {
+                        container.notifications?.notifyRunComplete(title, current.sessionId)
+                    }
+                },
+            )
+        }
+        is Screen.Files -> {
+            val workspaceViewModel = remember(server, current.sessionId, "files") {
+                WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
+            }
+            FileBrowserScreen(
+                viewModel = workspaceViewModel,
+                onClose = { setScreen(Screen.Chat(current.sessionId)) },
+            )
+        }
+        is Screen.Git -> {
+            val workspaceViewModel = remember(server, current.sessionId, "git") {
+                WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
+            }
+            GitScreen(
+                viewModel = workspaceViewModel,
+                onClose = { setScreen(Screen.Chat(current.sessionId)) },
+            )
+        }
+        is Screen.Panel -> {
+            val panelsViewModel = remember(server, current.kind) {
+                PanelsViewModel(client, container.authManager::handleApiError)
+            }
+            BackHandler { setScreen(Screen.SessionList) }
+            PanelScreen(
+                kind = current.kind,
+                viewModel = panelsViewModel,
+                onClose = { setScreen(Screen.SessionList) },
+            )
+        }
+        Screen.Settings -> {
+            if (container.prefs == null) return
+            BackHandler { setScreen(Screen.SessionList) }
+            SettingsScreen(
+                client = client,
+                prefs = container.prefs,
+                serverUrl = server.toString(),
+                onSignOut = { scope.launch { container.authManager.signOut() } },
+                onClose = { setScreen(Screen.SessionList) },
+                registry = container.serverRegistry,
+                onSwitchServer = { container.authManager.switchTo(it) },
+                onAddServer = { container.authManager.beginAddServer() },
+                onForgetServer = { scope.launch { container.authManager.forgetServer(it) } },
+            )
+        }
     }
 }
 
