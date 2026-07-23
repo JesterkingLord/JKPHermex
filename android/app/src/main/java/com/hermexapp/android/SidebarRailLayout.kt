@@ -12,11 +12,7 @@ package com.hermexapp.android
  * The boundary is `>= 600`, matching Material's `MediumWidth` window-size
  * class. A 600dp-wide 10" tablet in portrait lands on the tablet rail.
  *
- * This file is intentionally a **stub** — the implementation of
- * [pickSidebarWidth] is the next iteration. The test
- * `SidebarRailLayoutTest.pickSidebarWidth_atThreshold_returnsExpanded`
- * pins the inclusive boundary (`>=`, not `>`) and will turn green once
- * the TODO body is filled in.
+ * Pure JVM — no Android dependencies. Tested by [SidebarRailLayoutTest].
  */
 object SidebarRailLayout {
 
@@ -43,14 +39,15 @@ object SidebarRailLayout {
      * not throw and must fall back to [Mode.COMPACT].
      */
     fun pickSidebarWidth(screenWidthDp: Int): Mode {
-        // TODO(Wave 6 Slice 6.1): implement the boundary check.
-        // Reminder: the boundary is inclusive — `>= 600` is EXPANDED.
-        // The stub below is a sentinel so the wiring compiles; returning
-        // either branch will fail exactly one half of the test matrix
-        // (the half whose expected value is the OTHER branch).
-        return when (screenWidthDp) {
-            600 -> Mode.EXPANDED // touches the canary test deliberately
-            else -> Mode.COMPACT
-        }
+        // Defensive: non-positive widths (≤ 0, weird mid-measure) fall
+        // back to the smaller rail so a buggy caller can never crash
+        // layout. Tested by `pickSidebarWidth_zeroWidth_returnsCompact`
+        // and `pickSidebarWidth_negativeWidth_returnsCompact`.
+        if (screenWidthDp < 600) return Mode.COMPACT
+        // Boundary is inclusive on the EXPANDED side — Material's
+        // `MediumWidth` window-size class starts at exactly 600dp, so a
+        // 600dp-wide 10" tablet in portrait gets the tablet rail.
+        // The canary test pins this exact branch.
+        return Mode.EXPANDED
     }
 }
