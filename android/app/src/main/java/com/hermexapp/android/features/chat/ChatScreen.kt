@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +47,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermexapp.android.features.chat.ChatViewModel.TimelineEntry
 import com.hermexapp.android.ui.CircleButton
+import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexHeader
+import com.hermexapp.android.ui.JumpFab
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+import kotlinx.coroutines.launch
 
 /**
  * "Expand by default" chat display toggles (iOS chat settings). Provided from
@@ -71,9 +75,40 @@ fun ChatScreen(
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
     val speech = rememberSpeechController()
+    // Wave 2: needed for the FastScrollbar + JumpFab callbacks, which
+    // call `LazyListState.animateScrollToItem(target)` from a regular
+    // click handler (not a LaunchedEffect / coroutine context).
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.load() }
-    DisposableEffect(Unit) { onDispose { viewModel.teardown() } }
+    DisposableEffect(Unit) {
+        onDispose {
+            // Wave 2: persist scroll position when the chat screen leaves
+            // composition. Capped at one save per navigation; debounced by
+            // the fact that DisposableEffect only fires once on disposal.
+            viewModel.saveScrollPosition(
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset,
+            )
+            viewModel.teardown()
+        }
+    }
+    // Wave 2: after the initial load hydrates `state.entries`, jump back
+    // to the stored scroll position (if any). Guarded by `entries.isNotEmpty`
+    // so we don't scrollToItem(-1) on a still-loading chat.
+    val restoredScrollPosition = remember(state.entries.size) {
+        // snapshot-once: we want to restore exactly once per chat visit;
+        // `remember(state.entries.size)` re-evaluates if the entry count
+        // changes, but the VM only ever returns one scrollPosition per
+        // session so this is idempotent in practice.
+        if (state.entries.isNotEmpty()) viewModel.loadScrollPosition() else null
+    }
+    LaunchedEffect(restoredScrollPosition, state.entries.size) {
+        val pos = restoredScrollPosition ?: return@LaunchedEffect
+        if (state.entries.isNotEmpty() && pos.first < state.entries.size) {
+            listState.scrollToItem(pos.first, pos.second)
+        }
+    }
 
     // Completion signal: haptic + notification hook, once per finished run.
     LaunchedEffect(state.finishedRunCount) {
@@ -192,21 +227,52 @@ fun ChatScreen(
                         }
                     }
 
-                else -> LazyColumn(
+                else -> Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
-                    state = listState,
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    items(state.entries, key = { it.id }) { entry ->
-                        TimelineEntryView(
-                            entry = entry,
-                            isStreamingRun = state.isStreaming,
-                            showReasoning = state.showReasoning,
-                            onRegenerate = viewModel::regenerate,
-                            onListen = { speech.speak(it) },
-                        )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        items(state.entries, key = { it.id }) { entry ->
+                            TimelineEntryView(
+                                entry = entry,
+                                isStreamingRun = state.isStreaming,
+                                showReasoning = state.showReasoning,
+                                onRegenerate = viewModel::regenerate,
+                                onListen = { speech.speak(it) },
+                            )
+                        }
                     }
+                    // Excellence v1 Wave 2: FastScrollbar overlay on the
+                    // chat timeline. Pure-JVM UI; layout mirrors Wave 1's
+                    // session-list pattern but with no letter-jump (chat is
+                    // not alphabetical — chronological scroll only).
+                    FastScrollbar(
+                        itemCount = state.entries.size,
+                        firstVisibleIndex = listState.firstVisibleItemIndex,
+                        firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
+                        estimatedItemHeightPx = 96,
+                        onScrollToIndex = { target ->
+                            scope.launch { listState.animateScrollToItem(target) }
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    )
+                    // Wave 2: jump-to-bottom (or top) FAB. Hidden until the
+                    // user has scrolled away from an edge.
+                    JumpFab(
+                        firstVisibleIndex = listState.firstVisibleItemIndex,
+                        lastIndex = state.entries.lastIndex,
+                        distanceFromBottom = state.entries.lastIndex - listState.firstVisibleItemIndex,
+                        onScrollToIndex = { target ->
+                            scope.launch { listState.animateScrollToItem(target) }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 24.dp),
+                    )
                 }
             }
 

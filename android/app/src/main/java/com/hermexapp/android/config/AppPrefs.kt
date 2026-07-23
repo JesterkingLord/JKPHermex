@@ -136,6 +136,36 @@ class AppPrefs(private val store: KeyValueStore) {
         store.putBoolean(KEY_SHOW_REASONING, value)
     }
 
+    /**
+     * Wave 2 (2026-07-27) — scroll position memory per session.
+     *
+     * The chat screen stores `(firstVisibleItemIndex, firstVisibleItemScrollOffset)`
+     * keyed by `sessionId` so a user who opens a chat, scrolls halfway, leaves
+     * to the session list, and returns lands where they were. The pair is
+     * packed as `"index:offset"` so we don't need JSON for what amounts to
+     * two ints; the KV store only knows how to put/get strings.
+     */
+    fun scrollPosition(sessionId: String): Pair<Int, Int>? {
+        if (sessionId.isEmpty()) return null
+        val raw = store.getString(KEY_SCROLL_POS_PREFIX + sessionId) ?: return null
+        val parts = raw.split(':')
+        if (parts.size != 2) return null
+        return runCatching {
+            val idx = parts[0].toInt()
+            val off = parts[1].toInt()
+            if (idx < 0 || off < 0) null else idx to off
+        }.getOrNull()
+    }
+
+    fun setScrollPosition(sessionId: String, index: Int, offset: Int) {
+        if (sessionId.isEmpty()) return
+        if (index < 0 || offset < 0) return
+        store.putString(
+            KEY_SCROLL_POS_PREFIX + sessionId,
+            "$index:$offset",
+        )
+    }
+
     private fun decodeReasoningEffort(raw: String?): ReasoningEffort =
         ReasoningEffort.fromServer(raw)
 
@@ -150,5 +180,6 @@ class AppPrefs(private val store: KeyValueStore) {
         const val KEY_NOTIFICATIONS = "notifications_enabled"
         const val KEY_REASONING_EFFORT = "reasoning_effort"
         const val KEY_SHOW_REASONING = "show_reasoning"
+        private const val KEY_SCROLL_POS_PREFIX = "scroll_pos_"
     }
 }

@@ -599,6 +599,25 @@ class ChatViewModel(
         sse.stop()
     }
 
+    /**
+     * Wave 2 (2026-07-27) — scroll position memory.
+     *
+     * The chat screen passes the LazyListState's `firstVisibleItemIndex` /
+     * `firstVisibleItemScrollOffset` here whenever the user leaves the
+     * screen, and we hydrate them on the next visit. Storage is keyed by
+     * `sessionId` so different chats don't interfere.
+     */
+    fun saveScrollPosition(index: Int, offset: Int) {
+        val sid = sessionId ?: return
+        prefs?.setScrollPosition(sid, index, offset)
+    }
+
+    /** Returns the stored `(firstVisibleItemIndex, firstVisibleItemScrollOffset)`, or `null`. */
+    fun loadScrollPosition(): Pair<Int, Int>? {
+        val sid = sessionId ?: return null
+        return prefs?.scrollPosition(sid)
+    }
+
     // ── SSE event application (called on OkHttp's reader thread) ──
 
     internal fun onSseEvent(event: SseEvent) {
