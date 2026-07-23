@@ -33,6 +33,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Surface
@@ -40,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,15 +87,39 @@ fun SessionListScreen(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
+    val snackbarHostState = remember { SnackbarHostState() }
     var searchVisible by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var renameTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var moveTarget by remember { mutableStateOf<SessionSummary?>(null) }
 
+    // Excellence v1 Wave 0: snackbar event collector. We launch a single
+    // long-lived collection so each VM-emitted event fires exactly one snackbar.
+    // Selection-mode action snackbars are filtered out (the toolbar already
+    // shows "Deleting..." progress — duplicating in snackbar is noise).
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            if (state.selectionMode) return@collect
+            val message = SessionListSnackbar.messageFor(event) ?: return@collect
+            val duration = when (event) {
+                is SessionListEvent.ActionError -> SessionListSnackbar.ERROR_DURATION
+                else -> SessionListSnackbar.SUCCESS_DURATION
+            }
+            // showSnackbar suspends until the snackbar is dismissed; we don't
+            // need to await its result here (we offer no UNDO action).
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = duration,
+            )
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = palette.canvas,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Surface(
                 onClick = {
