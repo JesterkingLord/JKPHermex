@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -72,7 +73,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // EXCELLENCE 0.6.1 — chat scaffold: force both system bars transparent to
+        // kill the gray scrim that `enableEdgeToEdge()`'s default
+        // navigationBarStyle draws under the keyboard when the IME is up.
+        //
+        // Without this, the area between the composer (which the Scaffold has
+        // pushed up by `.imePadding()`) and the keyboard's top edge is filled
+        // by the system window-background scrim as a visible dark band. The
+        // chat Scaffold's `containerColor = palette.canvas` doesn't reach that
+        // area because the keyboard's own window covers it — so the scrim wins.
+        //
+        // Setting BOTH bars to fully transparent (no light/dark scrim) tells
+        // the platform to leave the area the chat canvas, which makes the gap
+        // disappear. Status bar uses TRANSPARENT for both light and dark
+        // variants so the chat's dark canvas shows through the status bar.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                lightScrim = android.graphics.Color.TRANSPARENT,
+                darkScrim = android.graphics.Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                lightScrim = android.graphics.Color.TRANSPARENT,
+                darkScrim = android.graphics.Color.TRANSPARENT,
+            ),
+        )
         val container = (application as HermexApp).container
         handleIncomingIntent(intent)
         requestNotificationPermissionIfNeeded()

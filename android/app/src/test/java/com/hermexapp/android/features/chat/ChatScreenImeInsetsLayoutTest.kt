@@ -109,6 +109,41 @@ class ChatScreenImeInsetsLayoutTest {
         )
     }
 
+    @Test
+    fun `MainActivity enables edge-to-edge with both system bars fully transparent`() {
+        // The second half of the grey-band fix. `enableEdgeToEdge()` without
+        // arguments draws a scrim under the navigation bar that shows through
+        // the gap between the IME-pushed-up composer and the keyboard's top
+        // edge — that's the grey band users have been seeing. Forcing both
+        // bars' auto() scrims to TRANSPARENT removes the scrim entirely so
+        // the chat canvas (or the keyboard, when up) claims the space.
+        val source = resolveMainActivitySource().readText()
+        assertTrue(
+            "MainActivity.kt must call `enableEdgeToEdge(...)` with explicit\n" +
+                "`statusBarStyle` and `navigationBarStyle` arguments. The\n" +
+                "no-argument default applies a default scrim under both bars,\n" +
+                "which draws the grey band when the IME is up.",
+            REGEX_ENABLE_EDGE_TO_EDGE_WITH_BOTH_STYLES.containsMatchIn(source),
+        )
+        // Both bars should be transparent for both light and dark variants.
+        val callText = REGEX_ENABLE_EDGE_TO_EDGE_BLOCK.find(source)?.value
+            ?: error(
+                "MainActivity.kt structure changed: the `enableEdgeToEdge(...)` " +
+                    "call could not be located.",
+            )
+        val transparentCount = TRANSPARENT_TOKEN.findAll(callText).count()
+        assertTrue(
+            "The `enableEdgeToEdge(...)` block must contain exactly " +
+                "$EXPECTED_TRANSPARENT_COUNT `Color.TRANSPARENT` references " +
+                "(lightScrim + darkScrim for status, plus the same for " +
+                "navigation). Found $transparentCount. A half-fix leaves the " +
+                "scrim partially in place — use " +
+                "`SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)` " +
+                "for BOTH bars to kill the grey band.",
+            transparentCount == EXPECTED_TRANSPARENT_COUNT,
+        )
+    }
+
     private companion object {
         /**
          * Walk up from this class's runtime location to a stable path that
@@ -156,6 +191,40 @@ class ChatScreenImeInsetsLayoutTest {
             )
         }
 
+        /**
+         * Walk up from the test class's runtime location to
+         * `MainActivity.kt`. Identical strategy to [resolveChatScreenSource]
+         * — kept as a separate method so the two resolvers can drift if either
+         * source moves to a new package, without having to bisect.
+         */
+        fun resolveMainActivitySource(): File {
+            val override = System.getenv("HERMEX_MAINACTIVITY_SOURCE_PATH")
+            if (override != null) {
+                val f = File(override)
+                require(f.isFile) { "HERMEX_MAINACTIVITY_SOURCE_PATH=$override does not exist." }
+                return f
+            }
+            val classUrl = ChatScreenImeInsetsLayoutTest::class.java.protectionDomain
+                ?.codeSource?.location?.toString()
+                ?: ""
+            val seed: File = when {
+                classUrl.startsWith("file:") -> File(classUrl.removePrefix("file:"))
+                else -> File(".").absoluteFile
+            }
+            var dir: File? = seed
+            while (dir != null) {
+                val candidate = File(dir, "src/main/java/com/hermexapp/android/MainActivity.kt")
+                if (candidate.isFile) return candidate
+                dir = dir.parentFile
+            }
+            error(
+                "Could not locate MainActivity.kt — walked up from $seed " +
+                    "looking for `src/main/java/com/hermexapp/android/MainActivity.kt` and " +
+                    "never found a hit. Set HERMEX_MAINACTIVITY_SOURCE_PATH to the absolute " +
+                    "file path to override.",
+            )
+        }
+
         // `Scaffold(...modifier = Modifier.fillMaxSize().imePadding(),` precedes
         // the new `contentWindowInsets = WindowInsets(0, 0, 0, 0),` line; we
         // just need to confirm both are still present in that order.
@@ -165,5 +234,27 @@ class ChatScreenImeInsetsLayoutTest {
             Regex("""contentWindowInsets\s*=\s*WindowInsets\s*\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)""")
         val REGEX_LITERAL_WINDOW_INSETTS_ZERO =
             Regex("""WindowInsets\s*\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)""")
+
+        // Detects the structural presence of an enableEdgeToEdge(...) call
+        // that explicitly passes both a status-bar style and a navigation-bar
+        // style. `enableEdgeToEdge()` with no args would NOT match this
+        // regex, which is the whole point. We use `[\s\S]` (not `.`) so the
+        // pattern crosses newlines and embedded `)` characters inside the
+        // `SystemBarStyle.auto(...)` arguments.
+        val REGEX_ENABLE_EDGE_TO_EDGE_WITH_BOTH_STYLES =
+            Regex(
+                """enableEdgeToEdge\s*\([\s\S]*?statusBarStyle\s*=[\s\S]*?navigationBarStyle\s*=[\s\S]*?\n\s*\)""",
+            )
+        // Captures the entire enableEdgeToEdge(...) call (multi-line) so we
+        // can count `Color.TRANSPARENT` references inside it. The closing
+        // paren is followed by a newline at the call's own indentation in
+        // `MainActivity.onCreate` (8 spaces) — `\n        \)` matches.
+        val REGEX_ENABLE_EDGE_TO_EDGE_BLOCK =
+            Regex("""enableEdgeToEdge\s*\([\s\S]*?\n        \)\s""")
+        // Counts each `Color.TRANSPARENT` literal occurrence.
+        val TRANSPARENT_TOKEN = Regex("""Color\.TRANSPARENT""")
+        // lightScrim + darkScrim for statusBarStyle + the same for
+        // navigationBarStyle = 4 occurrences total.
+        const val EXPECTED_TRANSPARENT_COUNT = 4
     }
 }

@@ -5,6 +5,42 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [v0.6.2-stable] - 2026-07-23
+
+### Fixed
+- **Grey band between composer and keyboard — second variant.** v0.6.1 zeroed
+  the chat Scaffold's `contentWindowInsets`, which removed the nav-bar inset
+  leak through `innerPadding`. But the band was still visible because
+  `MainActivity.enableEdgeToEdge()` (without arguments) defaults to drawing
+  **scrim under the navigation bar** (`EdgeToEdge.DefaultDarkScrim` =
+  `0x66CDCDCD` on Android 12+), and that scrim shows through the area between
+  the IME-pushed composer and the keyboard's top edge as a visible medium-gray
+  band. Fix: pass `SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)`
+  for **both** `statusBarStyle` and `navigationBarStyle` — removes the scrim
+  entirely on both light and dark variants. Combined with the v0.6.1 Scaffold
+  change, the composer now sits flush above the IME with zero residual gap.
+
+### Added
+- **Structural regression test #4** (`ChatScreenImeInsetsLayoutTest#MainActivity
+  enables edge-to-edge with both system bars fully transparent`) — fails loudly
+  if anyone reverts to the no-argument `enableEdgeToEdge()` call (which would
+  re-introduce the scrim) or uses anything other than `Color.TRANSPARENT` for
+  one of the four scrim slots.
+
+### Verified
+- 2026-07-23: **327 unit tests, 0 failures, 0 errors, 0 skipped** across
+  40 test suites (`./gradlew.bat testDebugUnitTest` BUILD SUCCESSFUL). New
+  test added: 1 in `ChatScreenImeInsetsLayoutTest`.
+- Debug APK assembles clean at `app/build/outputs/apk/debug/app-debug.apk`
+- APK version bumped: `versionName 0.6.1 → 0.6.2`, `versionCode 14 → 15`
+
+Server-side dependencies unchanged: this still pairs against the JKP
+`v1.12.1-stable` host. **If you installed v0.6.1-stable and still saw the
+band, install v0.6.2-stable** — the v0.6.1 fix only addressed the
+contentWindowInsets half, not the SystemBarStyle scrim half.
+
+Full release notes: [`RELEASE_NOTES_v0.6.2-stable.md`](RELEASE_NOTES_v0.6.2-stable.md).
+
 ## [v0.6.1-stable] - 2026-07-22
 
 ### Fixed
