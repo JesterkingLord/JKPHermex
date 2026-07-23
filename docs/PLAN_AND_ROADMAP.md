@@ -2,9 +2,9 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android version:** **`0.7.0-stable`** (`versionCode` 16) — Wave 0 of Excellence v1: bulk-select toolbar + multi-select session delete/archive/pin + Retry/Dismiss banner for failed chat sends + SessionListEvent snackbar contract 
-**Stable line:** tag `v0.7.0-stable`, branch `stable/v1.12.1-jkphermex-0.7.0` (coordinated with `JKP v1.12.1-stable`)
-**Last roadmap refresh:** `2026-07-27` (0.7.0-stable cut — Wave 0 of Excellence v1)
+**Current Android version:** **`0.7.1-stable`** (`versionCode` 17) — Wave 1 of Excellence v1: FastScrollbar + Gmail-style letter-jump rail on the session list (≥20 items) 
+**Stable line:** tag `v0.7.1-stable`, branch `stable/v1.12.1-jkphermex-0.7.1` (coordinated with `JKP v1.12.1-stable`)
+**Last roadmap refresh:** `2026-07-27` (0.7.1-stable cut — Wave 1 of Excellence v1: FastScrollbar)
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
