@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -123,12 +125,33 @@ fun ChatScreen(
             }
 
             AnimatedVisibility(visible = state.errorMessage != null) {
-                Text(
-                    state.errorMessage.orEmpty(),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.destructive,
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        state.errorMessage.orEmpty(),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.destructive,
+                    )
+                    // Wave 0: Retry affordance. Only renders when the failed
+                    // send left a stashed draft. Tap → VM restores the
+                    // composer text and re-issues `send`. The error text
+                    // stays visible until the retry clears it (or the
+                    // stream starts on its own).
+                    if (state.lastFailedDraft != null) {
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.material3.TextButton(
+                            onClick = { viewModel.retryLastSend() },
+                        ) { Text("Retry") }
+                        androidx.compose.material3.TextButton(
+                            onClick = { viewModel.dismissRetryBanner() },
+                        ) { Text("Dismiss") }
+                    }
+                }
             }
 
             // Excellence 13.10: stream-drop recovery invite (no invent reconnect API).

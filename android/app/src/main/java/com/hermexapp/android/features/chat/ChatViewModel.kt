@@ -132,6 +132,13 @@ class ChatViewModel(
          */
         val hangTip: String? = null,
         /**
+         * Excellence v1 Wave 0: draft text from the most recently failed send,
+         * surfaced as a retry affordance in the composer. `null` when there
+         * is nothing to retry. Cleared on a successful send so a stale
+         * banner doesn't linger indefinitely.
+         */
+        val lastFailedDraft: String? = null,
+        /**
          * Excellence 13.10 / 7.4: after a stream drop, invite resend from the
          * composer without inventing reconnect APIs.
          */
@@ -476,6 +483,9 @@ class ChatViewModel(
                 composerText = "",
                 attachments = emptyList(),
                 errorMessage = null,
+                // Wave 0: clear any leftover retry state at the start of a
+                // fresh send so the previous banner never lingers.
+                lastFailedDraft = null,
                 streamRecoveryOffer = false,
                 streamRecoveryTip = null,
                 entries = it.entries + TimelineEntry.UserMessage(nextId("user"), message),
@@ -498,7 +508,16 @@ class ChatViewModel(
             val streamId = response.streamId
             if (streamId.isNullOrEmpty()) {
                 _uiState.update {
-                    it.copy(errorMessage = response.error ?: "The server did not start a run.")
+                    it.copy(
+                        errorMessage = response.error ?: "The server did not start a run.",
+                        // Wave 0: surface a Retry affordance by stashing the
+                        // pre-composer-clear text. The user message is already
+                        // committed to `entries`, so re-issuing will append
+                        // a second user bubble — fine, the timeline is
+                        // append-only and matches the existing regen-again
+                        // idiom.
+                        lastFailedDraft = message,
+                    )
                 }
                 return
             }
@@ -508,8 +527,39 @@ class ChatViewModel(
             sse.start(client.chatStreamUrl(streamId), ::onSseEvent)
         } catch (e: ApiError) {
             onAuthError(e)
-            _uiState.update { it.copy(errorMessage = e.userMessage) }
+            _uiState.update {
+                it.copy(
+                    errorMessage = e.userMessage,
+                    lastFailedDraft = message,
+                )
+            }
         }
+    }
+
+    /**
+     * Wave 0: re-issues the draft that previously failed. Restores the
+     * composer text from [UiState.lastFailedDraft], clears the retry state,
+     * and calls [send] so the usual happy-path flow handles everything.
+     *
+     * No-op when there's nothing to retry (defensive — keeps the screen
+     * safe if the button gets tapped while a send is in flight and clears
+     * the saved draft).
+     */
+    fun retryLastSend() {
+        val draft = _uiState.value.lastFailedDraft ?: return
+        _uiState.update {
+            it.copy(
+                composerText = draft,
+                lastFailedDraft = null,
+                errorMessage = null,
+            )
+        }
+        send()
+    }
+
+    /** Wave 0: clears the retry banner when the user dismisses it explicitly. */
+    fun dismissRetryBanner() {
+        _uiState.update { it.copy(lastFailedDraft = null, errorMessage = null) }
     }
 
     /** Mid-run message → `/api/chat/steer`, like the iOS composer while streaming. */
