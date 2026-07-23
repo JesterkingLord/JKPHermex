@@ -14,9 +14,15 @@ import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.SessionCookieJar
 import com.hermexapp.android.network.SseClient
 import com.hermexapp.android.persistence.CacheStore
+import com.hermexapp.android.persistence.NoteStore
+import com.hermexapp.android.persistence.PromptStore
 import com.hermexapp.android.persistence.HermexDatabase
 import com.hermexapp.android.persistence.InMemoryCacheStore
+import com.hermexapp.android.persistence.InMemoryNoteStore
+import com.hermexapp.android.persistence.InMemoryPromptStore
 import com.hermexapp.android.persistence.RoomCacheStore
+import com.hermexapp.android.persistence.RoomNoteStore
+import com.hermexapp.android.persistence.RoomPromptStore
 import com.hermexapp.android.platform.AppVisibility
 import com.hermexapp.android.platform.RunNotifications
 import com.hermexapp.android.platform.SharedDraftStore
@@ -82,9 +88,22 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
         }
         .build()
 
-    val cacheStore: CacheStore = context
-        ?.let { RoomCacheStore(HermexDatabase.build(it).cachedPayloadDao()) }
-        ?: InMemoryCacheStore()
+    val cacheStore: CacheStore
+    val noteStore: NoteStore
+    val promptStore: PromptStore
+
+    init {
+        if (context != null) {
+            val db = HermexDatabase.build(context)
+            cacheStore = RoomCacheStore(db.cachedPayloadDao())
+            noteStore = RoomNoteStore(db.notesDao())
+            promptStore = RoomPromptStore(db.promptsDao())
+        } else {
+            cacheStore = InMemoryCacheStore()
+            noteStore = InMemoryNoteStore()
+            promptStore = InMemoryPromptStore()
+        }
+    }
 
     val prefs: AppPrefs? = context?.let { AppPrefs(it) }
 

@@ -536,7 +536,12 @@ private fun renderScreen(
         }
         Screen.Notes -> {
             BackHandler { setScreen(Screen.SessionList) }
+            val notesVm = remember {
+                com.hermexapp.android.features.notes.NotesViewModel.Factory(container.noteStore)
+                    .create(com.hermexapp.android.features.notes.NotesViewModel::class.java)
+            }
             com.hermexapp.android.features.notes.NotesScreen(
+                viewModel = notesVm,
                 onClose = { setScreen(Screen.SessionList) },
             )
         }

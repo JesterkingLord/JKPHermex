@@ -109,9 +109,31 @@ interface CachedPayloadDao {
     suspend fun trimTranscripts(keep: Int)
 }
 
-@Database(entities = [CachedPayload::class], version = 1, exportSchema = false)
+/**
+ * Local notes + prompts table is registered here so KSP generates the
+ * matching DAO getters AND we can extend the database with more entities
+ * in future waves without touching call-sites.
+ *
+ * Migration policy: `fallbackToDestructiveMigration` is fine BECAUSE:
+ *  - The cache ([CachedPayload]) is disposable by design (re-fetch on
+ *    miss is cheaper than a sync-engine).
+ *  - [NoteEntity] / [PromptEntity] are user-owned content; destructive
+ *    migrations on a user-owned table would silently delete work.
+ *
+ * Therefore: cache-table v1 → v2 stays destructive, but notes-table
+ * v1 creation in this migration adds the table without dropping any
+ * data. If we ever need a v3 (renames, splits), write a real
+ * Migration(1,2) object before bumping @Database.version.
+ */
+@Database(
+    entities = [CachedPayload::class, NoteEntity::class, PromptEntity::class],
+    version = 2,
+    exportSchema = false,
+)
 abstract class HermexDatabase : RoomDatabase() {
     abstract fun cachedPayloadDao(): CachedPayloadDao
+    abstract fun notesDao(): NotesDao
+    abstract fun promptsDao(): PromptsDao
 
     companion object {
         fun build(context: Context): HermexDatabase =
@@ -129,7 +151,6 @@ class RoomCacheStore(private val dao: CachedPayloadDao) : CacheStore {
     }
 
     override suspend fun load(key: String): String? = dao.get(key)?.json
-
     override suspend fun delete(key: String) = dao.delete(key)
 
     override suspend fun prune(maxAgeMillis: Long, keepTranscripts: Int) {
