@@ -31,8 +31,8 @@ That maps to 6 user-facing capabilities and several hidden bug fixes. I'll ship 
 | 0 | ✅ SHIPPED | `v0.7.0-stable` (commit `0967844`) |
 | 1 | ✅ SHIPPED | `v0.7.1-stable` (commit `be2e629`) |
 | 2 | ✅ SHIPPED | `v0.7.2-stable` (commit `f58ca96`) |
-| 3 | ✅ SHIPPED | `v0.7.3-stable` (commit pending — see Wave 3 §5 below) |
-| 4 | 🚧 PENDING | `v0.7.4` — In-chat search |
+| 3 | ✅ SHIPPED | `v0.7.3-stable` (commit `8ebd757`) |
+| 4 | ✅ SHIPPED | `v0.7.4-stable` (commit pending — see Wave 4 §6 below) |
 | 5 | 🚧 PENDING | `v0.7.5` — Pro polish pass |
 
 **Important guardrails:**
