@@ -109,6 +109,13 @@ fun SessionListScreen(
         }
         out
     }
+    // Wave 6 Slice 6.2 — date-grouped section buckets from the pure
+    // SessionGroups helper. Recompute only when the underlying session
+    // list itself changes so LazyColumn keys stay stable; the bucketing
+    // function uses Clock.systemUTC() for "now" by default.
+    val groups = remember(state.sessions) {
+        SessionGroups.groupSessions(state.sessions)
+    }
     var searchVisible by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<SessionSummary?>(null) }
     var renameTarget by remember { mutableStateOf<SessionSummary?>(null) }
@@ -335,39 +342,53 @@ fun SessionListScreen(
                     }
                 }
 
-                else -> items(state.sessions, key = { it.stableId }) { session ->
-                    val sessionId = session.sessionId ?: return@items
-                    val isSelected = state.selectedIds.contains(sessionId)
-                    SwipeableSessionRow(
-                        session = session,
-                        isSelected = isSelected,
-                        selectionMode = state.selectionMode,
-                        modifier = Modifier.animateItem(),
-                        onClick = {
-                            if (state.selectionMode) {
-                                viewModel.toggleSelection(sessionId)
-                            } else {
-                                onOpenSession(sessionId)
-                            }
-                        },
-                        onLongClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (state.selectionMode) {
-                                viewModel.toggleSelection(sessionId)
-                            } else {
-                                // First long-press enters selection mode + selects this row.
-                                viewModel.beginSelection(sessionId)
-                            }
-                        },
-                        onArchive = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.archiveSession(sessionId, session.archived != true)
-                        },
-                        onDelete = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            deleteTarget = session
-                        },
-                    )
+                else -> {
+                    // Wave 6 Slice 6.2 — date-grouped section headers. The
+                    // `groups` list is computed once above (keyed on
+                    // state.sessions) so we don't churn on every recompose.
+                    // Each group emits a sticky header row, then its sessions.
+                    groups.forEach { group ->
+                        item(key = "section-${group.section.label}") {
+                            SectionHeader(
+                                title = group.section.label,
+                                count = group.sessions.size,
+                            )
+                        }
+                        items(group.sessions, key = { it.stableId }) { session ->
+                            val sessionId = session.sessionId ?: return@items
+                            val isSelected = state.selectedIds.contains(sessionId)
+                            SwipeableSessionRow(
+                                session = session,
+                                isSelected = isSelected,
+                                selectionMode = state.selectionMode,
+                                modifier = Modifier.animateItem(),
+                                onClick = {
+                                    if (state.selectionMode) {
+                                        viewModel.toggleSelection(sessionId)
+                                    } else {
+                                        onOpenSession(sessionId)
+                                    }
+                                },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (state.selectionMode) {
+                                        viewModel.toggleSelection(sessionId)
+                                    } else {
+                                        // First long-press enters selection mode + selects this row.
+                                        viewModel.beginSelection(sessionId)
+                                    }
+                                },
+                                onArchive = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.archiveSession(sessionId, session.archived != true)
+                                },
+                                onDelete = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    deleteTarget = session
+                                },
+                            )
+                        }
+                    }
                 }
             }
             }
@@ -489,6 +510,40 @@ fun SessionListScreen(
                 TextButton(onClick = { bulkDeleteOpen = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * Wave 6 Slice 6.2 — small section header row between grouped session lists.
+ * Renders the bucket title (Pinned / Today / Yesterday / Previous 7 days /
+ * Earlier) and a count badge on the trailing edge. 16dp horizontal / 12dp top
+ * / 4dp bottom; sits inline in the same LazyColumn as the rows beneath it.
+ * Visual identity comes from the existing palette (`textSecondary` is the
+ * muted-text style used elsewhere on this screen — `Sessions` heading +
+ * offline banner).
+ */
+@Composable
+private fun SectionHeader(title: String, count: Int) {
+    val palette = LocalHermexPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        if (count > 0) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.textSecondary,
+            )
+        }
     }
 }
 
