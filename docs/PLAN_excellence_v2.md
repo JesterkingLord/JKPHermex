@@ -176,7 +176,7 @@ Phone screenshot before/after: sidebar now has section headers, pin-section at t
 
 ## 3. Wave 7 — `v0.8.1` QOL polish
 
-**Status (2026-07-23, on `feat/wave-7-pull-to-refresh`):** slice **7.3 ✅ shipped.** 7.2 (filter pills), 7.4 (drag-to-reorder), 7.5 (overscroll glow), 7.6 (smooth inertia) deferred. Test count: 430 (was 398 baseline, +32 across Wave 6+7.3).
+**Status (2026-07-23, on master):** slices **7.2 ✅, 7.3 ✅ shipped.** 7.4 (drag-to-reorder) deferred — confirmed via sub-agent investigation that LazyListScope.movableItems is **not present in foundation 1.7.6**; the implementation requires either a manual `LazyListState.startMove() / completeMove()` plumbing or a foundation-1.8+ bump (blocked by dependency churn). Logged for next turn. 7.1 already shipped pre-branch; 7.5/7.6 deferred. Test count: 436 (was 398 baseline).
 
 ### Slices
 
