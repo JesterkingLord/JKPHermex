@@ -144,9 +144,32 @@ class ChatViewModel(
          */
         val streamRecoveryOffer: Boolean = false,
         val streamRecoveryTip: String? = null,
+        /**
+         * Wave 4 — in-chat find. `searchActive` toggles the [ChatSearchBar]
+         * overlay. `searchQuery` is the live substring; `searchMatchEntries`
+         * is the chronological list of entry indexes that contain a hit
+         * (recomputed in [setSearchQuery] when the query or timeline
+         * changes). `searchCurrentIndex` is the cursor inside
+         * `searchMatchEntries`; `-1` when there is no current match
+         * (either no query, or zero matches, or the cursor is between
+         * matches).
+         */
+        val searchActive: Boolean = false,
+        val searchQuery: String = "",
+        val searchMatchEntries: List<Int> = emptyList(),
+        val searchCurrentIndex: Int = -1,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
+
+        /** "3 / 12" or "No matches" — precomputed for the search bar footer. */
+        val searchStatusText: String
+            get() = when {
+                !searchActive -> ""
+                searchQuery.isBlank() -> "Type to search"
+                searchMatchEntries.isEmpty() -> "No matches"
+                else -> "${searchCurrentIndex + 1} / ${searchMatchEntries.size}"
+            }
     }
 
     private val _uiState = MutableStateFlow(
@@ -863,6 +886,101 @@ class ChatViewModel(
      */
     fun resendFromComposer() {
         viewModelScope.launch { sendNow() }
+    }
+
+    // ─── Wave 4 — in-chat find (Search) ─────────────────────────────
+
+    /** Open the search overlay. Clears any stale query so the user starts fresh. */
+    fun openSearch() {
+        _uiState.update {
+            it.copy(
+                searchActive = true,
+                searchQuery = "",
+                searchMatchEntries = emptyList(),
+                searchCurrentIndex = -1,
+            )
+        }
+    }
+
+    /** Close the search overlay and forget the query. */
+    fun closeSearch() {
+        _uiState.update {
+            it.copy(
+                searchActive = false,
+                searchQuery = "",
+                searchMatchEntries = emptyList(),
+                searchCurrentIndex = -1,
+            )
+        }
+    }
+
+    /**
+     * Update the search substring. Recomputes [searchMatchEntries] from the
+     * current timeline. Resets the cursor to the first match (or `-1` when
+     * there are no hits). Pure: no IO, no coroutine scope; safe to call on
+     * every keystroke from the TextField callback.
+     */
+    fun setSearchQuery(query: String) {
+        val entries = _uiState.value.entries
+        val matches = findMatches(
+            texts = entries.map { entry -> entryTextForSearch(entry) },
+            query = query,
+        )
+        _uiState.update {
+            it.copy(
+                searchQuery = query,
+                searchMatchEntries = matches,
+                // Cursor lands on the first hit (or -1 if no hits).
+                searchCurrentIndex = if (matches.isEmpty()) -1 else 0,
+            )
+        }
+    }
+
+    /** Advance the cursor to the next match, wrapping at the end. */
+    fun nextSearchMatch() {
+        _uiState.update { state ->
+            val size = state.searchMatchEntries.size
+            if (size <= 0 || !state.searchActive) return@update state
+            val next = ((state.searchCurrentIndex + 1) % size + size) % size
+            state.copy(searchCurrentIndex = next)
+        }
+    }
+
+    /** Move the cursor to the previous match, wrapping at the start. */
+    fun prevSearchMatch() {
+        _uiState.update { state ->
+            val size = state.searchMatchEntries.size
+            if (size <= 0 || !state.searchActive) return@update state
+            val prev = (state.searchCurrentIndex - 1 + size) % size
+            state.copy(searchCurrentIndex = prev)
+        }
+    }
+
+    /**
+     * Returns the timeline entry index of the *current* match, or null when
+     * there is none. Used by the Chat screen to scroll the LazyColumn.
+     */
+    fun currentSearchEntryIndex(): Int? {
+        val state = _uiState.value
+        val i = state.searchCurrentIndex
+        if (!state.searchActive) return null
+        if (i < 0 || i >= state.searchMatchEntries.size) return null
+        return state.searchMatchEntries[i]
+    }
+
+    /** Resolves an entry's plain text — used by the search indexer. */
+    private fun entryTextForSearch(entry: TimelineEntry): String = when (entry) {
+        is TimelineEntry.UserMessage -> entry.text
+        is TimelineEntry.AssistantMessage -> entry.text
+        is TimelineEntry.Reasoning -> entry.text
+        is TimelineEntry.Notice -> entry.text
+        is TimelineEntry.ToolCall -> entry.preview.orEmpty()
+    }
+
+    /** Pure: the entry id matching the current cursor, or null. */
+    fun currentSearchEntryId(): String? {
+        val idx = currentSearchEntryIndex() ?: return null
+        return _uiState.value.entries.getOrNull(idx)?.id
     }
 
     /**

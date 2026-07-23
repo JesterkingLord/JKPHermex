@@ -487,6 +487,157 @@ class ChatViewModelTest {
         assertEquals(null, viewModel.findEntryText("unknown"))
     }
 
+    // ─── Wave 4 — in-chat find (Search) ─────────────────────────────
+
+    @Test
+    fun `openSearch activates the overlay and resets the cursor`() {
+        assertEquals(false, viewModel.uiState.value.searchActive)
+        viewModel.openSearch()
+        assertEquals(true, viewModel.uiState.value.searchActive)
+        assertEquals("", viewModel.uiState.value.searchQuery)
+        assertEquals(emptyList<Int>(), viewModel.uiState.value.searchMatchEntries)
+        assertEquals(-1, viewModel.uiState.value.searchCurrentIndex)
+    }
+
+    @Test
+    fun `closeSearch resets everything`() {
+        viewModel.openSearch()
+        viewModel.setSearchQuery("something")
+        viewModel.closeSearch()
+        val state = viewModel.uiState.value
+        assertEquals(false, state.searchActive)
+        assertEquals("", state.searchQuery)
+        assertEquals(emptyList<Int>(), state.searchMatchEntries)
+        assertEquals(-1, state.searchCurrentIndex)
+    }
+
+    @Test
+    fun `setSearchQuery indexes UserMessage and AssistantMessage text in chronological order`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "alpha", "_ts": 1.0},
+                                {"role": "assistant", "content": "beta", "message_id": "m1"},
+                                {"role": "user", "content": "gamma alpha", "_ts": 2.0}
+                              ]}}
+                """.trimIndent(),
+            ),
+        )
+        viewModel.loadNow()
+
+        viewModel.openSearch()
+        viewModel.setSearchQuery("alpha")
+        val state = viewModel.uiState.value
+        // Entries 0 (UserMessage "alpha") and 2 (UserMessage "gamma alpha") match.
+        assertEquals(listOf(0, 2), state.searchMatchEntries)
+        // Cursor lands on the first hit.
+        assertEquals(0, state.searchCurrentIndex)
+        // Status text → "1 / 2".
+        assertEquals("1 / 2", state.searchStatusText)
+        assertEquals(0, viewModel.currentSearchEntryIndex())
+    }
+
+    @Test
+    fun `setSearchQuery with no matches shows No matches and clears the cursor`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "alpha", "_ts": 1.0}
+                              ]}}
+                """.trimIndent(),
+            ),
+        )
+        viewModel.loadNow()
+
+        viewModel.openSearch()
+        viewModel.setSearchQuery("zzz")
+        val state = viewModel.uiState.value
+        assertEquals(emptyList<Int>(), state.searchMatchEntries)
+        assertEquals(-1, state.searchCurrentIndex)
+        assertEquals("No matches", state.searchStatusText)
+        assertEquals(null, viewModel.currentSearchEntryIndex())
+    }
+
+    @Test
+    fun `nextSearchMatch advances and wraps at the end`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "alpha", "_ts": 1.0},
+                                {"role": "user", "content": "alpha", "_ts": 2.0},
+                                {"role": "user", "content": "alpha", "_ts": 3.0}
+                              ]}}
+                """.trimIndent(),
+            ),
+        )
+        viewModel.loadNow()
+
+        viewModel.openSearch()
+        viewModel.setSearchQuery("alpha")
+        assertEquals(0, viewModel.uiState.value.searchCurrentIndex)
+
+        viewModel.nextSearchMatch()
+        assertEquals(1, viewModel.uiState.value.searchCurrentIndex)
+
+        viewModel.nextSearchMatch()
+        assertEquals(2, viewModel.uiState.value.searchCurrentIndex)
+
+        // wrap
+        viewModel.nextSearchMatch()
+        assertEquals(0, viewModel.uiState.value.searchCurrentIndex)
+    }
+
+    @Test
+    fun `prevSearchMatch decrements and wraps at the start`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "alpha", "_ts": 1.0},
+                                {"role": "user", "content": "alpha", "_ts": 2.0}
+                              ]}}
+                """.trimIndent(),
+            ),
+        )
+        viewModel.loadNow()
+        viewModel.openSearch()
+        viewModel.setSearchQuery("alpha")
+        // cursor is 0
+        viewModel.prevSearchMatch()
+        assertEquals(1, viewModel.uiState.value.searchCurrentIndex) // wrap
+        viewModel.prevSearchMatch()
+        assertEquals(0, viewModel.uiState.value.searchCurrentIndex)
+    }
+
+    @Test
+    fun `currentSearchEntryId resolves the timeline entry id at the cursor`() = runBlocking {
+        server.enqueue(
+            json(
+                """
+                {"session": {"session_id": "abc", "title": "T",
+                              "messages": [
+                                {"role": "user", "content": "first alpha", "_ts": 1.0},
+                                {"role": "assistant", "content": "second beta", "message_id": "m1"}
+                              ]}}
+                """.trimIndent(),
+            ),
+        )
+        viewModel.loadNow()
+        viewModel.openSearch()
+        viewModel.setSearchQuery("beta")
+        // cursor lands on the entry containing 'beta' (index 1, AssistantMessage).
+        val assistantId = viewModel.uiState.value.entries
+            .filterIsInstance<TimelineEntry.AssistantMessage>().single().id
+        assertEquals(assistantId, viewModel.currentSearchEntryId())
+    }
+
     private fun json(body: String): MockResponse =
         MockResponse()
             .setResponseCode(200)

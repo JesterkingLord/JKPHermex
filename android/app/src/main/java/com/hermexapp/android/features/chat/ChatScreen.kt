@@ -130,6 +130,27 @@ fun ChatScreen(
         }
     }
 
+    // Wave 4 Slice 4.2 — auto-scroll the timeline so the *current* search
+    // match is visible. Only runs when searchActive = true so it doesn't
+    // fight the follow-the-stream logic above. We key on the current match
+    // entry id (not the index) so streaming additions of new entries don't
+    // capture the wrong snapshot.
+    val currentMatchId = remember(
+        state.searchActive,
+        state.searchCurrentIndex,
+        state.searchMatchEntries,
+        state.entries.size,
+    ) {
+        if (!state.searchActive) null else viewModel.currentSearchEntryId()
+    }
+    LaunchedEffect(currentMatchId) {
+        val targetId = currentMatchId ?: return@LaunchedEffect
+        // LazyColumn re-emits items(state.entries, key = it.id); find the
+        // index of `targetId` and animate. O(N) — fine at chat scale.
+        val idx = state.entries.indexOfFirst { it.id == targetId }
+        if (idx >= 0) listState.animateScrollToItem(idx)
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize().imePadding(),
         // EXCELLENCE 0.6.1 — fix grey band below composer when the IME is up.
@@ -148,6 +169,19 @@ fun ChatScreen(
                 subtitle = "JKP Mobile",
                 onBack = onBack,
                 actions = {
+                    CircleButton(
+                        // Wave 4 Slice 4.2: in-chat find. Tapping opens the
+                        // ChatSearchBar overlay (toggled by VM state).
+                        onClick = {
+                            if (state.searchActive) {
+                                viewModel.closeSearch()
+                            } else {
+                                viewModel.openSearch()
+                            }
+                        },
+                        glyph = "🔍",
+                        size = 40,
+                    )
                     CircleButton(onClick = onOpenFiles, glyph = "📁", size = 40)
                     CircleButton(onClick = onOpenGit, glyph = "⎇", size = 40)
                 },
@@ -155,6 +189,20 @@ fun ChatScreen(
         },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            // Wave 4 Slice 4.2 — in-chat find bar. Sits above the offline
+            // banner / error banner / timeline stack and pushes them down
+            // because it is part of the same outer Column.
+            AnimatedVisibility(visible = state.searchActive) {
+                ChatSearchBar(
+                    query = state.searchQuery,
+                    statusText = state.searchStatusText,
+                    onQueryChange = viewModel::setSearchQuery,
+                    onNext = viewModel::nextSearchMatch,
+                    onPrev = viewModel::prevSearchMatch,
+                    onClose = viewModel::closeSearch,
+                )
+            }
+
             AnimatedVisibility(visible = state.isFromCache) {
                 Text(
                     "Offline — showing the cached transcript.",
