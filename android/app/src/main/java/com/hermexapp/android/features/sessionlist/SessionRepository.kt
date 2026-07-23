@@ -25,21 +25,85 @@ import com.hermexapp.android.persistence.CacheStore
 import kotlinx.serialization.encodeToString
 
 /**
+ * Exposes the operations [SessionListViewModel] and [ChatViewModel] (via
+ * `loadSession`) need. Defined so the VM is unit-testable with a fake — see
+ * `SessionRepositoryTest.kt` for the network-level test and the per-test
+ * `FakeSessionRepository` in [com.hermexapp.android.features.sessionlist.SessionListViewModelTest].
+ *
+ * Wave 0 split: leaving this as an `interface SessionRepository` rather than
+ * a concrete class lets us keep the production network path unchanged while
+ * making the new bulk-selection tests pure-JVM.
+ */
+interface SessionRepository {
+    data class SessionsResult(val sessions: List<SessionSummary>, val fromCache: Boolean)
+
+    suspend fun loadSessions(): SessionsResult
+
+    suspend fun search(query: String): List<SessionSummary>
+
+    suspend fun loadSession(id: String): Pair<SessionDetail?, Boolean>
+
+    suspend fun createSession(): SessionDetail?
+
+    suspend fun renameSession(id: String, title: String): com.hermexapp.android.model.SessionMutationResponse
+
+    suspend fun deleteSession(id: String): com.hermexapp.android.model.SessionMutationResponse
+
+    suspend fun pinSession(id: String, pinned: Boolean): com.hermexapp.android.model.SessionMutationResponse
+
+    suspend fun archiveSession(id: String, archived: Boolean): com.hermexapp.android.model.SessionMutationResponse
+
+    suspend fun duplicateSession(id: String): SessionDetail?
+
+    suspend fun moveSession(id: String, projectId: String?): com.hermexapp.android.model.SessionMutationResponse
+
+    /**
+     * No-default form: explicit `keepCount` and `title`. The interface
+     * declaration deliberately omits defaults — Kotlin doesn't allow
+     * override-method defaults to differ from the parent signature, and
+     * a single-source default could be luring callers into silently
+     * different behaviour at the implementation boundary.
+     *
+     * For convenience, `branchSession(id)` with no extra args is also part
+     * of this contract: implementations MUST support it as a synonym for
+     * `branchSession(id, null, null)` (matches the historical single-arg
+     * call site used by [SessionListViewModel]).
+     */
+    suspend fun branchSession(
+        id: String,
+        keepCount: Int?,
+        title: String?,
+    ): com.hermexapp.android.model.SessionBranchResponse
+
+    /** Convenience overload that forks with the full history and the default title. */
+    suspend fun branchSession(id: String): com.hermexapp.android.model.SessionBranchResponse
+
+    suspend fun loadProjects(): List<com.hermexapp.android.model.Project>
+
+    suspend fun createProject(name: String, color: String?): com.hermexapp.android.model.ProjectMutationResponse
+
+    suspend fun renameProject(id: String, name: String, color: String?): com.hermexapp.android.model.ProjectMutationResponse
+
+    suspend fun deleteProject(id: String): com.hermexapp.android.model.ProjectMutationResponse
+}
+
+/**
+ * Network-aware [SessionRepository]. The interface above is the testable
+ * shape; this concrete class is the production plumbing.
+ *
  * Sessions with an offline read path (plan phase 3): network responses are
  * cached as raw JSON per server host; when the network fails, the last cached
  * copy is served with an `offline` marker so the UI can say so. Mirrors the
  * intent of the iOS `CacheFallbackPolicy` + SwiftData cache in one seam.
  */
-class SessionRepository(
+class SessionRepositoryImpl(
     private val client: ApiClient,
     private val cache: CacheStore,
-) {
+) : SessionRepository {
     private val host: String get() = client.baseUrl.host
 
-    data class SessionsResult(val sessions: List<SessionSummary>, val fromCache: Boolean)
-
     /** Network first; on failure fall back to cache; rethrow when neither works. */
-    suspend fun loadSessions(): SessionsResult {
+    override suspend fun loadSessions(): SessionRepository.SessionsResult {
         val response = try {
             client.sessions()
         } catch (e: ApiError) {
@@ -52,19 +116,19 @@ class SessionRepository(
             } catch (_: Exception) {
                 throw e
             }
-            return SessionsResult(sort(decoded.sessions.orEmpty()), fromCache = true)
+            return com.hermexapp.android.features.sessionlist.SessionRepository.SessionsResult(sort(decoded.sessions.orEmpty()), fromCache = true)
         }
 
         cache.save(CacheStore.sessionsKey(host), ApiJson.encodeToString(response))
-        return SessionsResult(sort(response.sessions.orEmpty()), fromCache = false)
+        return com.hermexapp.android.features.sessionlist.SessionRepository.SessionsResult(sort(response.sessions.orEmpty()), fromCache = false)
     }
 
     /** Server-side search (`/api/sessions/search`) — network only, like iOS. */
-    suspend fun search(query: String): List<SessionSummary> =
+    override suspend fun search(query: String): List<SessionSummary> =
         sort(client.searchSessions(query).sessions.orEmpty())
 
     /** Session detail incl. transcript; cached for offline reopening. */
-    suspend fun loadSession(id: String): Pair<SessionDetail?, Boolean> {
+    override suspend fun loadSession(id: String): Pair<SessionDetail?, Boolean> {
         val key = CacheStore.sessionKey(host, id)
         val response = try {
             client.session(id)
@@ -83,33 +147,52 @@ class SessionRepository(
         return response.session to false
     }
 
-    suspend fun createSession(): SessionDetail? = client.createSession().session
+    override suspend fun createSession(): SessionDetail? = client.createSession().session
 
-    suspend fun renameSession(id: String, title: String) = client.renameSession(id, title)
+    override suspend fun renameSession(id: String, title: String) = client.renameSession(id, title)
 
-    suspend fun deleteSession(id: String) = client.deleteSession(id)
+    override suspend fun deleteSession(id: String) = client.deleteSession(id)
 
-    suspend fun pinSession(id: String, pinned: Boolean) = client.pinSession(id, pinned)
+    override suspend fun pinSession(id: String, pinned: Boolean) = client.pinSession(id, pinned)
 
-    suspend fun archiveSession(id: String, archived: Boolean) = client.archiveSession(id, archived)
+    override suspend fun archiveSession(id: String, archived: Boolean) =
+        client.archiveSession(id, archived)
 
-    suspend fun duplicateSession(id: String): SessionDetail? = client.duplicateSession(id).session
+    override suspend fun duplicateSession(id: String): SessionDetail? =
+        client.duplicateSession(id).session
 
-    suspend fun moveSession(id: String, projectId: String?) = client.moveSession(id, projectId)
+    override suspend fun moveSession(id: String, projectId: String?) = client.moveSession(id, projectId)
 
-    suspend fun branchSession(id: String, keepCount: Int? = null, title: String? = null) =
+    override suspend fun branchSession(
+        id: String,
+        keepCount: Int?,
+        title: String?,
+    ): com.hermexapp.android.model.SessionBranchResponse =
         client.branchSession(id, keepCount, title)
 
+    /** Convenience overload that keeps the historical `branchSession(id)` signature. */
+    override suspend fun branchSession(id: String): com.hermexapp.android.model.SessionBranchResponse =
+        branchSession(id, null, null)
+
     /** Projects (folders) for the active profile. Network only, like the list. */
-    suspend fun loadProjects(): List<com.hermexapp.android.model.Project> =
+    override suspend fun loadProjects(): List<com.hermexapp.android.model.Project> =
         client.projects().projects.orEmpty()
 
-    suspend fun createProject(name: String, color: String?) = client.createProject(name, color)
+    override suspend fun createProject(
+        name: String,
+        color: String?,
+    ): com.hermexapp.android.model.ProjectMutationResponse =
+        client.createProject(name, color)
 
-    suspend fun renameProject(id: String, name: String, color: String?) =
+    override suspend fun renameProject(
+        id: String,
+        name: String,
+        color: String?,
+    ): com.hermexapp.android.model.ProjectMutationResponse =
         client.renameProject(id, name, color)
 
-    suspend fun deleteProject(id: String) = client.deleteProject(id)
+    override suspend fun deleteProject(id: String): com.hermexapp.android.model.ProjectMutationResponse =
+        client.deleteProject(id)
 
     /** Pinned first, then most recent activity — matches the sidebar ordering. */
     private fun sort(sessions: List<SessionSummary>): List<SessionSummary> =

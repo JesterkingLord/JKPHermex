@@ -3,6 +3,7 @@ package com.hermexapp.android.features.chat
 import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.config.InMemoryKeyValueStore
 import com.hermexapp.android.features.sessionlist.SessionRepository
+import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.model.ReasoningEffort
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.SseStreaming
@@ -62,7 +63,7 @@ class ChatViewModelReasoningTest {
         prefs = AppPrefs(InMemoryKeyValueStore())
         viewModel = ChatViewModel(
             sessionId = "s1",
-            repository = SessionRepository(client, InMemoryCacheStore()),
+            repository = SessionRepositoryImpl(client, InMemoryCacheStore()),
             client = client,
             sse = noopSse,
             prefs = prefs,
@@ -99,7 +100,7 @@ class ChatViewModelReasoningTest {
         }
         val vm = ChatViewModel(
             sessionId = "s1",
-            repository = SessionRepository(client, InMemoryCacheStore()),
+            repository = SessionRepositoryImpl(client, InMemoryCacheStore()),
             client = client,
             sse = noopSse,
             prefs = AppPrefs(store),
@@ -112,7 +113,7 @@ class ChatViewModelReasoningTest {
     fun `null prefs keeps the defaults`() = runTest {
         val vm = ChatViewModel(
             sessionId = "s1",
-            repository = SessionRepository(client, InMemoryCacheStore()),
+            repository = SessionRepositoryImpl(client, InMemoryCacheStore()),
             client = client,
             sse = noopSse,
             prefs = null,
@@ -197,7 +198,7 @@ class ChatViewModelReasoningTest {
         // Reconstruct the VM so the new prefs value is hydrated.
         val vm = ChatViewModel(
             sessionId = "s1",
-            repository = SessionRepository(client, InMemoryCacheStore()),
+            repository = SessionRepositoryImpl(client, InMemoryCacheStore()),
             client = client,
             sse = noopSse,
             prefs = prefs,

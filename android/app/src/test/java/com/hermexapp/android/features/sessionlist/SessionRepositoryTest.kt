@@ -33,7 +33,7 @@ class SessionRepositoryTest {
                 .cookieJar(SessionCookieJar(InMemorySecretStore()))
                 .build(),
         )
-        repository = SessionRepository(client, cache)
+        repository = SessionRepositoryImpl(client, cache)
     }
 
     @After

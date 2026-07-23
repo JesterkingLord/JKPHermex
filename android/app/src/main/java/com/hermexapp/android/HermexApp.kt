@@ -9,6 +9,7 @@ import com.hermexapp.android.auth.KeystoreSecretStore
 import com.hermexapp.android.auth.SecretStore
 import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.features.sessionlist.SessionRepository
+import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.SessionCookieJar
 import com.hermexapp.android.network.SseClient
@@ -101,7 +102,7 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
     fun apiClient(baseUrl: HttpUrl): ApiClient = ApiClient(baseUrl, httpClient)
 
     fun sessionRepository(baseUrl: HttpUrl): SessionRepository =
-        SessionRepository(apiClient(baseUrl), cacheStore)
+        SessionRepositoryImpl(apiClient(baseUrl), cacheStore)
 
     fun sseClient(): SseClient = SseClient(httpClient)
 }
