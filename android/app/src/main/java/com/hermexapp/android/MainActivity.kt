@@ -221,6 +221,12 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
         SessionListViewModel(
             repository = repository,
             onAuthError = container.authManager::handleApiError,
+            // Surface the URL the app is configured to talk to on the
+            // "JKP is unreachable" banner so a wrong URL (e.g. a stale
+            // localhost on a real device) is obvious without leaving the
+            // home screen. Re-read on every refresh because the user can
+            // change servers via Settings → Auth.
+            currentBaseUrlProvider = { container.currentBaseUrl()?.toString() },
         ).also { it.refresh() }
     }
 

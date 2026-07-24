@@ -366,13 +366,50 @@ fun SessionListScreen(
 
             item {
                 AnimatedVisibility(visible = state.errorMessage != null) {
-                    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                         Text(
                             state.errorMessage.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
                             color = palette.destructive,
                         )
-                        TextButton(onClick = { viewModel.refresh() }) { Text("Retry") }
+                        // Show the URL the failed request went out against
+                        // so the user can immediately tell whether they
+                        // pointed the app at the wrong host (e.g. the
+                        // `127.0.0.1:8787` classic when running on a real
+                        // device where that means "the phone itself" not
+                        // "the laptop"). Skipped during onboarding when no
+                        // server has been configured yet.
+                        state.lastFailedServer?.let { failedUrl ->
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Tried: $failedUrl",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.destructive.copy(alpha = 0.7f),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "If you are on a real phone, " +
+                                    "use the laptop's Tailscale IP, " +
+                                    "not 127.0.0.1.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { viewModel.refresh() }) {
+                                Text("Retry")
+                            }
+                            // Shortcut to Settings so the user can switch
+                            // servers without first tapping the toolbar
+                            // cog (the most common reason this banner
+                            // appears in the first place is a stale URL).
+                            if (state.lastFailedServer != null) {
+                                TextButton(onClick = onOpenSettings) {
+                                    Text("Change server")
+                                }
+                            }
+                        }
                     }
                 }
             }

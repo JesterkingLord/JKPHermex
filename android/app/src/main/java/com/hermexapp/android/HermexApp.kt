@@ -118,6 +118,20 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
         registry = serverRegistry,
     )
 
+    /**
+     * The server URL the app is currently configured to talk to, or `null`
+     * when no pairing/onboarding has been completed yet. Read from
+     * [com.hermexapp.android.auth.AuthManager]'s reactive state so it
+     * stays correct after the user changes servers via Settings or
+     * pairing intent without needing a recompose-time null-check dance.
+     *
+     * Surfaced on the SessionList error banner so a "JKP is unreachable"
+     * always comes with the URL that failed — solves the
+     * `127.0.0.1:8787` on a real device classic without forcing the user
+     * to dig into Settings.
+     */
+    fun currentBaseUrl(): HttpUrl? = authManager.state.value.server
+
     fun apiClient(baseUrl: HttpUrl): ApiClient = ApiClient(baseUrl, httpClient)
 
     fun sessionRepository(baseUrl: HttpUrl): SessionRepository =

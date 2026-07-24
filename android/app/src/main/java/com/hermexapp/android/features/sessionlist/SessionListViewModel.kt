@@ -19,6 +19,15 @@ import kotlinx.coroutines.launch
 class SessionListViewModel(
     private val repository: SessionRepository,
     private val onAuthError: (Throwable) -> Unit = {},
+    /**
+     * Supplier returning the server URL the app is currently configured to
+     * talk to (e.g. `http://100.88.54.29:8787`). Wired by [MainActivity]
+     * from [com.hermexapp.android.AppContainer.currentBaseUrl] so the
+     * Error banner can always say "JKP is unreachable (tried
+     * http://…) — change server?" without forcing the user to dig into
+     * Settings to figure out which URL failed.
+     */
+    private val currentBaseUrlProvider: () -> String? = { null },
 ) : ViewModel() {
 
     data class UiState(
@@ -28,9 +37,22 @@ class SessionListViewModel(
         val isLoading: Boolean = false,
         val isFromCache: Boolean = false,
         val errorMessage: String? = null,
-        /** Excellence v1 Wave 0: bulk-select mode (long-press → multi-select toolbar). */
+        /**
+         * The server URL the refresh failed against, captured at the
+         * moment the request returned. Surfaced on the home-screen error
+         * banner so the user can see "JKP is unreachable — tried
+         * http://…" and tap "Change server" without leaving the screen.
+         * `null` when no request has failed yet, or when no server has
+         * been configured (the onboarding flow handles that path).
+         */
+        val lastFailedServer: String? = null,
+        /**
+         * Excellence v1 Wave 0: bulk-select mode (long-press → multi-select toolbar).
+         */
         val selectionMode: Boolean = false,
-        /** Stable session ids currently selected. Empty when not in selection mode. */
+        /**
+         * Stable session ids currently selected. Empty when not in selection mode.
+         */
         val selectedIds: Set<String> = emptySet(),
         /**
          * Wave 7 Slice 7.2 — sidebar filter pill, choosing which sessions
@@ -80,15 +102,38 @@ class SessionListViewModel(
     }
 
     suspend fun refreshNow() {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        // Resolve the URL ONCE per refresh and snapshot it into UiState.
+        // Reading it lazily on the failure branch is too late for the
+        // success path to populate it (though success clears it), and the
+        // provider may rotate (User switched servers via Settings) mid-flight,
+        // so we want the URL that the request actually went out against,
+        // not whatever the provider returns after the request returned.
+        val serverAtRequestTime = currentBaseUrlProvider()?.trimEnd('/')
+        _uiState.update {
+            it.copy(isLoading = true, errorMessage = null, lastFailedServer = null)
+        }
         try {
             val result = repository.loadSessions()
             _uiState.update {
-                it.copy(sessions = result.sessions, isFromCache = result.fromCache, isLoading = false)
+                it.copy(
+                    sessions = result.sessions,
+                    isFromCache = result.fromCache,
+                    isLoading = false,
+                    // Clear the last-failed marker on a successful refresh;
+                    // a previous failure should not bleed into the next
+                    // attempt's empty state.
+                    lastFailedServer = null,
+                )
             }
         } catch (e: ApiError) {
             onAuthError(e)
-            _uiState.update { it.copy(errorMessage = e.userMessage, isLoading = false) }
+            _uiState.update {
+                it.copy(
+                    errorMessage = e.userMessage,
+                    isLoading = false,
+                    lastFailedServer = serverAtRequestTime,
+                )
+            }
         }
         // Projects are best-effort: never block or error the session list on them.
         runCatching { repository.loadProjects() }.getOrNull()?.let { projects ->
