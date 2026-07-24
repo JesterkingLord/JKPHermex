@@ -1,9 +1,11 @@
 package com.hermexapp.android.ui
 
+import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -27,11 +29,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -87,7 +92,15 @@ import kotlin.math.roundToInt
  *   of total content size.
  */
 
-private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 1_000L
+/**
+ * Wave 9.11 (2026-07-24) — scrollbar auto-hide delay tuned to the
+ * pill's 3 500 ms grace window. Previously the debug build used 60 s
+ * which kept the bar pinned open during testing but felt sticky in
+ * real use. Production now matches the pill: visible while scrolling
+ * + 1.5 s grace after stop, so the eye and the finger agree on when
+ * the affordance is reachable.
+ */
+private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 1_500L
 private val FAST_SCROLL_HIT_WIDTH: Dp = 40.dp
 private val FAST_SCROLL_THUMB_HEIGHT: Dp = 44.dp
 /** Minimum visible thumb size as a fraction of the track (0..1). */
@@ -111,9 +124,12 @@ fun fractionHiddenBottom(
     return ((bottomEdge - viewportEndOffsetPx).toFloat() / itemSizePx.toFloat())
         .coerceIn(0f, 1f)
 }
-
 /** Pure helper exposing the thumb position + size math for unit tests. */
 data class ThumbGeometry(val position: Float, val size: Float)
+
+/** Builds the content description used for instrumentation. Visible */
+internal fun buildScrollSemantics(position: Float, size: Float): String =
+    "FastScrollbar pos=${"%.3f".format(position)} size=${"%.3f".format(size)}"
 
 /**
  * Compute the thumb's `(position, size)` fractions for a
@@ -134,9 +150,13 @@ data class ThumbGeometry(val position: Float, val size: Float)
  * @param viewportEndOffsetPx pixel offset of the viewport's bottom
  *   edge within scrollable content.
  * @param totalItemsCount total items in the list (NOT visible).
+ * @param canScrollBackward true if the list can scroll up.
+ * @param canScrollForward true if the list can scroll down. When
+ *   both are false (content fits in viewport) the helper returns
+ *   null — the bar hides itself entirely in that case.
  *
- * Returns `null` when `totalItemsCount <= 0` or the viewport has no
- * items to display.
+ * Returns `null` when there is no scroll possible, no items, or no
+ * visible content.
  */
 fun computeThumbGeometry(
     firstVisibleItemIndex: Int,
@@ -147,9 +167,19 @@ fun computeThumbGeometry(
     visibleItemCount: Int,
     viewportEndOffsetPx: Int,
     totalItemsCount: Int,
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean,
 ): ThumbGeometry? {
     if (totalItemsCount <= 0) return null
     if (visibleItemCount <= 0) return null
+
+    // ChatGPT/iOS rule: if neither scroll direction is available
+    // (content fits in viewport), the bar should disappear
+    // entirely. The caller routes this through AnimatedVisibility.
+    // Returning a sentinel position=0 here would otherwise show a
+    // confusing thumb pinned to the top.
+    if (!canScrollBackward && !canScrollForward) return null
+
     val firstPartial = fractionHiddenTop(firstVisibleItemScrollOffsetPx, firstVisibleItemSizePx)
     val lastPartial = fractionHiddenBottom(
         itemOffsetPx = lastVisibleItemOffsetPx,
@@ -219,8 +249,40 @@ fun FastScrollbar(
                     visibleItemCount = visible.size,
                     viewportEndOffsetPx = infoLocal.viewportEndOffset,
                     totalItemsCount = infoLocal.totalItemsCount,
+                    canScrollBackward = listState.canScrollBackward,
+                    canScrollForward = listState.canScrollForward,
                 )
             }
+        }
+    }
+
+    // Wave 9.10 debug logging — samples the live values the bar is
+    // reading from LazyListState. Useful to correlate on-device thumb
+    // position with what the math *thinks* the position should be.
+    // Logged at INFO level; gated so it only fires when the displayed
+    // fraction changes by ≥ 5%. Log spam was overrunning logcat
+    // earlier, hence the throttle.
+    var lastLoggedPos by remember { mutableStateOf(-1f) }
+    run {
+        if (abs((geometry?.position ?: -1f) - lastLoggedPos) > 0.05f ||
+            lastLoggedPos < 0f
+        ) {
+            lastLoggedPos = (geometry?.position ?: -1f)
+            val infoLocal = listState.layoutInfo
+            val total = infoLocal.totalItemsCount
+            val visible = infoLocal.visibleItemsInfo
+            Log.i(
+                "jkp.Scrollbar",
+                "totalItems=$total, firstIdx=${visible.firstOrNull()?.index}, " +
+                    "lastIdx=${visible.lastOrNull()?.index}, " +
+                    "firstVisOffset=${listState.firstVisibleItemScrollOffset}, " +
+                    "canScrollFwd=${listState.canScrollForward}, " +
+                    "canScrollBack=${listState.canScrollBackward}, " +
+                    "viewportStart=${infoLocal.viewportStartOffset}, " +
+                    "viewportEnd=${infoLocal.viewportEndOffset}, " +
+                    "fraction=pos=${"%.3f".format(geometry?.position ?: -1f)} " +
+                    "size=${"%.3f".format(geometry?.size ?: -1f)}",
+            )
         }
     }
 
@@ -268,6 +330,26 @@ fun FastScrollbar(
             .fillMaxHeight()
             .alpha(alpha)
             .testTag("fastScrollbar")
+            .semantics { contentDescription = buildScrollSemantics(positionFraction, sizeFraction) }
+            // Wave 9.11 — single tap jumps the list to that fraction.
+            // Drag detection below handles longer gestures; this short-
+            // tap handler covers `tapOn …` (Maestro/adb) that doesn't
+            // move. The keying on `Unit` keeps the detector armed
+            // across recompositions without restarting.
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val h = size.height.toFloat().coerceAtLeast(1f)
+                    val frac = (offset.y / h).coerceIn(0f, 1f)
+                    if (totalItemsCount > 0) {
+                        val targetIdx = (frac * (totalItemsCount - 1))
+                            .roundToInt()
+                            .coerceIn(0, totalItemsCount - 1)
+                        scope.launch {
+                            listState.animateScrollToItem(targetIdx)
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -300,7 +382,7 @@ fun FastScrollbar(
                 }
             },
     ) {
-        // The visible track — narrow, faint, accent-tinted.
+        // Visible track — narrow, faint, accent-tinted.
         Spacer(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -308,15 +390,17 @@ fun FastScrollbar(
                 .fillMaxHeight()
                 .padding(vertical = 6.dp)
                 .background(
-                    color = palette.accent.copy(
-                        alpha = if (dragging) 0.45f else 0.22f,
-                    ),
+                    // W9.10 debug — track alpha 1.0 to make it
+                    // clearly visible during device testing.
+                    color = palette.accent.copy(alpha = 1f),
                     shape = RoundedCornerShape(1.dp),
                 ),
         )
         // The thumb — width animates 5dp → 8dp on drag.
         val thumbWidth by animateDpAsState(
-            targetValue = if (dragging) THUMB_DRAG_WIDTH_DP.dp else THUMB_IDLE_WIDTH_DP.dp,
+            // W9.10 debug — forced thumb width 12dp so it's
+            // plainly visible during device testing.
+            targetValue = if (dragging) THUMB_DRAG_WIDTH_DP.dp else 12.dp,
             label = "scrollThumb",
             animationSpec = tween(120),
         )

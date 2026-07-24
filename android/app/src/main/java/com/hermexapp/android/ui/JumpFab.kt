@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -58,7 +59,17 @@ import kotlinx.coroutines.delay
  *   "I want it to show while I'm scrolling, and then hide 1 sec after
  *    scrolling stops."
  */
-private const val HIDE_DELAY_MS: Long = 1_000L
+/**
+ * Wave 9.11 (2026-07-24) — pill grace window extended so the affordance
+ * is actually reachable. The previous 1 000 ms window was enough for
+ * the eye but not for fingers: by the time a user lifted their thumb
+ * and decided to tap, the pill had already faded out.
+ *
+ * 3 500 ms keeps the pill visible after scrolling for a comfortable
+ * tap window while still hiding once the user settles. Hides immediately
+ * when there is nothing to scroll.
+ */
+private const val HIDE_DELAY_MS: Long = 3_500L
 
 /**
  * Pure decision helper, exposed for unit testing.
@@ -92,12 +103,26 @@ fun decideScrollIndicatorVisibility(
  * The [hideDelayMs] parameter is overridable for tests; production
  * uses [HIDE_DELAY_MS].
  */
+/**
+ * Wave 9.11 (2026-07-24) — restore jump-to-latest on tap.
+ *
+ * The user reported the pill does nothing: they expected a tap to
+ * bring the chat back to the latest message. The single-role pill
+ * stays visible while scrolling + during the 1 s grace window, AND
+ * becomes tappable so a single tap scrolls the list back to the
+ * nearest edge (bottom when scrolled up; top when near the bottom).
+ *
+ * The decision policy lives in `decideScrollIndicatorVisibility`
+ * (unchanged). The new bit is just routing a Modifier.clickable to
+ * a host-supplied lambda.
+ */
 @Composable
 fun ScrollIndicatorOnly(
     isScrolling: Boolean,
     contentIsScrollable: Boolean,
     modifier: Modifier = Modifier,
     hideDelayMs: Long = HIDE_DELAY_MS,
+    onClick: (() -> Unit)? = null,
 ) {
     // Drives the 1-second grace window. Keyed on the two inputs the
     // timer depends on so a change cancels and restarts the timer.
@@ -129,26 +154,34 @@ fun ScrollIndicatorOnly(
         exit = fadeOut(animationSpec = tween(140)),
         modifier = modifier,
     ) {
-        ScrollIndicatorPill()
+        ScrollIndicatorPill(
+            onClick = onClick,
+        )
     }
 }
 
 @Composable
-private fun ScrollIndicatorPill() {
+private fun ScrollIndicatorPill(onClick: (() -> Unit)?) {
     val palette = LocalHermexPalette.current
+    val pillModifier = Modifier
+        .size(40.dp)
+        .testTag("jumpFab.scrollIndicator")
+    // Wave 9.11 — tap → scroll-to-latest. We bind `clickable` only
+    // when the host supplied a callback; if no callback is wired the
+    // pill stays a passive indicator (preserving the v0.8.8
+    // visual-only contract for callers that haven't opted in).
+    val withClick = if (onClick != null) pillModifier.clickable(onClick = onClick) else pillModifier
     Surface(
         color = palette.accent,
         contentColor = Color.White,
         shape = CircleShape,
         shadowElevation = 8.dp,
-        modifier = Modifier
-            .size(40.dp)
-            .testTag("jumpFab.scrollIndicator"),
+        modifier = withClick,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = Icons.Filled.ArrowDownward,
-                contentDescription = "Scrolling",
+                contentDescription = "Scroll to latest",
                 modifier = Modifier.size(20.dp),
             )
         }

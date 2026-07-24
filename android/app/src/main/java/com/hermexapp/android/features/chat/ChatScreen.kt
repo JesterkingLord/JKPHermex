@@ -428,6 +428,25 @@ fun ChatScreen(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 16.dp, bottom = 24.dp),
+                        // Wave 9.11 — tap on the pill scrolls the
+                        // chat to the nearest edge. If the user is
+                        // scrolled up (canScrollForward is true), they
+                        // want the latest reply; if they're already at
+                        // the bottom (canScrollBackward is true),
+                        // tapping jumps to the very top so they can
+                        // scroll back without losing context.
+                        onClick = {
+                            scope.launch {
+                                if (listState.canScrollForward) {
+                                    listState.animateScrollToItem(
+                                        state.entries.lastIndex.coerceAtLeast(0),
+                                    )
+                                    viewModel.markSeen()
+                                } else if (listState.canScrollBackward) {
+                                    listState.animateScrollToItem(0)
+                                }
+                            }
+                        },
                     )
                 }
             }
