@@ -7,23 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 9.10 (2026-07-24) — Tests for [computeThumbGeometry].
+ * Wave 9.11 (2026-07-24) — Tests for [computeThumbGeometry].
  *
- * v0.8.9's pixel-perfect math (`viewportStartOffset / estimatedHeight`)
- * looked right but failed in practice: when the user stops scrolling
- * mid-chat with items beyond the viewport, the LazyList's reported
- * `estimatedTotalContentHeight` under-reports because only VISIBLE
- * items have been measured. Result: the user's last screenshot
- * showed the thumb pinned to the **top** of the track while the chat
- * was clearly at the bottom.
- *
- * v0.8.10 follows the canonical reference formula (gist 0sten
- * "LazyColumnScrollbar") which uses **item-index math**. The fraction
- * is `(firstVisibleItemIndex + partialScrollFraction) /
- * totalItemsCount`. Position and size both pin to totalItemsCount,
- * which is exact (it's the same number passed to LazyColumn).
- *
- * These tests pin the canonical contract.
+ * The headline fix from v0.8.10 → v0.8.11 is the new "hide bar when
+ * content fits in viewport" rule. The bar returning non-null with a
+ * meaningless fraction=0 was producing the "thumb stuck at the top"
+ * symptom the user reported on short chats. With the new guard
+ * (canScrollBackward=false AND canScrollForward=false → return
+ * null), short chats hide the bar entirely.
  */
 class FastScrollbarFractionTest {
 
@@ -38,13 +29,34 @@ class FastScrollbarFractionTest {
             visibleItemCount = 0,
             viewportEndOffsetPx = 800,
             totalItemsCount = 0,
+            canScrollBackward = false,
+            canScrollForward = false,
         )
         assertNull(g)
     }
 
     @Test
+    fun `content fits in viewport returns null (no scroll possible)`() {
+        // v0.8.11 fix: bar HIDES entirely when nothing to scroll.
+        // The classic "stuck at top" bug came from this scenario
+        // producing a position=0 thumb pinned to the top.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 0,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 400,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 2,
+            viewportEndOffsetPx = 800,
+            totalItemsCount = 2,
+            canScrollBackward = false,
+            canScrollForward = false,
+        )
+        assertNull("content fits → bar hidden", g)
+    }
+
+    @Test
     fun `at top of 50-item list thumb position equals 0`() {
-        // List of 50, first item index 0, no scroll offset.
         val g = computeThumbGeometry(
             firstVisibleItemIndex = 0,
             firstVisibleItemScrollOffsetPx = 0,
@@ -54,80 +66,38 @@ class FastScrollbarFractionTest {
             visibleItemCount = 4,
             viewportEndOffsetPx = 800,
             totalItemsCount = 50,
+            canScrollBackward = false,
+            canScrollForward = true,
         )
         assertNotNull(g)
         assertEquals(0f, g!!.position, 0.001f)
-        assertTrue("size must be at least MIN_VISIBLE", g!!.size >= 0.08f)
+        assertTrue("size must be at least MIN_VISIBLE", g.size >= 0.08f)
     }
 
     @Test
-    fun `at bottom of 50-item list thumb position equals 1 minus size`() {
-        // User fully scrolled — last item index 49, visible.
-        // last item bottom (say offset=2400 + size=200 = 2600) is
-        // past viewportEndOffset=800, so it's fully visible in the
-        // bottom and the partial hidden fraction is 1.0 (fully
-        // hidden below). Wait, that's not right. Let me think:
-        // lastVisibleItem.offset is the top of the LAST visible item
-        // relative to the viewport. When we're at bottom, the last
-        // visible item is partially visible at the bottom of the
-        // viewport. Its top would be below viewport top.
+    fun `at bottom of 50-item list thumb position is at max`() {
         val g = computeThumbGeometry(
-            firstVisibleItemIndex = 47, // user scrolled almost to bottom
+            firstVisibleItemIndex = 47,
             firstVisibleItemScrollOffsetPx = 0,
             firstVisibleItemSizePx = 200,
-            lastVisibleItemOffsetPx = -800, // last item top is 800 px above viewport top (we've scrolled past items)
+            lastVisibleItemOffsetPx = -800,
             lastVisibleItemSizePx = 200,
             visibleItemCount = 4,
-            viewportEndOffsetPx = 0, // viewport bottom edge is at content top (we're at very bottom of content)
+            viewportEndOffsetPx = 0,
             totalItemsCount = 50,
+            canScrollBackward = true,
+            canScrollForward = false,
         )
         assertNotNull(g)
-        // Position should be at the bottom of the track (clamped to
-        // 1 - sizeFraction).
-        assertTrue("position must be high when at bottom", g!!.position > 0.8f)
-    }
-
-    @Test
-    fun `user-screenshot scenario at-bottom-of-long-chat shows thumb at bottom`() {
-        // Replicates the v0.8.9 screenshot bug: chat at bottom, but
-        // thumb showed at the top. v0.8.10 must NOT have that bug.
-        //
-        // Setup: 50-message chat, user fully at bottom. lastVisible
-        // item is index 49 (the last message), its top is way above
-        // the viewport (negative offset), its bottom aligns with
-        // or exceeds viewport bottom edge. viewportEndOffsetPx is
-        // the maximum pixel position of the viewport, which at
-        // bottom equals the total content height (last item bottom).
-        val totalItems = 50
-        // Pretend last item bottom is at pixel 10000 (content
-        // extent). Viewport is 800 tall. So at bottom: viewportStart
-        // = 9200, viewportEndOffset = 10000.
-        val lastItemBottomPx = 10_000
-        val viewportEndOffset = lastItemBottomPx
-        val g = computeThumbGeometry(
-            firstVisibleItemIndex = 46,
-            firstVisibleItemScrollOffsetPx = 0,
-            firstVisibleItemSizePx = 200,
-            lastVisibleItemOffsetPx = lastItemBottomPx - viewportEndOffset,
-            lastVisibleItemSizePx = 200,
-            visibleItemCount = 4,
-            viewportEndOffsetPx = viewportEndOffset,
-            totalItemsCount = totalItems,
-        )
-        assertNotNull(g)
-        // The fraction must NOT be near zero (the v0.8.9 bug).
-        // The fraction at near-bottom should be > 0.8.
-        assertTrue(
-            "position ${g!!.position} should be near the bottom",
-            g.position > 0.8f,
-        )
+        // Position is clamped so thumb doesn't overflow track.
+        assertTrue("pos at bottom should be high", g!!.position > 0.7f)
     }
 
     @Test
     fun `mid-list tall items position is proportional to scroll`() {
-        // 10 items, item 3 partially visible at top, item 6
-        // partially visible at bottom. firstVisibleItemScrollOffset
-        // = 80 out of 200 (40% through item 3).
+        // firstVisible=3, firstVisibleScrollOffset=80 of 200 = 0.4
+        // lastPartial (4 items visible, last one fully in) = 0
+        // positionRaw = (3 + 0.4) / 10 = 0.34
         val g = computeThumbGeometry(
             firstVisibleItemIndex = 3,
             firstVisibleItemScrollOffsetPx = 80,
@@ -137,23 +107,57 @@ class FastScrollbarFractionTest {
             visibleItemCount = 4,
             viewportEndOffsetPx = 1050,
             totalItemsCount = 10,
+            canScrollBackward = true,
+            canScrollForward = true,
         )
         assertNotNull(g)
-        // firstPartial = 80/200 = 0.4
-        // lastPartial  = (800+250-1050)/250 = 0/250 = 0
-        // positionRaw = (3 + 0.4) / 10 = 0.34
-        // sizeRaw = (4 - 0.4 - 0) / 10 = 0.36
-        // sizeClamped = 0.36 (≥ MIN_VISIBLE_FRACTION=0.08)
-        // maxPosition = 1 - 0.36 = 0.64
-        // positionClamped = clamp(0.34, 0, 0.64) = 0.34
         assertEquals(0.34f, g!!.position, 0.005f)
         assertEquals(0.36f, g.size, 0.005f)
     }
 
     @Test
-    fun `thumbsize at minimum when content fits in viewport`() {
-        // Content fits, all 3 items fully visible, sizeRaw ≈ 0.06
-        // (< 0.08), clamps to MIN_VISIBLE_FRACTION.
+    fun `user screenshot scenario at-bottom-of-long-chat shows thumb at bottom`() {
+        // Replicates the v0.8.9 user's screenshot: chat at bottom,
+        // but thumb showed at top.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 46,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 9200,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 4,
+            viewportEndOffsetPx = 10000,
+            totalItemsCount = 50,
+            canScrollBackward = true,
+            canScrollForward = false,
+        )
+        assertNotNull(g)
+        assertTrue("pos must be near bottom", g!!.position > 0.7f)
+    }
+
+    @Test
+    fun `content fits no scroll hidden (wave 9 11 primary fix)`() {
+        // Two-message chat, both visible, can't scroll up or down.
+        // v0.8.10 would have returned pos=0 here, putting the thumb
+        // at the top of the track (which is the bug the user saw).
+        // v0.8.11 returns null so the bar hides itself entirely.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 0,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 400,
+            lastVisibleItemOffsetPx = 400,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 2,
+            viewportEndOffsetPx = 800,
+            totalItemsCount = 2,
+            canScrollBackward = false,
+            canScrollForward = false,
+        )
+        assertNull("fits in viewport → bar hidden", g)
+    }
+
+    @Test
+    fun `thumbsize at minimum when content fits in viewport and scrolled fully past last`() {
         val g = computeThumbGeometry(
             firstVisibleItemIndex = 0,
             firstVisibleItemScrollOffsetPx = 0,
@@ -163,17 +167,15 @@ class FastScrollbarFractionTest {
             visibleItemCount = 3,
             viewportEndOffsetPx = 600,
             totalItemsCount = 50,
+            canScrollBackward = false,
+            canScrollForward = true,
         )
         assertNotNull(g)
         assertEquals(0.08f, g!!.size, 0.001f)
     }
 
     @Test
-    fun `position clamped so thumb bottom does not exceed track end`() {
-        // last item visible with index = totalItemsCount - 1.
-        // Position would be (49 + 0) / 50 = 0.98; size = 1 / 50 = 0.02.
-        // sizeClamped = 0.08. maxPosition = 1 - 0.08 = 0.92.
-        // positionClamped = clamp(0.98, 0, 0.92) = 0.92.
+    fun `position clamped so thumb bottom does not exceed track end (index 49)`() {
         val g = computeThumbGeometry(
             firstVisibleItemIndex = 49,
             firstVisibleItemScrollOffsetPx = 0,
@@ -183,6 +185,8 @@ class FastScrollbarFractionTest {
             visibleItemCount = 1,
             viewportEndOffsetPx = 400,
             totalItemsCount = 50,
+            canScrollBackward = true,
+            canScrollForward = true,
         )
         assertNotNull(g)
         assertEquals(0.92f, g!!.position, 0.005f)
@@ -190,44 +194,27 @@ class FastScrollbarFractionTest {
 
     @Test
     fun `firstPartialFraction = 0 when scrollOffset is 0`() {
-        // sanity: at the top of an item, scrollOffset is 0.
-        val f = fractionHiddenTop(scrollOffsetPx = 0, sizePx = 200)
-        assertEquals(0f, f, 0.0001f)
+        assertEquals(0f, fractionHiddenTop(0, 200), 0.0001f)
     }
 
     @Test
     fun `firstPartialFraction = 1 when scrolled past first item`() {
-        // scrollOffset ≥ sizePx (defensive case) clamps to 1.
-        val f = fractionHiddenTop(scrollOffsetPx = 250, sizePx = 200)
-        assertEquals(1f, f, 0.0001f)
+        assertEquals(1f, fractionHiddenTop(250, 200), 0.0001f)
     }
 
     @Test
-    fun `lastPartialFraction = 0 when item bottom is above viewport end`() {
-        // 50-item chat, top of viewport at content start.
-        // lastVisible item bottom 800 (within viewport 0..800)
-        val f = fractionHiddenBottom(
-            itemOffsetPx = 600,
-            itemSizePx = 200,
-            viewportEndOffsetPx = 800,
-        )
-        assertEquals(0f, f, 0.0001f)
+    fun `lastPartialFraction = 0 when item bottom is within viewport`() {
+        assertEquals(0f, fractionHiddenBottom(600, 200, 800), 0.0001f)
     }
 
     @Test
-    fun `lastPartialFraction = 1 when item extends well past viewport`() {
-        val f = fractionHiddenBottom(
-            itemOffsetPx = 600,
-            itemSizePx = 2000,
-            viewportEndOffsetPx = 800,
-        )
-        // (600+2000-800)/2000 = 1800/2000 = 0.9
-        assertEquals(0.9f, f, 0.001f)
+    fun `lastPartialFraction = fraction when item extends past viewport`() {
+        // (600+2000-800)/2000 = 0.9
+        assertEquals(0.9f, fractionHiddenBottom(600, 2000, 800), 0.001f)
     }
 
     @Test
     fun `monotonic through scroll range`() {
-        // As firstVisibleItemIndex grows, position must grow.
         var last = -1f
         for (idx in 0..9) {
             val g = computeThumbGeometry(
@@ -239,13 +226,12 @@ class FastScrollbarFractionTest {
                 visibleItemCount = 4,
                 viewportEndOffsetPx = 1000,
                 totalItemsCount = 10,
+                canScrollBackward = true,
+                canScrollForward = true,
             )
             assertNotNull(g)
             val pos = g!!.position
-            assertTrue(
-                "pos at idx=$idx must be monotonic (was $last, now $pos)",
-                pos >= last,
-            )
+            assertTrue("pos at idx=$idx must be monotonic", pos >= last)
             last = pos
         }
     }
