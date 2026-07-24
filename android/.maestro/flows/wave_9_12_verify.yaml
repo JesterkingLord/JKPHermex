@@ -1,0 +1,72 @@
+appId: com.hermexapp.android
+
+---
+# Wave 9.12 verification:
+#   1) Pill icon flips ↑/↓ with scroll position.
+#   2) Track thumb no longer "stuck at top": position math centers
+#      the thumb in the visible track, so even at pos=0 the thumb's
+#      bottom edge lines up with the track's visible top.
+
+- launchApp:
+    clearState: false
+
+# Open the chat.
+- tapOn:
+    point: 883,2142
+- waitForAnimationToEnd
+
+# Type a long-enough prompt to produce several paragraphs.
+- tapOn:
+    point: 540,1692
+- inputText: "Please reply with a list of 8 numbered items each 2 sentences long about debugging mobile UI scrollbars end each with a period"
+- hideKeyboard
+
+# Send.
+- tapOn:
+    point: 939,1983
+- extendedWaitUntil:
+    visible: "1."
+    timeout: 60000
+
+# After the reply streams in, the chat is at the bottom and
+# canScrollForward=false, canScrollBackward=true → pill should show ↑.
+# Take a screenshot for evidence.
+- takeScreenshot: /tmp/hermex-final/01_at_bottom.png
+
+# Fling to trigger isScrollInProgress → pill visible.
+- swipe:
+    start: 540,1500
+    end: 540,600
+    duration: 200
+
+# Snapshot during scroll for the pill mount.
+- takeScreenshot: /tmp/hermex-final/02_during_scroll.png
+
+# Wait for the pill (with the upward arrow now since we scrolled up).
+- extendedWaitUntil:
+    visible: "Scroll to top"
+    timeout: 5000
+- takeScreenshot: /tmp/hermex-final/03_pill_at_top.png
+
+# Now scroll a bit more to be confident we're at the very top.
+- swipe:
+    start: 540,1500
+    end: 540,200
+    duration: 250
+- waitForAnimationToEnd
+
+# Snapshot — bar should be at top, thumb anchored inside track.
+- takeScreenshot: /tmp/hermex-final/04_at_top_anchor.png
+
+# Quick network hygiene: tap the pill to verify the ↑ actually scrolls
+# to top (we're already at top so this is a no-op in scroll terms; we
+# just want to prove the click doesn't crash and the arrow direction is
+# correct semantically).
+- tapOn:
+    text: "Scroll to top"
+
+# Wait.
+- waitForAnimationToEnd
+
+# Done.
+- takeScreenshot: /tmp/hermex-final/05_after_pill_up.png

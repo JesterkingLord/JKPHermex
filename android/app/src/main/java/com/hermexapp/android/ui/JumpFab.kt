@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -104,22 +105,30 @@ fun decideScrollIndicatorVisibility(
  * uses [HIDE_DELAY_MS].
  */
 /**
- * Wave 9.11 (2026-07-24) — restore jump-to-latest on tap.
+ * Wave 9.12 (2026-07-24) — pill icon flips with scroll direction.
  *
- * The user reported the pill does nothing: they expected a tap to
- * bring the chat back to the latest message. The single-role pill
- * stays visible while scrolling + during the 1 s grace window, AND
- * becomes tappable so a single tap scrolls the list back to the
- * nearest edge (bottom when scrolled up; top when near the bottom).
+ * The user reported the pill always showed `↓` and asked for it to
+ * switch to `↑` once the chat reaches the latest message at the
+ * bottom. We pass the two `canScrollForward` / `canScrollBackward`
+ * signals in and pick the glyph accordingly:
  *
- * The decision policy lives in `decideScrollIndicatorVisibility`
- * (unchanged). The new bit is just routing a Modifier.clickable to
- * a host-supplied lambda.
+ *   - `canScrollForward == true`  → ↓  (more content below; tapping
+ *                                      scrolls DOWN to the latest)
+ *   - `canScrollBackward == true` → ↑  (more content above; tapping
+ *                                      scrolls UP to the first entry)
+ *   - Both true                    → ↓ (user scrolled up; tap to
+ *                                      jump down — the common case)
+ *
+ * `decideScrollIndicatorVisibility` (unchanged) still gates whether
+ * the pill renders. `onClick` (added in Wave 9.11) wires the tap
+ * handler. This revision only swaps the icon.
  */
 @Composable
 fun ScrollIndicatorOnly(
     isScrolling: Boolean,
     contentIsScrollable: Boolean,
+    canScrollForward: Boolean = false,
+    canScrollBackward: Boolean = false,
     modifier: Modifier = Modifier,
     hideDelayMs: Long = HIDE_DELAY_MS,
     onClick: (() -> Unit)? = null,
@@ -156,12 +165,18 @@ fun ScrollIndicatorOnly(
     ) {
         ScrollIndicatorPill(
             onClick = onClick,
+            // Wave 9.12 — pick the icon based on which edge the user
+            // can scroll toward from this position.
+            arrowIsDown = !canScrollBackward || canScrollForward,
         )
     }
 }
 
 @Composable
-private fun ScrollIndicatorPill(onClick: (() -> Unit)?) {
+private fun ScrollIndicatorPill(
+    onClick: (() -> Unit)?,
+    arrowIsDown: Boolean,
+) {
     val palette = LocalHermexPalette.current
     val pillModifier = Modifier
         .size(40.dp)
@@ -180,8 +195,16 @@ private fun ScrollIndicatorPill(onClick: (() -> Unit)?) {
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = Icons.Filled.ArrowDownward,
-                contentDescription = "Scroll to latest",
+                imageVector = if (arrowIsDown) {
+                    Icons.Filled.ArrowDownward
+                } else {
+                    Icons.Filled.ArrowUpward
+                },
+                contentDescription = if (arrowIsDown) {
+                    "Scroll to latest"
+                } else {
+                    "Scroll to top"
+                },
                 modifier = Modifier.size(20.dp),
             )
         }

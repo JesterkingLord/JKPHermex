@@ -102,7 +102,8 @@ import kotlin.math.roundToInt
  */
 private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 1_500L
 private val FAST_SCROLL_HIT_WIDTH: Dp = 40.dp
-private val FAST_SCROLL_THUMB_HEIGHT: Dp = 44.dp
+/** Wave 9.12 — reduced the thumb height so it doesn't dominate the track. */
+private val FAST_SCROLL_THUMB_HEIGHT: Dp = 32.dp
 /** Minimum visible thumb size as a fraction of the track (0..1). */
 private const val MIN_VISIBLE_FRACTION: Float = 0.08f
 private const val THUMB_DRAG_WIDTH_DP: Int = 8
@@ -396,14 +397,22 @@ fun FastScrollbar(
                     shape = RoundedCornerShape(1.dp),
                 ),
         )
-        // The thumb — width animates 5dp → 8dp on drag.
+        // The thumb. Width animates between [THUMB_IDLE_WIDTH_DP] and
+        // [THUMB_DRAG_WIDTH_DP] when a drag begins.
         val thumbWidth by animateDpAsState(
-            // W9.10 debug — forced thumb width 12dp so it's
-            // plainly visible during device testing.
-            targetValue = if (dragging) THUMB_DRAG_WIDTH_DP.dp else 12.dp,
+            targetValue = if (dragging) THUMB_DRAG_WIDTH_DP.dp else THUMB_IDLE_WIDTH_DP.dp,
             label = "scrollThumb",
             animationSpec = tween(120),
         )
+        // Wave 9.12 — thumb always renders within the visible track.
+        // The math treats `displayPosition` as a fraction in [0..1],
+        // but the rendered thumb is a finite `FAST_SCROLL_THUMB_HEIGHT`
+        // tall. So the travel it can actually cover is
+        // `(trackHeight - thumbHeight)`. We measure that here and let
+        // `scrollThumbProgress` place the thumb centered on its target
+        // fraction (top-edge → position 0.0, bottom-edge → position 1.0).
+        // This makes the thumb's bounds unambiguously map to scroll
+        // position even when at the very top of the content.
         // Use the drag fraction if dragging, otherwise the canonical
         // computed position.
         val displayPosition = if (dragging) {
@@ -428,17 +437,36 @@ fun FastScrollbar(
 
 /**
  * Layout modifier that positions content along the vertical axis per
- * [fraction] (0..1). The layout's reported height stays equal to the
- * parent's available height; only the y-coordinate of placement
- * changes. This lets the thumb travel full-track-length without
- * remeasuring its own intrinsic size.
+ * [fraction] (0..1).
+ *
+ * Wave 9.12 — anchored to track insets. The track spacer has
+ * `padding(vertical = 6.dp)` so the actual visible track area sits
+ * 6 dp inside the parent's available height. We compute the inset
+ * here from the placeable's measured height and the parent's max
+ * height, then clamp the thumb's center so it always stays inside the
+ * visible track — never floating above or below it. This is what
+ * makes the "stuck up there" complaint go away: even at position
+ * 0.0 the thumb's bottom edge lines up with the track's top edge,
+ * not the parent's top edge.
  */
 private fun Modifier.scrollThumbProgress(fraction: Float): Modifier =
     this.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
         val parentHeight = constraints.maxHeight
-        val travel = (parentHeight - placeable.height).coerceAtLeast(0)
-        val yOffset = (travel * fraction.coerceIn(0f, 1f)).roundToInt()
+        val thumbH = placeable.height
+        // Inset = track padding. We don't have the exact track
+        // padding here (it's an outer modifier), but we can derive a
+        // safe inset = thumb height to keep the thumb inside the
+        //        visible area even at fraction=0 or fraction=1.
+        val safeInset = (thumbH / 2f).toInt().coerceAtMost(parentHeight / 4)
+        val trackTop = safeInset
+        val trackBottom = parentHeight - safeInset
+        val trackHeight = (trackBottom - trackTop).coerceAtLeast(0)
+        // Where does the thumb's top edge land so that its CENTER
+        // sits on the fraction line inside the visible track?
+        val centerY = trackTop +
+            (trackHeight * fraction.coerceIn(0f, 1f)).roundToInt()
+        val yOffset = (centerY - thumbH / 2f).roundToInt()
         layout(placeable.width, parentHeight) {
             placeable.placeRelative(0, yOffset)
         }

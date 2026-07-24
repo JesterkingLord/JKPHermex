@@ -425,6 +425,11 @@ fun ChatScreen(
                         isScrolling = listState.isScrollInProgress,
                         contentIsScrollable = listState.canScrollForward ||
                             listState.canScrollBackward,
+                        // Wave 9.12 — let the pill pick its icon based
+                        // on which edge the user can scroll toward from
+                        // the current position. See JumpFab.kt docstring.
+                        canScrollForward = listState.canScrollForward,
+                        canScrollBackward = listState.canScrollBackward,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 16.dp, bottom = 24.dp),
