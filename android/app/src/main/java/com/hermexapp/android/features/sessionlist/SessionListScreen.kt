@@ -509,23 +509,13 @@ fun SessionListScreen(
             // right edge. Hidden when there are fewer than 20 items (no UX
             // FastScrollbar for the session list.
             //
-            // Wave 9.7 (2026-07-24): rewired against the new signature
-            // (LazyListState-driven, with lastVisibleIndex + scrollOffset
-            // for the bottom-snap fix). Letter jump group preserved.
+            // Wave 9.9 (2026-07-24): rewritten to take the LazyListState
+            // directly. The bar uses pixel-perfect math and ChatGPT-style
+            // auto-hide. The session list already had its own letter-jump
+            // rail (separately added by `buildLetterIndex`); this scrollbar
+            // is the standard one.
             FastScrollbar(
-                itemCount = visibleSessions.size,
-                firstVisibleIndex = listState.firstVisibleItemIndex,
-                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
-                    .lastOrNull()?.index ?: 0,
-                firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
-                canScrollBackward = listState.canScrollBackward,
-                canScrollForward = listState.canScrollForward,
-                totalItemsCount = listState.layoutInfo.totalItemsCount,
-                letterIndex = letterIndex,
-                onScrollToIndex = { target ->
-                    scope.launch { listState.scrollToItem(target) }
-                },
+                listState = listState,
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }

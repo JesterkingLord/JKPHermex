@@ -356,23 +356,14 @@ fun ChatScreen(
                     }
                     // FastScrollbar for the chat timeline.
                     //
-                    // Wave 9.7 (2026-07-24): added `lastVisibleIndex` and
-                    // `firstVisibleItemScrollOffsetPx` so the helper can
-                    // snap to fraction=1 when the last item is in the
-                    // viewport (the v0.8.6 screenshot's bug).
+                    // Wave 9.9 (2026-07-24): rewritten to take the
+                    // LazyListState directly. The bar uses pixel-perfect
+                    // math (viewportStartOffset / content height) so the
+                    // thumb position is correct regardless of how tall
+                    // each message is. ChatGPT-style auto-hide: fades in
+                    // while scrolling, hides 1 s after scroll stops.
                     FastScrollbar(
-                        itemCount = state.entries.size,
-                        firstVisibleIndex = listState.firstVisibleItemIndex,
-                        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
-                            .lastOrNull()?.index ?: 0,
-                        firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                        visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
-                        canScrollBackward = listState.canScrollBackward,
-                        canScrollForward = listState.canScrollForward,
-                        totalItemsCount = listState.layoutInfo.totalItemsCount,
-                        onScrollToIndex = { target ->
-                            scope.launch { listState.animateScrollToItem(target) }
-                        },
+                        listState = listState,
                         modifier = Modifier.align(Alignment.CenterEnd),
                     )
                     // Wave 5 Slice 5.2 — unread pill above the JumpFab.

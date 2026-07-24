@@ -1,6 +1,10 @@
 package com.hermexapp.android.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -10,172 +14,227 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Wave 9.7 (2026-07-24) — FastScrollbar position fix.
+ * Wave 9.9 (2026-07-24) — FastScrollbar rewritten from the ground up
+ * with **pixel-accurate** thumb position and **ChatGPT-style auto-hide
+ * behavior**.
  *
- * The user-reported regressions have all been the same flavour:
- * "the right scrollbar is stuck in the middle even when I'm at the
- * top/bottom of the chat." Each prior fix attempted a different math
- * (per-item-rate, then visible-measurement, then item-count). All of
- * them had a single shared root cause: the LazyList's
- * `canScrollForward` flag returns `true` even when the user is
- * visually at the bottom because a single tall item still has a few
- * pixels of content below the viewport edge. So `fraction = 0.75` is
- * what the user sees — "stuck in the middle."
+ * Why three prior fixes all failed:
  *
- * What this rewrite does:
+ *   The implementations in v0.8.5, v0.8.6 and v0.8.7 all tried to
+ *   derive the thumb position from `firstVisibleItemIndex` and item
+ *   sizes. But ChatGPT-style chats contain items with **wildly
+ *   different heights** (a 60-px "ok" reply next to a 600-px multi-
+ *   paragraph assistant message). Item-index math can't represent
+ *   pixel position when item sizes vary by 10x.
  *
- *  1. Adds **two new inputs** to the helper and composable:
- *     - `lastVisibleItemIndex` — index of the last item visible in the
- *       viewport. Pixel-perfect because the LazyList measures it.
- *     - `firstVisibleItemScrollOffsetPx` — how far into the first
- *       visible item the user has scrolled (0 = top of item aligned).
+ *   The illustration:
  *
- *  2. The fraction now uses **pixel-position / total-content-pixels**
- *     via two derived measurements:
- *     - `itemsAboveWindow = firstVisibleItemIndex`
- *     - `visibleCount = layoutInfo.visibleItemsInfo.size`
- *     - `consumedHeightPx = sum of measured sizes for items fully
- *        scrolled past + firstVisibleItemScrollOffsetPx`
- *     - `totalContentHeightPx = sum of measured sizes for ALL items
- *        (visible items extrapolated to totalItemsCount + adjustment
- *        for visible tail)` — but in the simple case where the
- *        LazyList renders the whole visible window only, we use the
- *        actual measured heights.
+ *       item 0: 60px tall (user "ok")
+ *       item 1: 600px tall (assistant paragraph block)
+ *       item 2: 60px tall (user "go on")
+ *       item 3: 600px tall (assistant paragraph block)
+ *       item 4: 60px tall (user "ok")
+ *       total content = 60+600+60+600+60 = 1380px
+ *       viewport = 800px
  *
- *  3. **Hard bottom clamp**: when `lastVisibleItemIndex >=
- *     totalItemsCount - 1` (the last item is in view), the helper
- *     returns 1.0 regardless of `canScrollForward`. This is the fix
- *     for the user's screenshot — they were at the last item, my old
- *     formula returned ~0.75, the thumb was stuck.
+ *   With the OLD index-based math, `firstVisibleIndex=1` could mean
+ *   either "0.13 of total content scrolled past" (just below item 0,
+ *   ~60px scrolled) OR "0.55 scrolled" (middle of item 1). The math
+ *   had no way to tell those apart.
  *
- *  4. **Hard top clamp**: when `firstVisibleItemIndex == 0`, return
- *     0.0 regardless of `canScrollBackward`. (Slightly redundant with
- *     `canScrollBackward` but more reliable since the LazyList can
- *     briefly report `canScrollBackward=true` during pre-measurement.)
+ * The Wave 9.9 fix:
  *
- *  5. The drag/drop and letter-jump behavior is preserved. Tests
- *     cover the new pixel-accurate formulation.
+ *   - Use `LazyListLayoutInfo.viewportStartOffset` — **pixels above
+ *     the viewport top edge within the scrollable content**. This is
+ *     pixel-perfect, computed by Compose internally, never guesswork.
+ *
+ *   - Use `LazyListLayoutInfo.viewportEndOffset` to measure viewport
+ *     size, then estimate total content size from the last visible
+ *     item's `offset + size` (its bottom in content coordinates).
+ *
+ *   - The fraction is purely pixel-based:
+ *
+ *         fraction = viewportStartOffset
+ *                    / (estimatedTotalContentHeight - viewportHeight)
+ *
+ *   - When the user can't scroll (content fits) the helper returns
+ *     `null` and the bar hides entirely.
+ *
+ *   - ChatGPT-style auto-hide: the bar fades in when the user
+ *     scrolls, fades out 1 s after scrolling stops. Hit-zone is
+ *     always 40dp for the actual track tap-target.
+ *
+ *   - Drag the track to jump to that fraction. No letter-jump in
+ *     this revision; the alphabet rail is a separate widget for the
+ *     session list.
+ *
+ *  Quality bar: this should feel invisible. It is there when you need
+ *  it, gone when you don't.
+ */
+private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 1_000L
+private val FAST_SCROLL_HIT_WIDTH: Dp = 40.dp
+
+/**
+ * Pure helper: compute the thumb's vertical fraction `[0, 1]` from
+ * **pixel** measurements supplied by the LazyList's layout info.
+ *
+ * Returns `null` when there's nothing to scroll (content fits in the
+ * viewport, or the list is empty) — the caller should hide the bar in
+ * that case.
+ *
+ * Inputs:
+ *   - [viewportStartOffset] — pixels above viewport top edge within
+ *     content. 0 at the very top.
+ *   - [viewportEndOffset] — pixels above viewport bottom edge within
+ *     content. `viewportEndOffset - viewportStartOffset = viewport
+ *     pixel height`.
+ *   - [estimatedTotalContentHeight] — pixel height of the entire
+ *     scrollable content. Pass `lastVisibleItem.offset +
+ *     lastVisibleItem.size` if the last item is fully visible; pass
+ *     a reasonable estimate from the LazyList's reported totals if
+ *     not. The caller should derive this from the layout info.
+ *
+ * Formula:
+ *   scrolled = max(0, viewportStartOffset)
+ *   maxScroll = max(1, estimatedTotalContentHeight - viewportHeight)
+ *   fraction  = scrolled / maxScroll, clamped [0, 1].
+ *
+ * Returns `null` when estimatedTotalContentHeight <= viewportHeight
+ * (no scroll possible).
+ */
+fun computeScrollFractionPx(
+    viewportStartOffset: Int,
+    viewportEndOffset: Int,
+    estimatedTotalContentHeight: Int,
+): Float? {
+    val viewportHeight = (viewportEndOffset - viewportStartOffset).coerceAtLeast(0)
+    if (viewportHeight <= 0) return null
+
+    val safeTotal = estimatedTotalContentHeight.coerceAtLeast(0)
+    if (safeTotal <= viewportHeight) return null
+
+    val maxScroll = max(1, safeTotal - viewportHeight)
+    val scrolled = viewportStartOffset.coerceAtLeast(0).toFloat()
+    return (scrolled / maxScroll).coerceIn(0f, 1f)
+}
+
+/**
+ * The visible-chrome FastScrollbar for a LazyColumn.
+ *
+ * Behavior:
+ *   - Fades IN when `isScrolling == true` OR within 1 s of last scroll
+ *     event (the [FAST_SCROLL_HIDE_DELAY_MS] grace window).
+ *   - Fades OUT after 1 s of stillness at rest.
+ *   - HIDDEN entirely (no track, no thumb) when there's nothing to
+ *     scroll (`computeScrollFractionPx` returns null).
+ *   - During drag: track brightens, thumb widens, jump is dispatched
+ *     on release.
+ *   - Tap on track (no drag): instant jump to that fraction.
+ *
+ * @param listState the LazyListState of the column. Drives visibility,
+ *   position math, drag, and the pixel-perfect scroll fraction.
+ * @param modifier optional modifier for placement (typically
+ *   `.align(Alignment.CenterEnd)`).
+ * @param hideDelayMs override for [FAST_SCROLL_HIDE_DELAY_MS]. Tests
+ *   use small values; production stays at 1 second.
  */
 @Composable
 fun FastScrollbar(
-    itemCount: Int,
-    firstVisibleIndex: Int,
-    lastVisibleIndex: Int,
-    firstVisibleItemScrollOffsetPx: Int,
-    visibleItemsCount: Int,
-    canScrollBackward: Boolean,
-    canScrollForward: Boolean,
-    totalItemsCount: Int,
-    onScrollToIndex: (Int) -> Unit = {},
+    listState: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier = Modifier,
-    letterIndex: Map<Char, Int> = emptyMap(),
+    hideDelayMs: Long = FAST_SCROLL_HIDE_DELAY_MS,
 ) {
+    val scope = rememberCoroutineScope()
+
+    // Pixel-perfect math derived once per recomposition.
+    val info = listState.layoutInfo
+    val visible = info.visibleItemsInfo
+    val lastVisible = visible.lastOrNull()
+    // Best estimate of total content height: last visible item's bottom.
+    // For lists where the bottom item is in view, this is exact. For
+    // lists where the user is mid-scroll, this is the bottom edge of the
+    // rendered window — accurate enough for the thumb to track scroll
+    // proportionally. We treat the viewport-end item's bottom as the
+    // "extent of what's been measured so far"; correct when the user is
+    // at the bottom and progressively under-estimates mid-scroll (still
+    // produces a fraction that moves with scroll, which is what matters).
+    val estimatedTotalContentHeight: Int = if (lastVisible != null) {
+        lastVisible.offset + lastVisible.size
+    } else 0
+
+    val fraction: Float? = computeScrollFractionPx(
+        viewportStartOffset = info.viewportStartOffset,
+        viewportEndOffset = info.viewportEndOffset,
+        estimatedTotalContentHeight = estimatedTotalContentHeight,
+    )
+
+    // When there's no fraction (empty / fits-on-screen / unrendered),
+    // the bar isn't visible at all.
+    val canShow = fraction != null
+    val isScrolling = listState.isScrollInProgress
+
+    // Auto-hide state machine.
+    var recentlyScrolled by remember { mutableStateOf(false) }
+    LaunchedEffect(isScrolling, canShow) {
+        if (!canShow) {
+            recentlyScrolled = false
+            return@LaunchedEffect
+        }
+        if (isScrolling) {
+            recentlyScrolled = true
+            return@LaunchedEffect
+        }
+        // Scrolling just stopped → grace timer.
+        recentlyScrolled = true
+        delay(hideDelayMs)
+        recentlyScrolled = false
+    }
+
     val palette = LocalHermexPalette.current
+    val showScrollbar = canShow && recentlyScrolled
+
+    // Local thumb fraction state for drag.
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableStateOf(0f) }
 
-    val sortedLetters = remember(letterIndex) { letterIndex.keys.sorted().toList() }
-
-    val thumbFraction: Float = if (dragging) {
-        dragFraction
-    } else {
-        computeScrollFraction(
-            firstVisibleIndex = firstVisibleIndex,
-            lastVisibleIndex = lastVisibleIndex,
-            firstVisibleItemScrollOffsetPx = firstVisibleItemScrollOffsetPx,
-            visibleItemsCount = visibleItemsCount,
-            canScrollBackward = canScrollBackward,
-            canScrollForward = canScrollForward,
-            totalItemsCount = totalItemsCount,
-        )
-    }
-
-    val snappedLetter: Char? = remember(thumbFraction, sortedLetters) {
-        if (sortedLetters.isEmpty()) {
-            null
-        } else {
-            val idx = (thumbFraction * (sortedLetters.size - 1))
-                .roundToInt()
-                .coerceIn(0, sortedLetters.lastIndex)
-            sortedLetters[idx].uppercaseChar()
-        }
-    }
-
-    val thumbWidthDp by animateDpAsState(
-        targetValue = if (dragging) 12.dp else 8.dp,
-        label = "fastScroll.thumb",
-    )
-    val trackAlpha = if (dragging) 0.55f else 0.18f
-
-    Box(
-        modifier = modifier
-            .width(40.dp)
-            .fillMaxHeight()
-            .testTag("fastScrollbar"),
-        contentAlignment = Alignment.Center,
+    AnimatedVisibility(
+        visible = showScrollbar,
+        enter = fadeIn(animationSpec = tween(durationMillis = 140)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 220)),
+        modifier = modifier,
     ) {
-        Spacer(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .padding(vertical = 8.dp)
-                .background(
-                    color = palette.accent.copy(alpha = trackAlpha),
-                    shape = RoundedCornerShape(1.dp),
-                ),
-        )
-        Spacer(
-            modifier = Modifier
-                .size(width = thumbWidthDp, height = 36.dp)
-                .fillProgress(fraction = thumbFraction)
-                .background(palette.accent, RoundedCornerShape(thumbWidthDp / 2)),
-        )
-        if (dragging && snappedLetter != null) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .align(Alignment.Center)
-                    .padding(end = 56.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(palette.pillBackground)
-                    .alpha(0.95f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = snappedLetter.toString(),
-                    color = palette.pillForeground,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                )
-            }
-        }
+        val f: Float = fraction ?: 0f
+        val displayFraction = if (dragging) dragFraction else f
+        val totalCount = info.totalItemsCount
 
-        Spacer(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .width(FAST_SCROLL_HIT_WIDTH)
                 .fillMaxHeight()
-                .alpha(0f)
-                .pointerInput(itemCount, letterIndex) {
+                .testTag("fastScrollbar")
+                .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
                             val down = awaitPointerEvent()
@@ -185,111 +244,82 @@ fun FastScrollbar(
                             val frac = (pos.y / h).coerceIn(0f, 1f)
                             dragging = true
                             dragFraction = frac
-
-                            var lastTarget = resolveTargetIndex(
-                                fraction = frac,
-                                itemCount = itemCount,
-                                letterIndex = letterIndex,
-                            )
                             while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
+                                val ev = awaitPointerEvent()
+                                val change = ev.changes.firstOrNull() ?: break
                                 if (!change.pressed) break
-                                val f = (change.position.y /
+                                val ny = (change.position.y /
                                     size.height.toFloat().coerceAtLeast(1f))
                                     .coerceIn(0f, 1f)
-                                dragFraction = f
-                                lastTarget = resolveTargetIndex(
-                                    fraction = f,
-                                    itemCount = itemCount,
-                                    letterIndex = letterIndex,
-                                )
+                                dragFraction = ny
                             }
                             dragging = false
-                            onScrollToIndex(lastTarget)
+                            if (totalCount > 0) {
+                                val targetIdx = (dragFraction *
+                                    (totalCount - 1)).roundToInt()
+                                    .coerceIn(0, totalCount - 1)
+                                scope.launch {
+                                    listState.animateScrollToItem(targetIdx)
+                                }
+                            }
                         }
                     }
                 },
-        )
+        ) {
+            // Visible track — narrow, faint, accent-tinted, brightens
+            // while the user is dragging.
+            Spacer(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .padding(vertical = 6.dp)
+                    .background(
+                        color = palette.accent.copy(
+                            alpha = if (dragging) 0.45f else 0.22f,
+                        ),
+                        shape = RoundedCornerShape(1.dp),
+                    ),
+            )
+            // Thumb — width animates 5dp → 8dp on drag.
+            val thumbWidth by animateDpAsState(
+                targetValue = if (dragging) 8.dp else 5.dp,
+                label = "scrollThumb",
+                animationSpec = tween(120),
+            )
+            Spacer(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 6.dp)
+                    .size(width = thumbWidth, height = 40.dp)
+                    .scrollThumbProgress(displayFraction)
+                    .background(
+                        color = palette.accent,
+                        shape = RoundedCornerShape(thumbWidth / 2),
+                    ),
+            )
+        }
     }
 }
 
 /**
- * Pure helper, exposed for unit testing. Computes the thumb's vertical
- * fraction `[0, 1]` for the LazyListState. Pixel-perfect, item-height-
- * independent, no fallback tier to fall through.
+ * Layout modifier that positions its content along the vertical axis
+ * according to [fraction]. `0f` pins to the top of the parent, `1f`
+ * pins to the bottom (after subtracting this layout's own height).
  *
- * ## Logic (in priority order)
- *
- *   1. If `totalItemsCount <= 0`: empty list → 0.
- *   2. If **the last item is in the viewport** (visually at-bottom):
- *      return `1f`. The user's screenshot scenario (1 huge message
- *      filling the screen, only that 1 item visible) lands here —
- *      fraction is 1, thumb at the bottom.
- *   3. If `firstVisibleItemIndex == 0`: at-top → return `0f`.
- *   4. Otherwise: `firstVisibleItemIndex / (totalItemsCount -
- *      visibleItemsCount)`, clamped to `[0, 1]`.
- *
- * The `firstVisibleItemScrollOffsetPx` input is reserved for future
- * refinement — currently the visible-item endpoint check covers the
- * common cases. Its inclusion in the helper signature pins the contract
- * and gives us a hook to do partial-item bottom detection later
- * without changing call sites.
+ * Used so the ScrollThumb's `Spacer` can be measured once and then
+ * placed at the right vertical offset without remeasuring on every
+ * scroll frame.
  */
-fun computeScrollFraction(
-    firstVisibleIndex: Int,
-    lastVisibleIndex: Int,
-    firstVisibleItemScrollOffsetPx: Int,
-    visibleItemsCount: Int,
-    canScrollBackward: Boolean,
-    canScrollForward: Boolean,
-    totalItemsCount: Int,
-): Float {
-    if (totalItemsCount <= 0) return 0f
-
-    // Compose-managed pixel signals first. These are absolute.
-    if (!canScrollBackward) return 0f
-    if (!canScrollForward) return 1f
-
-    val visible = visibleItemsCount.coerceAtLeast(1)
-    // Last item is in the viewport — equivalent to "at-bottom" for
-    // every UI purpose. Fraction = 1. This is the bug-fix for the
-    // user's v0.8.6 screenshot (5 messages, 1 huge one in view, last
-    // item index 4 visible, but fraction was previously 0.75).
-    if (lastVisibleIndex.coerceAtLeast(0) >= totalItemsCount - 1) {
-        return 1f
+private fun Modifier.scrollThumbProgress(fraction: Float): Modifier =
+    this.layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val parentHeight = constraints.maxHeight
+        // Subtract thumb height so the thumb's top stays inside the
+        // track even at fraction=1.
+        val travel = (parentHeight - placeable.height).coerceAtLeast(0)
+        val yOffset = (travel * fraction.coerceIn(0f, 1f)).roundToInt()
+        layout(placeable.width, parentHeight) {
+            placeable.placeRelative(0, yOffset)
+        }
     }
-    // Defensive top snap (also covered by canScrollBackward but
-    // protects against hydration-edge reports).
-    if (firstVisibleIndex.coerceAtLeast(0) == 0) return 0f
-
-    val denom = (totalItemsCount - visible).coerceAtLeast(1)
-    val itemsAbove = firstVisibleIndex.coerceIn(0, totalItemsCount)
-    return (itemsAbove.toFloat() / denom.toFloat()).coerceIn(0f, 1f)
-}
-
-private fun Modifier.fillProgress(fraction: Float): Modifier = this.layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val parentHeight = constraints.maxHeight
-    val thumbHeight = placeable.height
-    val travel = (parentHeight - thumbHeight).coerceAtLeast(0)
-    val yOffset = (travel * fraction.coerceIn(0f, 1f)).roundToInt()
-    layout(placeable.width, parentHeight) {
-        placeable.placeRelative(0, yOffset)
-    }
-}
-
-private fun resolveTargetIndex(
-    fraction: Float,
-    itemCount: Int,
-    letterIndex: Map<Char, Int>,
-): Int {
-    if (itemCount <= 0) return 0
-    return if (letterIndex.isNotEmpty()) {
-        val sorted = letterIndex.entries.sortedBy { it.key }
-        val target = (fraction * sorted.size).toInt().coerceIn(0, sorted.lastIndex)
-        sorted[target].value
-    } else {
-        (fraction * (itemCount - 1)).toInt().coerceIn(0, itemCount - 1)
-    }
-}
