@@ -1,0 +1,85 @@
+appId: com.hermexapp.android
+
+---
+# Wave 9.11 on-device verification.
+# All taps use absolute screen coordinates to dodge the composer's
+# "Ask anything... /commands" regex quirks.
+
+- launchApp:
+    clearState: false
+
+# Dashboard "Chat" FAB at the bottom-right of the welcome screen.
+- tapOn:
+    point: 883,2142
+
+# Let the chat surface render.
+- waitForAnimationToEnd
+
+# Focus the message input field.
+- tapOn:
+    point: 540,1692
+
+# Long prompt that should produce a multi-paragraph reply.
+- inputText: "Please reply with a list of 8 numbered items each 2 sentences long about debugging mobile UI scrollbars end each with a period"
+
+- hideKeyboard
+
+# Send the message (tap the ↑ in the composer).
+- tapOn:
+    point: 939,1983
+
+# Wait for at least one numbered item to appear.
+- extendedWaitUntil:
+    visible: "1."
+    timeout: 60000
+
+# Snapshot 1: chat with full reply.
+- takeScreenshot: /tmp/hermex-maestro/01_after_send.png
+
+# ---------------------------------------------------------------------------
+# TEST 1: FastScrollbar tap-to-jump (Wave 9.11).
+# ---------------------------------------------------------------------------
+# Scroll way up so the bar shows mid-track.
+- swipe:
+    start: 540,1500
+    end: 540,600
+    duration: 600
+- waitForAnimationToEnd
+
+# Tap on the bar at 25% of its track height (track is y=310-1578).
+- tapOn:
+    point: 1020,629
+
+# Wait for jump animation.
+- waitForAnimationToEnd
+
+# Screenshot 2: chat should now be near the top.
+- takeScreenshot: /tmp/hermex-maestro/02_after_scrollbar_tap_25pct.png
+
+# ---------------------------------------------------------------------------
+# TEST 2: ScrollIndicatorOnly tap-to-jump (Wave 9.11).
+# ---------------------------------------------------------------------------
+# Trigger a scroll (which makes the pill appear for 3.5 s of grace).
+# Use a flick that briefly sets isScrollInProgress to true.
+- swipe:
+    start: 540,1500
+    end: 540,800
+    duration: 200
+# Immediately snap a screenshot + check accessibility while pill is visible.
+- takeScreenshot: /tmp/hermex-maestro/03_pill_visible.png
+
+# Wait briefly for the pill's AnimatedVisibility to mount.
+- extendedWaitUntil:
+    visible: "Scroll to latest"
+    timeout: 5000
+
+# Tap the pill location. The pill is at bottom-right inside the
+# viewport; bounds approx [916,1886][1004,1978] (centre 960,1932).
+- tapOn:
+    point: 960,1932
+
+# Wait for jump-to-latest animation.
+- waitForAnimationToEnd
+
+# Final screenshot.
+- takeScreenshot: /tmp/hermex-maestro/04_after_pill_tap.png
