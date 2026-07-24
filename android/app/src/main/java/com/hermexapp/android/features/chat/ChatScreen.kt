@@ -366,35 +366,22 @@ fun ChatScreen(
                         listState = listState,
                         modifier = Modifier.align(Alignment.CenterEnd),
                     )
-                    // Wave 5 Slice 5.2 — unread pill above the JumpFab.
-                    // Shows "↓ N new" when the user scrolled up and new
-                    // entries arrived. Tapping it scrolls to the bottom
-                    // AND marks seen (so the pill disappears). Uses a
-                    // plain `if` rather than `AnimatedVisibility` because
-                    // BoxScope doesn't expose the ColumnScope-aligned
-                    // overload of AnimatedVisibility.
-                    if (!isAtBottom && state.unreadCountLabel.isNotEmpty()) {
-                        Surface(
-                            color = palette.accent,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 16.dp, bottom = 96.dp)
-                                .clickable {
-                                    scope.launch {
-                                        listState.animateScrollToItem(state.entries.lastIndex)
-                                        viewModel.markSeen()
-                                    }
-                                },
-                        ) {
-                            Text(
-                                "↓ ${state.unreadCountLabel}",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.canvas,
-                            )
-                        }
-                    }
+                    // Wave 9.13 — Unread pill REMOVED.
+                    //
+                    // The earlier "↓ N new" pill overlapped the ↑ scroll-to-top
+                    // pill at the bottom-right column. With [ScrollIndicatorOnly]
+                    // now rendering BOTH the ↑ (when there's older content
+                    // above) and ↓ (when there's newer content below) pills, the
+                    // explicit unread pill is redundant. The ↓ pill already
+                    // appears the moment newer messages exist below the viewport,
+                    // which is exactly when the unread pill would have shown —
+                    // and tapping it scrolls to the latest AND clears the unread
+                    // count via the same `markSeen()` call the unread pill used.
+                    //
+                    // Reference: 2026-07-24 user screenshot showed the "1 new"
+                    // unread pill stacked on top of the ↑ pill at the same x ≈
+                    // 1020 — visually unreadable. Dropping the unread pill
+                    // resolves the overlap with zero functional loss.
                     // Jump chip + scroll indicator (Wave 9.6 split).
                     //
                     // The component has two halves now:

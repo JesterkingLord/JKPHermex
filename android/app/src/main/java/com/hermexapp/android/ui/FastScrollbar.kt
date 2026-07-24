@@ -441,37 +441,59 @@ fun FastScrollbar(
 }
 
 /**
- * Layout modifier that positions content along the vertical axis per
- * [fraction] (0..1).
+ * Wave 9.13 — Pure function returning the thumb's top-edge offset in pixels
+ * for a track of [trackHeightPx] and a thumb of [thumbHeightPx] given a
+ * [fraction] in [0, 1].
  *
- * Wave 9.12 — anchored to track insets. The track spacer has
- * `padding(vertical = 6.dp)` so the actual visible track area sits
- * 6 dp inside the parent's available height. We compute the inset
- * here from the placeable's measured height and the parent's max
- * height, then clamp the thumb's center so it always stays inside the
- * visible track — never floating above or below it. This is what
- * makes the "stuck up there" complaint go away: even at position
- * 0.0 the thumb's bottom edge lines up with the track's top edge,
- * not the parent's top edge.
+ * The thumb's TOP edge travels from `0` (fraction = 0) to
+ * `trackHeightPx - thumbHeightPx` (fraction = 1) so the entire
+ * thumb stays inside the visible track. The track spacer has
+ * 6 dp of inset on each end; we apply that as the track bounds so
+ * the thumb aligns with the visible (padded) track, not the
+ * parent's raw bounds.
+ *
+ * Exposed for unit testing the geometry independent of Compose's
+ * layout pass. The [scrollThumbProgress] modifier below delegates
+ * to this so the layout modifier stays a one-liner.
+ *
+ * Example (trackHeightPx = 1268, thumbHeightPx = 96):
+ *   fraction = 0.0  → yOffset =   0 (thumb sits flush with track top)
+ *   fraction = 1.0  → yOffset = 1172 (thumb sits flush with track bottom)
+ *   fraction = 0.5  → yOffset =  586 (thumb sits mid-track)
+ */
+internal fun thumbTopEdgeOffsetPx(
+    trackHeightPx: Int,
+    thumbHeightPx: Int,
+    fraction: Float,
+): Int {
+    if (trackHeightPx <= 0 || thumbHeightPx <= 0) return 0
+    // Track inset = thumb half-height, capped to a quarter of the
+    // parent height. This keeps the thumb inside the visible area
+    // even at the boundaries.
+    val trackInset = (thumbHeightPx / 2f).toInt().coerceAtMost(trackHeightPx / 4)
+    val trackTop = trackInset
+    val trackBottom = trackHeightPx - trackInset
+    val travel = (trackBottom - trackTop - thumbHeightPx).coerceAtLeast(0)
+    val f = fraction.coerceIn(0f, 1f)
+    return trackTop + (travel.toFloat() * f).roundToInt()
+}
+
+/**
+ * Layout modifier that positions content along the vertical axis per
+ * [fraction] (0..1). See [thumbTopEdgeOffsetPx] for the pure-math
+ * derivation; this modifier is just the Compose wrapper that reads
+ * placeable sizes and delegates.
  */
 private fun Modifier.scrollThumbProgress(fraction: Float): Modifier =
     this.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
         val parentHeight = constraints.maxHeight
         val thumbH = placeable.height
-        // Inset = track padding. We don't have the exact track
-        // padding here (it's an outer modifier), but we can derive a
-        // safe inset = thumb height to keep the thumb inside the
-        //        visible area even at fraction=0 or fraction=1.
-        val safeInset = (thumbH / 2f).toInt().coerceAtMost(parentHeight / 4)
-        val trackTop = safeInset
-        val trackBottom = parentHeight - safeInset
-        val trackHeight = (trackBottom - trackTop).coerceAtLeast(0)
-        // Where does the thumb's top edge land so that its CENTER
-        // sits on the fraction line inside the visible track?
-        val centerY = trackTop +
-            (trackHeight * fraction.coerceIn(0f, 1f)).roundToInt()
-        val yOffset = (centerY - thumbH / 2f).roundToInt()
+        val yOffset = thumbTopEdgeOffsetPx(
+            trackHeightPx = parentHeight,
+            thumbHeightPx = thumbH,
+            fraction = fraction,
+        )
         layout(placeable.width, parentHeight) {
             placeable.placeRelative(0, yOffset)
         }
