@@ -39,6 +39,7 @@ import com.hermexapp.android.config.AccentPreset
 import com.hermexapp.android.config.ThemeChoice
 import com.hermexapp.android.features.chat.ChatDisplayPrefs
 import com.hermexapp.android.features.chat.ChatScreen
+import com.hermexapp.android.features.composer.InsertPaletteViewModel
 import com.hermexapp.android.features.chat.ChatViewModel
 import com.hermexapp.android.features.chat.LocalChatDisplayPrefs
 import com.hermexapp.android.features.onboarding.OnboardingScreen
@@ -482,13 +483,21 @@ private fun renderScreen(
             // this scope so the picked text can update it directly via
             // setComposerText when the user dismisses the sheet.
             var insertSheetOpen by remember { mutableStateOf(false) }
+            // Wave 9 — template sheet opened by the "Templates" chip.
+            var templatesSheetOpen by remember { mutableStateOf(false) }
             val paletteVm = remember {
                 com.hermexapp.android.features.composer.InsertPaletteViewModel.Factory(
                     noteStore = container.noteStore,
                     promptStore = container.promptStore,
                 ).create(com.hermexapp.android.features.composer.InsertPaletteViewModel::class.java)
             }
-            BackHandler(enabled = insertSheetOpen) { insertSheetOpen = false }
+            // Single back-gesture handler closes whichever chip-opened
+            // sheet is up. Falls through to chat back when none are open.
+            val anySheetOpen = insertSheetOpen || templatesSheetOpen
+            BackHandler(enabled = anySheetOpen) {
+                insertSheetOpen = false
+                templatesSheetOpen = false
+            }
             BackHandler { setScreen(Screen.SessionList) }
             ChatScreen(
                 viewModel = chatViewModel,
@@ -501,6 +510,34 @@ private fun renderScreen(
                     }
                 },
                 onLongPressSend = { insertSheetOpen = true },
+                // Wave 9: "Improve" — wrap the current draft in a polish
+                // instruction, hit send. We use the existing send pipeline
+                // rather than carving a separate "rewrite" endpoint because
+                // the chat model is already the one driving quality.
+                onImproveDraft = {
+                    val draft = chatViewModel.uiState.value.composerText
+                    if (draft.isBlank()) {
+                        // No-op if the composer is empty; the rail already
+                        // hides in that case so we shouldn't be here, but
+                        // be defensive against race recompositions.
+                    } else {
+                        chatViewModel.updateComposerText(
+                            "Improve this prompt. Return only the improved version, no preamble:\n\n$draft",
+                        )
+                        chatViewModel.send()
+                    }
+                },
+                onOpenTemplates = { templatesSheetOpen = true },
+                // Open the insert palette but pre-narrow the view-model's
+                // filter so the user only sees prompts (vs. notes).
+                onInsertFromNotes = {
+                    paletteVm.setFilter(InsertPaletteViewModel.Filter.NOTES)
+                    insertSheetOpen = true
+                },
+                onInsertFromPrompts = {
+                    paletteVm.setFilter(InsertPaletteViewModel.Filter.PROMPTS)
+                    insertSheetOpen = true
+                },
             )
             if (insertSheetOpen) {
                 com.hermexapp.android.features.composer.InsertPaletteSheet(
@@ -510,6 +547,12 @@ private fun renderScreen(
                         insertSheetOpen = false
                     },
                     onDismiss = { insertSheetOpen = false },
+                )
+            }
+            if (templatesSheetOpen) {
+                com.hermexapp.android.features.composer.ComposerTemplatesSheet(
+                    onPick = { body -> chatViewModel.setComposerText(body) },
+                    onDismiss = { templatesSheetOpen = false },
                 )
             }
         }

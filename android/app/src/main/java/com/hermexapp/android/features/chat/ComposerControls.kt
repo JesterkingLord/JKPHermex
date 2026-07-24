@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hermexapp.android.features.composer.ComposerFeatureRail
 import com.hermexapp.android.model.AgentCommand
 import com.hermexapp.android.model.ReasoningEffort
 import com.hermexapp.android.ui.HermexPickerSheet
@@ -61,6 +63,15 @@ fun ComposerBar(
     onStopHaptic: () -> Unit = {},
     onLongPressSendHaptic: () -> Unit = {},
     onLongPressSend: (() -> Unit)? = null,
+    // Wave 9: feature rail callbacks. The rail only renders when the
+    // composer is empty — once the user starts typing, the typed text
+    // owns the available vertical space. Every callback is optional,
+    // letting the caller render a rail-less composer on screens that
+    // don't want the chip row.
+    onImproveDraft: (() -> Unit)? = null,
+    onOpenTemplates: (() -> Unit)? = null,
+    onInsertFromNotes: (() -> Unit)? = null,
+    onInsertFromPrompts: (() -> Unit)? = null,
 ) {
     val palette = LocalHermexPalette.current
     val config = state.composerConfig
@@ -86,7 +97,15 @@ fun ComposerBar(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            // Wave 9: respect the gesture-nav inset so the bottom of the
+            // composer doesn't crash into the phone's system button bar.
+            // The Scaffold root owns `imePadding()`, which already raises
+            // the composer when the keyboard appears — so this only adds
+            // space when the keyboard is *down*.
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Surface(
@@ -118,6 +137,26 @@ fun ComposerBar(
                         }
                     },
                 )
+
+                // Wave 9: chip rail of quick actions. Hidden once the user
+                // starts typing so the typed draft owns the available
+                // vertical space. Only renders when at least one callback
+                // is wired — empty on Notes-only screens, for example.
+                val railCallbacks = listOfNotNull(
+                    onImproveDraft,
+                    onOpenTemplates,
+                    onInsertFromNotes,
+                    onInsertFromPrompts,
+                )
+                if (railCallbacks.isNotEmpty()) {
+                    ComposerFeatureRail(
+                        visible = state.composerText.isEmpty() && state.attachments.isEmpty(),
+                        onImprove = { onImproveDraft?.invoke() },
+                        onTemplates = { onOpenTemplates?.invoke() },
+                        onInsertNotes = { onInsertFromNotes?.invoke() },
+                        onInsertPrompts = { onInsertFromPrompts?.invoke() },
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),

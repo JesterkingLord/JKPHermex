@@ -33,14 +33,19 @@ class InsertPaletteViewModel(
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
+    // Wave 9: a typed "kind" filter. The composer's chip rail sets this
+    // before opening the palette so "From note" only shows notes, "From
+    // prompt" only shows prompts, and long-press send shows the union.
+    private val filter = MutableStateFlow(Filter.ALL)
 
     val uiState: StateFlow<UiState> = combine(
         noteStore.observeAll(),
         promptStore.observeAll(),
         query,
-    ) { notes, prompts, q ->
-        val itemPrompts = prompts.map { InsertItem.Prompt(it) }
-        val itemNotes = notes.map { InsertItem.Note(it) }
+        filter,
+    ) { notes, prompts, q, f ->
+        val itemPrompts = if (f != Filter.NOTES) prompts.map { InsertItem.Prompt(it) } else emptyList()
+        val itemNotes = if (f != Filter.PROMPTS) notes.map { InsertItem.Note(it) } else emptyList()
         val all = (itemPrompts + itemNotes)
             .sortedWith(
                 compareByDescending<InsertItem> { it.isPinned }
@@ -48,14 +53,18 @@ class InsertPaletteViewModel(
             )
         val filtered = if (q.isBlank()) all
         else all.filter { it.matches(q) }
-        UiState(items = filtered, totalCount = all.size, query = q)
+        UiState(items = filtered, totalCount = all.size, query = q, filter = f)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = UiState(emptyList(), 0, ""),
+        initialValue = UiState(emptyList(), 0, "", Filter.ALL),
     )
 
     fun setQuery(q: String) { query.value = q }
+
+    /** Narrow which subset of items the palette displays. ALL is the default. */
+    fun setFilter(f: Filter) { filter.value = f }
+    val currentFilter: Filter get() = filter.value
 
     /**
      * UiState — one card at a time. Empty list = the empty state.
@@ -64,11 +73,19 @@ class InsertPaletteViewModel(
         val items: List<InsertItem>,
         val totalCount: Int,
         val query: String,
+        val filter: Filter,
     ) {
         val isEmpty: Boolean get() = items.isEmpty()
         val hasUnfilteredResults: Boolean get() = totalCount > 0
         val filterActive: Boolean get() = query.isNotBlank()
     }
+
+    /**
+     * Filter — which subset of [InsertItem] the palette shows. ALL is the
+     * default for the long-press-send palette; the chip rails in the
+     * composer narrow it down to one type.
+     */
+    enum class Filter { ALL, NOTES, PROMPTS }
 
     class Factory(
         private val noteStore: NoteStore,

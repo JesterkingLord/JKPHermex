@@ -1,7 +1,7 @@
 package com.hermexapp.android.ui
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -31,36 +32,24 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * A Gmail-style right-edge scrollbar for a `LazyColumn`.
+ * Wave 9 (2026-07-28) — FastScrollbar for `LazyColumn`.
  *
- * Wave 1 of Excellence v1 (2026-07-27). Pure Compose — no new deps.
+ * Improvements over Wave 1:
+ *   * Wider hit zone (40 dp, was 28) so users can grab the bar without
+ *     aiming for the thumb — the entire right edge of the timeline
+ *     responds to drag, and the track visibly fades in on touch so the
+ *     user gets immediate feedback.
+ *   * The thumb itself widens while dragging (8 dp → 12 dp) for a
+ *     familiar "I found it" feel borrowed from iOS / Gmail.
+ *   * When the user taps anywhere along the bar (even without dragging),
+ *     we snap to that fraction. Without this, touch-down on a stationary
+ *     finger would do nothing — the previous build relied on a drag-start
+ *     gesture which requires actual movement, leaving the bar feeling
+ *     "dead".
  *
- * Renders:
- *   * a 28 dp-wide transparent hit zone covering the right edge of the parent
- *   * a faint vertical track (2 dp wide, accent at 18% alpha)
- *   * a thumb (8 dp × 36 dp) painted at `firstVisibleIndex / (itemCount - 1)`
- *   * while dragging, a floating letter bubble appears to the left of the
- *     thumb (only when [letterIndex] is non-empty)
- *
- * Drag gestures:
- *   * On release, [onScrollToIndex] is invoked with the resolved item index.
- *     The caller is responsible for actually moving the list there (we keep
- *     this composable pure so it composes with any `LazyListState`).
- *
- * Hidden when `itemCount <= threshold` so a 5-session list stays clean.
- *
- * @param itemCount total items in the list (excluding header/footer rows)
- * @param firstVisibleIndex index of the first fully-or-partially-visible row
- * @param firstVisibleScrollOffsetPx pixels of the first visible row clipped
- *   at the top — positions the thumb smoothly between rows
- * @param estimatedItemHeightPx rough height of one row; only used to convert
- *   `firstVisibleScrollOffsetPx` into a fraction-of-row offset
- * @param threshold lists with fewer items render no scrollbar
- * @param letterIndex for letter-jump lists, `letter -> firstVisibleIndex`
- *   mapping built by the caller (e.g. derived from session titles). When
- *   empty, drag end scrolls proportional to fraction.
- * @param onScrollToIndex callback invoked when the user releases the drag;
- *   the caller should call `listState.scrollToItem(target)`.
+ * Pure Compose — no new dependencies. Caller supplies a `LazyListState`
+ * via [onScrollToIndex] so this composable stays decoupled from scroll
+ * implementation.
  */
 @Composable
 fun FastScrollbar(
@@ -105,37 +94,40 @@ fun FastScrollbar(
         }
     }
 
+    // The thumb grows slightly while dragging so the user can see they
+    // grabbed the right edge — same idea as iOS / Gmail.
+    val thumbWidthDp by animateDpAsState(
+        targetValue = if (dragging) 12.dp else 8.dp,
+        label = "fastScroll.thumb",
+    )
+    val trackAlpha = if (dragging) 0.55f else 0.18f
+
     Box(
         modifier = modifier
-            .width(28.dp)
+            .width(40.dp)        // wave 9: 28 → 40 so users can grab the bar
             .fillMaxHeight()
             .testTag("fastScrollbar"),
         contentAlignment = Alignment.Center,
     ) {
-        // Track — a faint vertical line.
+        // Track — a faint vertical line that brightens while the user is
+        // touching it.
         Spacer(
             modifier = Modifier
                 .width(2.dp)
                 .fillMaxHeight()
                 .padding(vertical = 8.dp)
-                .background(palette.accent.copy(alpha = 0.18f), RoundedCornerShape(1.dp)),
+                .background(
+                    color = palette.accent.copy(alpha = trackAlpha),
+                    shape = RoundedCornerShape(1.dp),
+                ),
         )
 
-        // Thumb — placed in the parent's top-left, then translated down by a
-        // fraction of the parent's available height. Modifier.layout{} gives us
-        // the parent's constraints in pixels without forcing us to switch to a
-        // full custom Layout.
-        val thumbTravelDpFraction: (Float) -> Dp = { frac ->
-            // We can't see the parent height during the measurement pass, so we
-            // pass the fraction through and let the offset be a *percentage*
-            // of the parent's available travel. The post-layout happens below.
-            0.dp // dummy; real translation comes from .fillProgress below
-        }
+        // Thumb.
         Spacer(
             modifier = Modifier
-                .size(width = 8.dp, height = 36.dp)
+                .size(width = thumbWidthDp, height = 36.dp)
                 .fillProgress(fraction = thumbFraction)
-                .background(palette.accent, RoundedCornerShape(4.dp)),
+                .background(palette.accent, RoundedCornerShape(thumbWidthDp / 2)),
         )
 
         // Floating letter bubble while dragging (only when letterIndex set).
@@ -146,7 +138,8 @@ fun FastScrollbar(
                     .align(Alignment.Center)
                     .padding(end = 56.dp)
                     .clip(RoundedCornerShape(22.dp))
-                    .background(palette.pillBackground),
+                    .background(palette.pillBackground)
+                    .alpha(0.95f),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -158,34 +151,51 @@ fun FastScrollbar(
             }
         }
 
-        // Gesture layer — overlay the full hit zone.
+        // Gesture layer. Wave 9: drag-along-the-right-edge to scrub the
+        // list. We use awaitPointerEventScope (always available in
+        // PointerInputScope) so we don't depend on the experimental
+        // `awaitEachGesture` helper.
         Spacer(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
+                .alpha(0f) // invisible but consumes gestures
                 .pointerInput(itemCount, letterIndex) {
-                    detectVerticalDragGestures(
-                        onDragStart = { offset ->
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitPointerEvent()
+                            val pos = down.changes.firstOrNull()?.position
+                            if (pos == null) continue
+                            val h = size.height.toFloat().coerceAtLeast(1f)
+                            val frac = (pos.y / h).coerceIn(0f, 1f)
                             dragging = true
-                            dragFraction = (offset.y / size.height.toFloat())
-                                .coerceIn(0f, 1f)
-                        },
-                        onVerticalDrag = { _, dragAmount ->
-                            val totalHeight = size.height.toFloat().coerceAtLeast(1f)
-                            dragFraction = (dragFraction + dragAmount / totalHeight)
-                                .coerceIn(0f, 1f)
-                        },
-                        onDragEnd = {
-                            dragging = false
-                            val target = resolveTargetIndex(
-                                fraction = dragFraction,
+                            dragFraction = frac
+
+                            // Track move events until pointer is up or
+                            // cancelled. We commit the final target only
+                            // when the user lifts their finger.
+                            var lastTarget = resolveTargetIndex(
+                                fraction = frac,
                                 itemCount = itemCount,
                                 letterIndex = letterIndex,
                             )
-                            onScrollToIndex(target)
-                        },
-                        onDragCancel = { dragging = false },
-                    )
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull()
+                                if (change == null || !change.pressed) break
+                                val f = (change.position.y / size.height.toFloat().coerceAtLeast(1f))
+                                    .coerceIn(0f, 1f)
+                                dragFraction = f
+                                lastTarget = resolveTargetIndex(
+                                    fraction = f,
+                                    itemCount = itemCount,
+                                    letterIndex = letterIndex,
+                                )
+                            }
+                            dragging = false
+                            onScrollToIndex(lastTarget)
+                        }
+                    }
                 },
         )
     }
@@ -195,14 +205,11 @@ fun FastScrollbar(
  * Modifier that translates the child by a *fraction* of the parent's
  * available travel. Uses `Modifier.layout` to read the parent's max height
  * at measurement time and assign a y-offset.
- *
- * The fraction is `[0, 1]` where 0 = top, 1 = bottom.
  */
 private fun Modifier.fillProgress(fraction: Float): Modifier = this.layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     val parentHeight = constraints.maxHeight
     val thumbHeight = placeable.height
-    // Travel = parent height - thumb height, then apply the fraction.
     val travel = (parentHeight - thumbHeight).coerceAtLeast(0)
     val yOffset = (travel * fraction.coerceIn(0f, 1f)).roundToInt()
     layout(placeable.width, parentHeight) {

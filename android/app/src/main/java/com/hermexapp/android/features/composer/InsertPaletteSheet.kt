@@ -69,13 +69,21 @@ fun InsertPaletteSheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text(
-                "Insert into chat",
+                when (state.filter) {
+                    InsertPaletteViewModel.Filter.NOTES -> "Insert a note"
+                    InsertPaletteViewModel.Filter.PROMPTS -> "Insert a prompt"
+                    InsertPaletteViewModel.Filter.ALL -> "Insert into chat"
+                },
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Pick a prompt or a note to drop into the composer. The chat draft is replaced.",
+                when (state.filter) {
+                    InsertPaletteViewModel.Filter.NOTES -> "Pick a note. The chat draft is replaced with the note body."
+                    InsertPaletteViewModel.Filter.PROMPTS -> "Pick a saved prompt. The chat draft is replaced with the prompt body."
+                    InsertPaletteViewModel.Filter.ALL -> "Pick a prompt or a note to drop into the composer. The chat draft is replaced."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -83,7 +91,15 @@ fun InsertPaletteSheet(
             OutlinedTextField(
                 value = state.query,
                 onValueChange = viewModel::setQuery,
-                placeholder = { Text("Search prompts + notes") },
+                placeholder = {
+                    Text(
+                        when (state.filter) {
+                            InsertPaletteViewModel.Filter.NOTES -> "Search notes"
+                            InsertPaletteViewModel.Filter.PROMPTS -> "Search prompts"
+                            InsertPaletteViewModel.Filter.ALL -> "Search prompts + notes"
+                        },
+                    )
+                },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),

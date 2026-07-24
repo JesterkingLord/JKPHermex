@@ -74,6 +74,15 @@ fun ChatScreen(
     onOpenGit: () -> Unit = {},
     onRunFinished: (String?) -> Unit = {},
     onLongPressSend: (() -> Unit)? = null,
+    // Wave 9: composer feature-rail callbacks. The chat screen forwards
+    // these into [ComposerBar] which renders a chip row when the
+    // composer is empty. Each call sets composer text or opens a sheet
+    // — kept as separate callbacks (instead of a single event type) so
+    // callers can wire or no-op any of them.
+    onImproveDraft: (() -> Unit)? = null,
+    onOpenTemplates: (() -> Unit)? = null,
+    onInsertFromNotes: (() -> Unit)? = null,
+    onInsertFromPrompts: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
@@ -388,12 +397,14 @@ fun ChatScreen(
                             )
                         }
                     }
-                    // Wave 2: jump-to-bottom (or top) FAB. Hidden until the
-                    // user has scrolled away from an edge.
+                    // Wave 9: jump-to-bottom (or top) FAB. Hidden when
+                    // the user is at/near an edge, even during transient
+                    // hydration (sending a message used to flash this FAB
+                    // because `firstVisibleItemIndex` momentarily read 0).
                     JumpFab(
                         firstVisibleIndex = listState.firstVisibleItemIndex,
+                        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0,
                         lastIndex = state.entries.lastIndex,
-                        distanceFromBottom = state.entries.lastIndex - listState.firstVisibleItemIndex,
                         onScrollToIndex = { target ->
                             scope.launch { listState.animateScrollToItem(target) }
                         },
@@ -426,6 +437,10 @@ fun ChatScreen(
                 onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                 onLongPressSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                 onLongPressSend = onLongPressSend,
+                onImproveDraft = onImproveDraft,
+                onOpenTemplates = onOpenTemplates,
+                onInsertFromNotes = onInsertFromNotes,
+                onInsertFromPrompts = onInsertFromPrompts,
             )
             // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after
             // the most recent empty send. Computed via a local ticking
