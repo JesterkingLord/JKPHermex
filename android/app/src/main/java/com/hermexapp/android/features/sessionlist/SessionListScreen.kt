@@ -516,6 +516,13 @@ fun SessionListScreen(
                 itemCount = visibleSessions.size,
                 firstVisibleIndex = listState.firstVisibleItemIndex,
                 firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
+                totalContentHeightPx = listState.layoutInfo
+                    .let { sumOfMeasuredHeights(it) },
+                visibleItemsFirstOffsetPx = listState.layoutInfo
+                    .visibleItemsInfo.firstOrNull()?.offset?.toInt() ?: 0,
+                visibleItemsLastBottomPx = listState.layoutInfo
+                    .visibleItemsInfo.lastOrNull()
+                    ?.let { v -> v.offset.toInt() + v.size } ?: 0,
                 estimatedItemHeightPx = 72,
                 letterIndex = letterIndex,
                 onScrollToIndex = { target ->
@@ -1032,4 +1039,26 @@ private fun SessionRow(
             }
         }
     }
+}
+
+
+/**
+ * Wave 9.5 — sum the measured heights of all items currently rendered
+ * in the LazyList. Mirrors the helper in ChatScreen.kt. Used as the
+ * [totalContentHeightPx] argument to the FastScrollbar so the thumb's
+ * vertical position reflects real content size; the old 72 px estimate
+ * was fine for uniform session rows but Wave 9 wants one math for all
+ * surfaces so behavior is identical across screens.
+ */
+private fun sumOfMeasuredHeights(layoutInfo: androidx.compose.foundation.lazy.LazyListLayoutInfo): Int {
+    val visible = layoutInfo.visibleItemsInfo
+    if (visible.isEmpty()) return 0
+    var measured = 0
+    for (i in 0 until visible.size) {
+        measured += visible[i].size
+    }
+    val totalItems = layoutInfo.totalItemsCount
+    if (totalItems <= visible.size) return measured
+    val avg = measured / visible.size.coerceAtLeast(1)
+    return measured + avg * (totalItems - visible.size)
 }

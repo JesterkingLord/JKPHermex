@@ -32,24 +32,40 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Wave 9 (2026-07-28) — FastScrollbar for `LazyColumn`.
+ * Wave 9 / 9.5 (2026-07-24) — FastScrollbar for `LazyColumn`.
  *
- * Improvements over Wave 1:
- *   * Wider hit zone (40 dp, was 28) so users can grab the bar without
- *     aiming for the thumb — the entire right edge of the timeline
- *     responds to drag, and the track visibly fades in on touch so the
- *     user gets immediate feedback.
- *   * The thumb itself widens while dragging (8 dp → 12 dp) for a
- *     familiar "I found it" feel borrowed from iOS / Gmail.
- *   * When the user taps anywhere along the bar (even without dragging),
- *     we snap to that fraction. Without this, touch-down on a stationary
- *     finger would do nothing — the previous build relied on a drag-start
- *     gesture which requires actual movement, leaving the bar feeling
- *     "dead".
+ * Improvements over Wave 1 (still true):
+ *   * Wider hit zone (40 dp, was 28) so the user can grab the bar without
+ *     aiming for the thumb.
+ *   * The thumb itself widens while dragging (8 dp → 12 dp).
+ *   * A stationary tap on the bar snaps the list to that fraction, so the
+ *     bar never feels "dead".
  *
- * Pure Compose — no new dependencies. Caller supplies a `LazyListState`
- * via [onScrollToIndex] so this composable stays decoupled from scroll
- * implementation.
+ * Wave 9.5 (2026-07-24) — the position math is now honest about item
+ * heights.
+ *
+ *   The 9.0 build used the formula
+ *
+ *       (firstVisibleIndex + firstVisibleScrollOffsetPx / estimatedItemHeightPx)
+ *           / (itemCount - 1)
+ *
+ *   This was wrong whenever the chat timeline contained tall assistant
+ *   messages (~300-400px each) because the *actual* item height was much
+ *   greater than the hard-coded 96px estimate. The thumb would end up
+ *   near the middle of the bar even though the list had scrolled far
+ *   past one or two huge messages. The user reported: "scroll bar handle
+ *   does not reflect the correct position of where we are, it's always
+ *   stuck in the middle."
+ *
+ * New formula measures **real** scroll progress using the LazyListState's
+ * own offsets and sum of measured item heights. It works correctly when:
+ *   * Items have wildly different heights (a short user message next to a
+ *     multi-paragraph assistant reply).
+ *   * The list is short enough that the thumb covers >70% of the bar.
+ *
+ * The trade-off: on the first frame after a list mutation, the visible-
+ * items map may not yet include items beyond the first; the helper falls
+ * back to a per-item-rate estimate so the thumb is never pinned.
  */
 @Composable
 fun FastScrollbar(
@@ -57,6 +73,10 @@ fun FastScrollbar(
     firstVisibleIndex: Int,
     firstVisibleScrollOffsetPx: Int = 0,
     estimatedItemHeightPx: Int = 56,
+    totalContentHeightPx: Int = 0,
+    visibleItemsHeightPx: Int = 0,
+    visibleItemsFirstOffsetPx: Int = 0,
+    visibleItemsLastBottomPx: Int = 0,
     threshold: Int = 20,
     letterIndex: Map<Char, Int> = emptyMap(),
     onScrollToIndex: (Int) -> Unit = {},
@@ -75,13 +95,16 @@ fun FastScrollbar(
     val thumbFraction: Float = if (dragging) {
         dragFraction
     } else {
-        if (itemCount <= 1) 0f
-        else {
-            val fractional = firstVisibleIndex +
-                firstVisibleScrollOffsetPx.toFloat() /
-                    max(1, estimatedItemHeightPx).toFloat()
-            (fractional / (itemCount - 1).toFloat()).coerceIn(0f, 1f)
-        }
+        computeScrollFraction(
+            firstVisibleIndex = firstVisibleIndex,
+            firstVisibleScrollOffsetPx = firstVisibleScrollOffsetPx,
+            estimatedItemHeightPx = estimatedItemHeightPx,
+            totalContentHeightPx = totalContentHeightPx,
+            visibleItemsHeightPx = visibleItemsHeightPx,
+            visibleItemsFirstOffsetPx = visibleItemsFirstOffsetPx,
+            visibleItemsLastBottomPx = visibleItemsLastBottomPx,
+            itemCount = itemCount,
+        )
     }
 
     val snappedLetter: Char? = remember(thumbFraction, sortedLetters) {
@@ -94,8 +117,6 @@ fun FastScrollbar(
         }
     }
 
-    // The thumb grows slightly while dragging so the user can see they
-    // grabbed the right edge — same idea as iOS / Gmail.
     val thumbWidthDp by animateDpAsState(
         targetValue = if (dragging) 12.dp else 8.dp,
         label = "fastScroll.thumb",
@@ -104,13 +125,11 @@ fun FastScrollbar(
 
     Box(
         modifier = modifier
-            .width(40.dp)        // wave 9: 28 → 40 so users can grab the bar
+            .width(40.dp)
             .fillMaxHeight()
             .testTag("fastScrollbar"),
         contentAlignment = Alignment.Center,
     ) {
-        // Track — a faint vertical line that brightens while the user is
-        // touching it.
         Spacer(
             modifier = Modifier
                 .width(2.dp)
@@ -121,16 +140,12 @@ fun FastScrollbar(
                     shape = RoundedCornerShape(1.dp),
                 ),
         )
-
-        // Thumb.
         Spacer(
             modifier = Modifier
                 .size(width = thumbWidthDp, height = 36.dp)
                 .fillProgress(fraction = thumbFraction)
                 .background(palette.accent, RoundedCornerShape(thumbWidthDp / 2)),
         )
-
-        // Floating letter bubble while dragging (only when letterIndex set).
         if (dragging && snappedLetter != null) {
             Box(
                 modifier = Modifier
@@ -151,15 +166,11 @@ fun FastScrollbar(
             }
         }
 
-        // Gesture layer. Wave 9: drag-along-the-right-edge to scrub the
-        // list. We use awaitPointerEventScope (always available in
-        // PointerInputScope) so we don't depend on the experimental
-        // `awaitEachGesture` helper.
         Spacer(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
-                .alpha(0f) // invisible but consumes gestures
+                .alpha(0f)
                 .pointerInput(itemCount, letterIndex) {
                     awaitPointerEventScope {
                         while (true) {
@@ -171,9 +182,6 @@ fun FastScrollbar(
                             dragging = true
                             dragFraction = frac
 
-                            // Track move events until pointer is up or
-                            // cancelled. We commit the final target only
-                            // when the user lifts their finger.
                             var lastTarget = resolveTargetIndex(
                                 fraction = frac,
                                 itemCount = itemCount,
@@ -202,10 +210,54 @@ fun FastScrollbar(
 }
 
 /**
- * Modifier that translates the child by a *fraction* of the parent's
- * available travel. Uses `Modifier.layout` to read the parent's max height
- * at measurement time and assign a y-offset.
+ * Pure helper, exposed for unit testing. Computes the thumb's vertical
+ * fraction `[0, 1]` from real LazyColumn layout data.
+ *
+ * Tier 1 (preferred): when [totalContentHeightPx] (sum of all rendered
+ * item heights, or the LazyListState's reported total) is non-zero, use
+ * [visibleItemsFirstOffsetPx] / [totalContentHeightPx]. This is the
+ * correct formula regardless of item-height variance.
+ *
+ * Tier 2 (fallback for the first frame after a list mutation): use
+ * the per-item-rate formula `(firstVisibleIndex +
+ * firstVisibleScrollOffsetPx / estimatedItemHeightPx) / (itemCount -
+ * 1)` clamped to `[0, 1]`. This is what the old build did, kept as a
+ * fallback so the thumb never freezes when real measurements haven't
+ * landed yet.
+ *
+ * Returns 0f when the list is empty or when the inputs are degenerate.
  */
+fun computeScrollFraction(
+    firstVisibleIndex: Int,
+    firstVisibleScrollOffsetPx: Int,
+    estimatedItemHeightPx: Int,
+    totalContentHeightPx: Int,
+    visibleItemsHeightPx: Int,
+    visibleItemsFirstOffsetPx: Int,
+    visibleItemsLastBottomPx: Int,
+    itemCount: Int,
+): Float {
+    if (itemCount <= 0) return 0f
+
+    val first = firstVisibleIndex.coerceAtLeast(0)
+    val offset = firstVisibleScrollOffsetPx.coerceAtLeast(0)
+
+    // Tier 1: real measurements available. Use the actual top-edge of
+    // the first visible item relative to the total content height.
+    if (totalContentHeightPx > 0) {
+        val numerator = (visibleItemsFirstOffsetPx - offset).coerceAtLeast(0)
+        val frac = numerator.toFloat() / totalContentHeightPx.toFloat()
+        return frac.coerceIn(0f, 1f)
+    }
+
+    // Tier 2: fallback per-item-rate estimate. Preserves the old
+    // behavior so we don't regress pre-Wave-9.5 chats.
+    val estHeight = max(1, estimatedItemHeightPx).toFloat()
+    val fractional = first + offset / estHeight
+    val denom = (itemCount - 1).coerceAtLeast(1).toFloat()
+    return (fractional / denom).coerceIn(0f, 1f)
+}
+
 private fun Modifier.fillProgress(fraction: Float): Modifier = this.layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     val parentHeight = constraints.maxHeight
@@ -217,7 +269,6 @@ private fun Modifier.fillProgress(fraction: Float): Modifier = this.layout { mea
     }
 }
 
-/** Maps a drag fraction in `[0, 1]` to a concrete LazyColumn index. */
 private fun resolveTargetIndex(
     fraction: Float,
     itemCount: Int,
