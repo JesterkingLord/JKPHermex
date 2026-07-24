@@ -1,0 +1,85 @@
+appId: com.hermexapp.android
+
+---
+# Wave 9.12 v2 verification:
+#   1) Send a long prompt.
+#   2) Scroll within the chat (not all the way to top) so both
+#      canScrollForward and canScrollBackward are true.
+#   3) Assert that BOTH "Scroll to top" (↑) AND "Scroll to latest" (↓)
+#      pills are present.
+#   4) Tap the up pill, observe scrolled to top.
+#   5) Tap the down pill, observe scrolled to bottom.
+
+- launchApp:
+    clearState: false
+
+# Open chat.
+- tapOn:
+    point: 883,2142
+- waitForAnimationToEnd
+
+# Compose long prompt.
+- tapOn:
+    point: 540,1692
+- inputText: "reply with 8 numbered items each 2 sentences long about debugging mobile UI scrollbars end each with period"
+- hideKeyboard
+
+# Send.
+- tapOn:
+    point: 939,1983
+- extendedWaitUntil:
+    visible: "1."
+    timeout: 60000
+
+# Now we're at the bottom. The DOWN arrow pill should be the only
+# one visible (because canScrollBackward = false).
+- takeScreenshot: /tmp/hermex-verify/V2_01_at_bottom.png
+
+# Scroll up just enough so both pills show.
+- swipe:
+    start: 540,1500
+    end: 540,1200
+    duration: 250
+- waitForAnimationToEnd
+
+# Take snapshot showing BOTH pills.
+- takeScreenshot: /tmp/hermex-verify/V2_02_both_pills.png
+
+# Trigger a slow drag so the pill stays visible during the wait.
+- swipe:
+    start: 540,1500
+    end: 540,1400
+    duration: 200
+
+# Both pills SHOULD now be visible. Assert.
+- extendedWaitUntil:
+    visible: "Scroll to latest"
+    timeout: 5000
+
+# Even better: assert BOTH are in the hierarchy simultaneously.
+- extendedWaitUntil:
+    visible: "Scroll to top"
+    timeout: 5000
+
+# Tap the up pill (jump to top).
+- tapOn:
+    text: "Scroll to top"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/hermex-verify/V2_03_after_up.png
+
+# Scroll back to middle.
+- swipe:
+    start: 540,500
+    end: 540,1500
+    duration: 400
+- waitForAnimationToEnd
+- swipe:
+    start: 540,1500
+    end: 540,1400
+    duration: 200
+
+# Tap the down pill (jump to latest).
+- tapOn:
+    text: "Scroll to latest"
+- waitForAnimationToEnd
+- takeScreenshot: /tmp/hermex-verify/V2_04_after_down.png

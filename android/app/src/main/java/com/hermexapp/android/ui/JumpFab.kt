@@ -5,7 +5,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -105,108 +107,90 @@ fun decideScrollIndicatorVisibility(
  * uses [HIDE_DELAY_MS].
  */
 /**
- * Wave 9.12 (2026-07-24) — pill icon flips with scroll direction.
+ * Wave 9.12 (2026-07-24) — TWO pill layout: ↑ to jump to first entry,
+ * ↓ to jump to latest. Always visible whenever the chat overflows
+ * the viewport, with explicit click affordance and clear semantics.
  *
- * The user reported the pill always showed `↓` and asked for it to
- * switch to `↑` once the chat reaches the latest message at the
- * bottom. We pass the two `canScrollForward` / `canScrollBackward`
- * signals in and pick the glyph accordingly:
+ * The user's literal reports:
+ *   - "the up and down button works but it needs to switch the arrow
+ *      up after it's down"
+ *   - "no it still just scrolls down"
+ *   - "the side scroll is still stuck up there"
  *
- *   - `canScrollForward == true`  → ↓  (more content below; tapping
- *                                      scrolls DOWN to the latest)
- *   - `canScrollBackward == true` → ↑  (more content above; tapping
- *                                      scrolls UP to the first entry)
- *   - Both true                    → ↓ (user scrolled up; tap to
- *                                      jump down — the common case)
+ * The earlier design auto-hid the pill within 1–3.5 s of scroll
+ * stopping, then re-showed it as a single pill with an icon flip.
+ * That made the affordance feel like a single "always-scrolls-down"
+ * button because users couldn't see the icon switch. This revision
+ * makes BOTH pills stick around whenever the user can scroll either
+ * direction. The ↓ only appears when there's content BELOW (chat
+ * is scrolled up); the ↑ only appears when there's content ABOVE
+ * (chat is at the bottom).
  *
- * `decideScrollIndicatorVisibility` (unchanged) still gates whether
- * the pill renders. `onClick` (added in Wave 9.11) wires the tap
- * handler. This revision only swaps the icon.
+ * `onScrollUp` taps trigger `listState.animateScrollToItem(0)`.
+ * `onScrollDown` taps trigger `listState.animateScrollToItem(last)`.
+ * When only one direction is available the corresponding pill
+ * renders alone; when neither is available (chat fits in viewport)
+ * nothing renders.
  */
 @Composable
 fun ScrollIndicatorOnly(
-    isScrolling: Boolean,
-    contentIsScrollable: Boolean,
-    canScrollForward: Boolean = false,
-    canScrollBackward: Boolean = false,
+    canScrollForward: Boolean,
+    canScrollBackward: Boolean,
+    onScrollUp: () -> Unit,
+    onScrollDown: () -> Unit,
     modifier: Modifier = Modifier,
-    hideDelayMs: Long = HIDE_DELAY_MS,
-    onClick: (() -> Unit)? = null,
 ) {
-    // Drives the 1-second grace window. Keyed on the two inputs the
-    // timer depends on so a change cancels and restarts the timer.
-    var hideAfterScrollStop by remember { mutableStateOf(false) }
-    LaunchedEffect(isScrolling, contentIsScrollable) {
-        if (!contentIsScrollable) {
-            hideAfterScrollStop = true
-            return@LaunchedEffect
-        }
-        if (isScrolling) {
-            // Cancel any pending hide timer; we want the pill VISIBLE.
-            hideAfterScrollStop = false
-            return@LaunchedEffect
-        }
-        // Scrolling just stopped. Start the grace timer.
-        hideAfterScrollStop = false
-        delay(hideDelayMs)
-        hideAfterScrollStop = true
-    }
-    val visible = decideScrollIndicatorVisibility(
-        isScrolling = isScrolling,
-        hideAfterScrollStop = hideAfterScrollStop,
-        contentIsScrollable = contentIsScrollable,
-    )
+    if (!canScrollForward && !canScrollBackward) return
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(140)),
-        exit = fadeOut(animationSpec = tween(140)),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier,
     ) {
-        ScrollIndicatorPill(
-            onClick = onClick,
-            // Wave 9.12 — pick the icon based on which edge the user
-            // can scroll toward from this position.
-            arrowIsDown = !canScrollBackward || canScrollForward,
-        )
+        if (canScrollBackward) {
+            DirectionPill(
+                arrowIsUp = true,
+                onClick = onScrollUp,
+            )
+        }
+        if (canScrollForward) {
+            DirectionPill(
+                arrowIsUp = false,
+                onClick = onScrollDown,
+            )
+        }
     }
 }
 
 @Composable
-private fun ScrollIndicatorPill(
-    onClick: (() -> Unit)?,
-    arrowIsDown: Boolean,
-) {
+private fun DirectionPill(arrowIsUp: Boolean, onClick: () -> Unit) {
     val palette = LocalHermexPalette.current
-    val pillModifier = Modifier
-        .size(40.dp)
-        .testTag("jumpFab.scrollIndicator")
-    // Wave 9.11 — tap → scroll-to-latest. We bind `clickable` only
-    // when the host supplied a callback; if no callback is wired the
-    // pill stays a passive indicator (preserving the v0.8.8
-    // visual-only contract for callers that haven't opted in).
-    val withClick = if (onClick != null) pillModifier.clickable(onClick = onClick) else pillModifier
     Surface(
         color = palette.accent,
         contentColor = Color.White,
         shape = CircleShape,
         shadowElevation = 8.dp,
-        modifier = withClick,
+        modifier = Modifier
+            .size(40.dp)
+            .testTag(if (arrowIsUp) "jumpFab.scrollUp" else "jumpFab.scrollDown")
+            .clickable(onClick = onClick),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = if (arrowIsDown) {
-                    Icons.Filled.ArrowDownward
-                } else {
+                imageVector = if (arrowIsUp) {
                     Icons.Filled.ArrowUpward
-                },
-                contentDescription = if (arrowIsDown) {
-                    "Scroll to latest"
                 } else {
+                    Icons.Filled.ArrowDownward
+                },
+                contentDescription = if (arrowIsUp) {
                     "Scroll to top"
+                } else {
+                    "Scroll to latest"
                 },
                 modifier = Modifier.size(20.dp),
             )
         }
     }
 }
+
+

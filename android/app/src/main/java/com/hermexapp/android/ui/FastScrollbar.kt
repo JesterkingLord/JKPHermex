@@ -93,14 +93,19 @@ import kotlin.math.roundToInt
  */
 
 /**
- * Wave 9.11 (2026-07-24) — scrollbar auto-hide delay tuned to the
- * pill's 3 500 ms grace window. Previously the debug build used 60 s
- * which kept the bar pinned open during testing but felt sticky in
- * real use. Production now matches the pill: visible while scrolling
- * + 1.5 s grace after stop, so the eye and the finger agree on when
- * the affordance is reachable.
+ * Wave 9.12 — scrollbar auto-hide delay extended so the user can
+ * always see where they are. The previous 1 500 ms fade-out made
+ * the bar disappear while reading, which the user read as
+ * \"stuck\". Now the bar fades in once on first scroll, then
+ * stays visible until the chat scrolls off-screen entirely.
+ *
+ * Because the same Compose `alpha` fade drives both appearance and
+ * disappearance, a value of 60 000 ms is effectively \"always on\"
+ * during normal use while still allowing the bar to vanish when
+ * the LazyColumn itself unmounts (the LaunchedEffect's canShow=false
+ * branch is independent of the timer).
  */
-private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 1_500L
+private const val FAST_SCROLL_HIDE_DELAY_MS: Long = 60_000L
 private val FAST_SCROLL_HIT_WIDTH: Dp = 40.dp
 /** Wave 9.12 — reduced the thumb height so it doesn't dominate the track. */
 private val FAST_SCROLL_THUMB_HEIGHT: Dp = 32.dp

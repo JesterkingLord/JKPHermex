@@ -422,33 +422,32 @@ fun ChatScreen(
                     // arrow direction. Just the small accent pill
                     // that confirms "yes, you're scrolling."
                     ScrollIndicatorOnly(
-                        isScrolling = listState.isScrollInProgress,
-                        contentIsScrollable = listState.canScrollForward ||
-                            listState.canScrollBackward,
-                        // Wave 9.12 — let the pill pick its icon based
-                        // on which edge the user can scroll toward from
-                        // the current position. See JumpFab.kt docstring.
+                        // Wave 9.12 — Always-visible two-pill layout.
+                        // The ↑ appears only when canScrollBackward is
+                        // true (chat has older content above the
+                        // viewport); the ↓ only when canScrollForward
+                        // is true (chat has newer content below).
+                        // When the chat fits in the viewport neither
+                        // pill renders. See JumpFab.kt docstring.
                         canScrollForward = listState.canScrollForward,
                         canScrollBackward = listState.canScrollBackward,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 16.dp, bottom = 24.dp),
-                        // Wave 9.11 — tap on the pill scrolls the
-                        // chat to the nearest edge. If the user is
-                        // scrolled up (canScrollForward is true), they
-                        // want the latest reply; if they're already at
-                        // the bottom (canScrollBackward is true),
-                        // tapping jumps to the very top so they can
-                        // scroll back without losing context.
-                        onClick = {
+                        onScrollUp = {
+                            scope.launch {
+                                if (listState.canScrollBackward) {
+                                    listState.animateScrollToItem(0)
+                                }
+                            }
+                        },
+                        onScrollDown = {
                             scope.launch {
                                 if (listState.canScrollForward) {
                                     listState.animateScrollToItem(
                                         state.entries.lastIndex.coerceAtLeast(0),
                                     )
                                     viewModel.markSeen()
-                                } else if (listState.canScrollBackward) {
-                                    listState.animateScrollToItem(0)
                                 }
                             }
                         },
