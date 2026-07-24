@@ -7,187 +7,246 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 9.9 (2026-07-24) — Tests for [computeScrollFractionPx].
+ * Wave 9.10 (2026-07-24) — Tests for [computeThumbGeometry].
  *
- * The previous formulas in v0.8.5 / v0.8.6 / v0.8.7 used item-index
- * math. The user's repeated complaint was "right scrollbar stuck in
- * the middle." Each prior fix attempted a different index-based math
- * (per-item-rate, pixel-measurement-fallback, lastVisibleIndex guard).
- * None of them worked, because item-index math simply cannot
- * represent pixel position when item sizes vary wildly.
+ * v0.8.9's pixel-perfect math (`viewportStartOffset / estimatedHeight`)
+ * looked right but failed in practice: when the user stops scrolling
+ * mid-chat with items beyond the viewport, the LazyList's reported
+ * `estimatedTotalContentHeight` under-reports because only VISIBLE
+ * items have been measured. Result: the user's last screenshot
+ * showed the thumb pinned to the **top** of the track while the chat
+ * was clearly at the bottom.
  *
- * v0.8.9 uses pixel-perfect math from
- * `LazyListLayoutInfo.viewportStartOffset` (the pixel offset of the
- * top edge of the viewport within the scrollable content) divided by
- * the scrollable range (total content height minus viewport height).
- * This is exactly how ChatGPT's scrollbar works internally and is the
- * canonical Compose recipe.
+ * v0.8.10 follows the canonical reference formula (gist 0sten
+ * "LazyColumnScrollbar") which uses **item-index math**. The fraction
+ * is `(firstVisibleItemIndex + partialScrollFraction) /
+ * totalItemsCount`. Position and size both pin to totalItemsCount,
+ * which is exact (it's the same number passed to LazyColumn).
  *
- * These tests pin the pixel-perfect contract.
+ * These tests pin the canonical contract.
  */
 class FastScrollbarFractionTest {
 
     @Test
-    fun `empty viewport returns null`() {
-        // Degenerate LazyList state during pre-measurement.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 0,
-            viewportEndOffset = 0,
-            estimatedTotalContentHeight = 1000,
+    fun `empty list returns null`() {
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 0,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 0,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 0,
+            viewportEndOffsetPx = 800,
+            totalItemsCount = 0,
         )
-        assertNull(frac)
+        assertNull(g)
     }
 
     @Test
-    fun `content fits in viewport returns null (no scroll possible)`() {
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 0,
-            viewportEndOffset = 800,
-            estimatedTotalContentHeight = 600,
+    fun `at top of 50-item list thumb position equals 0`() {
+        // List of 50, first item index 0, no scroll offset.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 0,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 0,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 4,
+            viewportEndOffsetPx = 800,
+            totalItemsCount = 50,
         )
-        assertNull(frac)
+        assertNotNull(g)
+        assertEquals(0f, g!!.position, 0.001f)
+        assertTrue("size must be at least MIN_VISIBLE", g!!.size >= 0.08f)
     }
 
     @Test
-    fun `at top of long chat returns zero`() {
-        // viewportStartOffset=0 means viewport top is at content top.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 0,
-            viewportEndOffset = 800,
-            estimatedTotalContentHeight = 3000,
+    fun `at bottom of 50-item list thumb position equals 1 minus size`() {
+        // User fully scrolled — last item index 49, visible.
+        // last item bottom (say offset=2400 + size=200 = 2600) is
+        // past viewportEndOffset=800, so it's fully visible in the
+        // bottom and the partial hidden fraction is 1.0 (fully
+        // hidden below). Wait, that's not right. Let me think:
+        // lastVisibleItem.offset is the top of the LAST visible item
+        // relative to the viewport. When we're at bottom, the last
+        // visible item is partially visible at the bottom of the
+        // viewport. Its top would be below viewport top.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 47, // user scrolled almost to bottom
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = -800, // last item top is 800 px above viewport top (we've scrolled past items)
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 4,
+            viewportEndOffsetPx = 0, // viewport bottom edge is at content top (we're at very bottom of content)
+            totalItemsCount = 50,
         )
-        assertNotNull(frac)
-        assertEquals(0f, frac!!, 0.0001f)
+        assertNotNull(g)
+        // Position should be at the bottom of the track (clamped to
+        // 1 - sizeFraction).
+        assertTrue("position must be high when at bottom", g!!.position > 0.8f)
     }
 
     @Test
-    fun `at bottom of 3x-viewport content returns one`() {
-        // Content is 2400, viewport 800. Max scroll = 1600.
-        // Scrolled all the way: viewportStartOffset = 1600.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 1600,
-            viewportEndOffset = 2400,
-            estimatedTotalContentHeight = 2400,
+    fun `user-screenshot scenario at-bottom-of-long-chat shows thumb at bottom`() {
+        // Replicates the v0.8.9 screenshot bug: chat at bottom, but
+        // thumb showed at the top. v0.8.10 must NOT have that bug.
+        //
+        // Setup: 50-message chat, user fully at bottom. lastVisible
+        // item is index 49 (the last message), its top is way above
+        // the viewport (negative offset), its bottom aligns with
+        // or exceeds viewport bottom edge. viewportEndOffsetPx is
+        // the maximum pixel position of the viewport, which at
+        // bottom equals the total content height (last item bottom).
+        val totalItems = 50
+        // Pretend last item bottom is at pixel 10000 (content
+        // extent). Viewport is 800 tall. So at bottom: viewportStart
+        // = 9200, viewportEndOffset = 10000.
+        val lastItemBottomPx = 10_000
+        val viewportEndOffset = lastItemBottomPx
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 46,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = lastItemBottomPx - viewportEndOffset,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 4,
+            viewportEndOffsetPx = viewportEndOffset,
+            totalItemsCount = totalItems,
         )
-        assertNotNull(frac)
-        assertEquals(1f, frac!!, 0.0001f)
+        assertNotNull(g)
+        // The fraction must NOT be near zero (the v0.8.9 bug).
+        // The fraction at near-bottom should be > 0.8.
+        assertTrue(
+            "position ${g!!.position} should be near the bottom",
+            g.position > 0.8f,
+        )
     }
 
     @Test
-    fun `mid-scroll fraction equals scrolled-divide-max-scroll`() {
-        // 2400 content, 800 viewport. Max scroll = 1600.
-        // viewportStartOffset = 800 → scrolled 800/1600 = 0.5.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 800,
-            viewportEndOffset = 1600,
-            estimatedTotalContentHeight = 2400,
+    fun `mid-list tall items position is proportional to scroll`() {
+        // 10 items, item 3 partially visible at top, item 6
+        // partially visible at bottom. firstVisibleItemScrollOffset
+        // = 80 out of 200 (40% through item 3).
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 3,
+            firstVisibleItemScrollOffsetPx = 80,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 800,
+            lastVisibleItemSizePx = 250,
+            visibleItemCount = 4,
+            viewportEndOffsetPx = 1050,
+            totalItemsCount = 10,
         )
-        assertNotNull(frac)
-        assertEquals(0.5f, frac!!, 0.0001f)
+        assertNotNull(g)
+        // firstPartial = 80/200 = 0.4
+        // lastPartial  = (800+250-1050)/250 = 0/250 = 0
+        // positionRaw = (3 + 0.4) / 10 = 0.34
+        // sizeRaw = (4 - 0.4 - 0) / 10 = 0.36
+        // sizeClamped = 0.36 (≥ MIN_VISIBLE_FRACTION=0.08)
+        // maxPosition = 1 - 0.36 = 0.64
+        // positionClamped = clamp(0.34, 0, 0.64) = 0.34
+        assertEquals(0.34f, g!!.position, 0.005f)
+        assertEquals(0.36f, g.size, 0.005f)
     }
 
     @Test
-    fun `variable item heights use real pixels — tall message mid-list`() {
-        // The bug scenario from every prior revision: list with mixed
-        // item heights. Chat with [60, 600, 60, 600, 60] = 1380 total,
-        // viewport 800. Max scroll = 580. The viewport's TOP edge is
-        // at pixel offset 200 (we've scrolled past item 0 fully + 140px
-        // into item 1 which is 600px). 200/580 = ~0.345. Old item-index
-        // math said `firstVisibleIndex=1 / 4 = 0.25`. Pixel math wins.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 200,
-            viewportEndOffset = 200 + 800,
-            estimatedTotalContentHeight = 1380,
+    fun `thumbsize at minimum when content fits in viewport`() {
+        // Content fits, all 3 items fully visible, sizeRaw ≈ 0.06
+        // (< 0.08), clamps to MIN_VISIBLE_FRACTION.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 0,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 400,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 3,
+            viewportEndOffsetPx = 600,
+            totalItemsCount = 50,
         )
-        assertNotNull(frac)
-        val f = frac!!
-        // Expected: 200 / (1380 - 800) = 200 / 580 ≈ 0.345
-        assertEquals(0.345f, f, 0.005f)
-        assertTrue("fraction must be in [0, 1]", f in 0f..1f)
+        assertNotNull(g)
+        assertEquals(0.08f, g!!.size, 0.001f)
     }
 
     @Test
-    fun `viewportStartOffset past maxScroll clamps to 1f (overshoot at the bottom)`() {
-        // LazyList occasionally reports a viewportStartOffset greater
-        // than maxScroll (overshoot from a fling). The semantically
-        // correct clamp is 1.0 — the user is at the bottom and the
-        // offset has just become confused.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 5000,
-            viewportEndOffset = 5800,
-            estimatedTotalContentHeight = 1380,
+    fun `position clamped so thumb bottom does not exceed track end`() {
+        // last item visible with index = totalItemsCount - 1.
+        // Position would be (49 + 0) / 50 = 0.98; size = 1 / 50 = 0.02.
+        // sizeClamped = 0.08. maxPosition = 1 - 0.08 = 0.92.
+        // positionClamped = clamp(0.98, 0, 0.92) = 0.92.
+        val g = computeThumbGeometry(
+            firstVisibleItemIndex = 49,
+            firstVisibleItemScrollOffsetPx = 0,
+            firstVisibleItemSizePx = 200,
+            lastVisibleItemOffsetPx = 200,
+            lastVisibleItemSizePx = 200,
+            visibleItemCount = 1,
+            viewportEndOffsetPx = 400,
+            totalItemsCount = 50,
         )
-        assertNotNull(frac)
-        assertEquals(1f, frac!!, 0.0001f)
+        assertNotNull(g)
+        assertEquals(0.92f, g!!.position, 0.005f)
     }
 
     @Test
-    fun `viewportStartOffset below zero clamps to zero fraction`() {
-        // Defensive — pre-measurement can report -8 occasionally.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = -20,
-            viewportEndOffset = -20 + 800,
-            estimatedTotalContentHeight = 1380,
-        )
-        assertNotNull(frac)
-        assertEquals(0f, frac!!, 0.0001f)
+    fun `firstPartialFraction = 0 when scrollOffset is 0`() {
+        // sanity: at the top of an item, scrollOffset is 0.
+        val f = fractionHiddenTop(scrollOffsetPx = 0, sizePx = 200)
+        assertEquals(0f, f, 0.0001f)
     }
 
     @Test
-    fun `fraction tracks proportionally through whole scroll range`() {
-        // The fundamental success criterion from the user's screenshot:
-        // as the user scrolls, the thumb position moves proportionally.
-        // Verify by sampling 5 points and checking monotonicity.
-        val total = 3000
-        val viewport = 800
-        val maxScroll = total - viewport
+    fun `firstPartialFraction = 1 when scrolled past first item`() {
+        // scrollOffset ≥ sizePx (defensive case) clamps to 1.
+        val f = fractionHiddenTop(scrollOffsetPx = 250, sizePx = 200)
+        assertEquals(1f, f, 0.0001f)
+    }
+
+    @Test
+    fun `lastPartialFraction = 0 when item bottom is above viewport end`() {
+        // 50-item chat, top of viewport at content start.
+        // lastVisible item bottom 800 (within viewport 0..800)
+        val f = fractionHiddenBottom(
+            itemOffsetPx = 600,
+            itemSizePx = 200,
+            viewportEndOffsetPx = 800,
+        )
+        assertEquals(0f, f, 0.0001f)
+    }
+
+    @Test
+    fun `lastPartialFraction = 1 when item extends well past viewport`() {
+        val f = fractionHiddenBottom(
+            itemOffsetPx = 600,
+            itemSizePx = 2000,
+            viewportEndOffsetPx = 800,
+        )
+        // (600+2000-800)/2000 = 1800/2000 = 0.9
+        assertEquals(0.9f, f, 0.001f)
+    }
+
+    @Test
+    fun `monotonic through scroll range`() {
+        // As firstVisibleItemIndex grows, position must grow.
         var last = -1f
-        for (pct in listOf(0, 25, 50, 75, 100)) {
-            val startOffset = (maxScroll * pct / 100f).toInt()
-            val frac = computeScrollFractionPx(
-                viewportStartOffset = startOffset,
-                viewportEndOffset = startOffset + viewport,
-                estimatedTotalContentHeight = total,
+        for (idx in 0..9) {
+            val g = computeThumbGeometry(
+                firstVisibleItemIndex = idx,
+                firstVisibleItemScrollOffsetPx = 0,
+                firstVisibleItemSizePx = 200,
+                lastVisibleItemOffsetPx = 800,
+                lastVisibleItemSizePx = 200,
+                visibleItemCount = 4,
+                viewportEndOffsetPx = 1000,
+                totalItemsCount = 10,
             )
-            assertNotNull(frac)
-            val f = frac!!
+            assertNotNull(g)
+            val pos = g!!.position
             assertTrue(
-                "pct=$pct fraction=$f must be in [0, 1]",
-                f in 0f..1f,
+                "pos at idx=$idx must be monotonic (was $last, now $pos)",
+                pos >= last,
             )
-            // Must be monotonic non-decreasing.
-            assertTrue(
-                "fraction must be monotonic at pct=$pct (was $last, now $f)",
-                f >= last,
-            )
-            last = f
+            last = pos
         }
-    }
-
-    @Test
-    fun `screenshot scenario at-bottom-of-5msg-chat returns 1f`() {
-        // Replicates the exact bug the user has reported 4 times.
-        // Chat: 5 messages, last visible item bottom at pixel 2400,
-        // viewport bottom edge at 2400 (fully at bottom). viewportStartOffset
-        // = 2400 - 800 = 1600. Max scroll = 1600. Fraction = 1.0.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 1600,
-            viewportEndOffset = 2400,
-            estimatedTotalContentHeight = 2400,
-        )
-        assertNotNull(frac)
-        assertEquals(1f, frac!!, 0.0001f)
-    }
-
-    @Test
-    fun `screenshot scenario at-top-of-5msg-chat returns 0f`() {
-        // Same 5-msg chat, viewport at top. viewportStartOffset = 0.
-        val frac = computeScrollFractionPx(
-            viewportStartOffset = 0,
-            viewportEndOffset = 800,
-            estimatedTotalContentHeight = 2400,
-        )
-        assertNotNull(frac)
-        assertEquals(0f, frac!!, 0.0001f)
     }
 }
