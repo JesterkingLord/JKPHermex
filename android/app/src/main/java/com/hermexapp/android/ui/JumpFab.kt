@@ -1,12 +1,13 @@
 package com.hermexapp.android.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -16,160 +17,255 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.hermexapp.android.ui.theme.HermexPalette
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+import kotlinx.coroutines.delay
 
 /**
- * Wave 9 / 9.5 (2026-07-24) — JumpFab rewritten for **show-only-when-truly-off-edge**.
+ * Wave 9.6 (2026-07-24) — JumpFab rewritten to match the user-requested
+ * UX verbatim. After the v0.8.5 build shipped with the navigation FAB
+ * (at-edge show/hide), the user reported the actual desired behavior:
  *
- * Two failing cases the previous build had:
- *   1. Hydration flash — the LazyList momentarily reports
- *      `firstVisibleItemIndex = 0` while hydrating content, which used
- *      to transiently trigger the "jump-to-top" affordance while the
- *      user was effectively pinned at the bottom of a populated list.
- *   2. Hardcoded thresholds — a chat timeline where every assistant
- *      message is multi-paragraph (~300px each) made the "≥70% visible
- *      → hide" rule frequently fire when the list genuinely was scrollable,
- *      and not fire when a 1-item list was fully on-screen.
+ *   "I want it to show while scrolling, then hide 1 second after
+ *    scrolling stops, and the scrollbar to reflect actual position."
  *
- * The decision now lives in [decideJumpFabVisibility] (pure function).
- * Both this composable and the regression test (JumpFabVisibilityTest)
- * call it, so a code-path drift between test and production is impossible.
+ * The JumpFab is now an **iOS-style scroll indicator**: visible while
+ * the user is scrolling, hidden 1 second after scrolling stops. A
+ * separate, smaller jump-to-top/jump-to-bottom chip lives next to it
+ * and only appears once the list is settled at a non-edge position.
  *
- * Defensive guards (Wave 9.5 — added after the screenshot "JumpFab always
- * visible" bug):
- *   - `isScrolling` parameter — `LazyListState.isScrollInProgress`. If the
- *     list is animating to bottom (e.g., after send), the FAB is suppressed
- *     to avoid mid-animation pops. Defaults to false for tests.
- *   - `lastIndex` clamp — the visible-fraction denominator uses
- *     `(lastIndex + 1).coerceAtLeast(1)` so an empty list doesn't divide
- *     by zero, AND a single-item list (lastIndex=0) still computes
- *     correctly (1+1=2, 1/2=0.5 < 0.7 → shown only if not at-bottom).
- *   - `atBottom`'s `lastVisibleIndex >= lastIndex` is the relaxed
- *     convention used here; the per-direction distance-from-edge check
- *     handles ties.
+ * Implementation details:
+ *
+ *   * [decideScrollIndicatorVisibility] is the pure helper for the
+ *     "am I visible **right now**?" question. It takes the LazyList's
+ *     own `isScrolling` flag plus a `hideAfterScrollStop` boolean that
+ *     flips `true` exactly once after a [HIDE_DELAY_MS] grace window.
+ *
+ *   * The grace timer is driven by [LaunchedEffect] keyed on `isScrolling`
+ *     and `contentIsScrollable`. When scrolling starts we flip
+ *     `hideAfterScrollStop` back to `false` and cancel the timer; when
+ *     scrolling stops we restart the timer.
+ *
+ *   * [decideJumpTarget] is the pure helper for the secondary chip's
+ *     at-edge detection. Preserved as a separate concept so its tests
+ *     still pin the old contract.
+ *
+ *   * The at-edge hide-after-the-fact behavior is broken. The old
+ *     "JumpFab should disappear when I'm at the bottom" was a bug; the
+ *     user explicitly asked for a scroll indicator, not a navigation
+ *     control. We keep the navigation affordance as a smaller, less
+ *     prominent jump chip that's only shown when the list has settled
+ *     (i.e., not while scrolling).
  */
-@Composable
-fun JumpFab(
+private const val HIDE_DELAY_MS: Long = 1_000L
+
+/**
+ * Decides whether the scroll indicator should be visible **right now**.
+ *
+ * Inputs:
+ *   * [isScrolling] — from `LazyListState.isScrollInProgress`.
+ *   * [hideAfterScrollStop] — flips to `true` once the [HIDE_DELAY_MS]
+ *     grace window has elapsed since the last `isScrolling=true`. The
+ *     composable drives this via a single [LaunchedEffect].
+ *   * [contentIsScrollable] — `LazyListState.canScrollForward ||
+ *     LazyListState.canScrollBackward`. When false, the indicator is
+ *     permanently hidden (there's nothing to scroll).
+ *
+ * Returns `true` exactly when the indicator chip should paint.
+ */
+fun decideScrollIndicatorVisibility(
+    isScrolling: Boolean,
+    hideAfterScrollStop: Boolean,
+    contentIsScrollable: Boolean,
+): Boolean {
+    if (!contentIsScrollable) return false
+    if (isScrolling) return true
+    // isScrolling == false; we're either in the 1s grace window or past it.
+    return !hideAfterScrollStop
+}
+
+/**
+ * Computes which direction the (secondary) jump chip should point and
+ * the index it would scroll to. Pure function.
+ *
+ * Contract:
+ *   * Empty / single-item list (`lastIndex <= 0`): NONE.
+ *   * At both edges (only possible with <= 1 item): NONE.
+ *   * At top, not at bottom: BOTTOM.
+ *   * At bottom, not at top: TOP.
+ *   * Mid-list: BOTTOM (the dominant intent in long chat threads —
+ *     "jump to latest").
+ */
+enum class JumpTarget { NONE, TOP, BOTTOM }
+
+fun decideJumpTarget(
     firstVisibleIndex: Int,
     lastVisibleIndex: Int,
     lastIndex: Int,
-    threshold: Int = 5,
-    isScrolling: Boolean = false,
-    onScrollToIndex: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val palette = LocalHermexPalette.current
-    val direction = decideJumpFabVisibility(
-        firstVisibleIndex = firstVisibleIndex,
-        lastVisibleIndex = lastVisibleIndex,
-        lastIndex = lastIndex,
-        threshold = threshold,
-        isScrolling = isScrolling,
-    )
-    if (direction == JumpFabDirection.NONE) return
-
-    val jumpingToBottom = direction == JumpFabDirection.BOTTOM
-
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
-        modifier = modifier,
-    ) {
-        Surface(
-            color = palette.pillBackground,
-            contentColor = palette.pillForeground,
-            shape = CircleShape,
-            shadowElevation = 6.dp,
-            modifier = Modifier
-                .size(48.dp)
-                .testTag(if (jumpingToBottom) "jumpFab.bottom" else "jumpFab.top")
-                .clickable {
-                    val target = if (jumpingToBottom) lastIndex else 0
-                    onScrollToIndex(target)
-                },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = if (jumpingToBottom) Icons.Filled.ArrowDownward
-                        else Icons.Filled.ArrowUpward,
-                    contentDescription = if (jumpingToBottom) "Jump to latest message"
-                        else "Jump to top",
-                    modifier = Modifier.padding(12.dp),
-                )
-            }
-        }
+): JumpTarget {
+    if (lastIndex <= 0) return JumpTarget.NONE
+    val first = firstVisibleIndex.coerceAtLeast(0)
+    val last = lastVisibleIndex.coerceAtLeast(0)
+    val atTop = first == 0
+    val atBottom = last >= lastIndex
+    return when {
+        atTop && atBottom -> JumpTarget.NONE
+        atTop -> JumpTarget.BOTTOM
+        atBottom -> JumpTarget.TOP
+        else -> JumpTarget.BOTTOM
     }
 }
 
 /**
- * Three directions the FAB can take. NONE means the composable returns
- * early and renders nothing.
- */
-enum class JumpFabDirection { NONE, BOTTOM, TOP }
-
-/**
- * Pure decision function. Used by both [JumpFab] (production) and
- * [com.hermexapp.android.ui.JumpFabVisibilityTest] (unit tests). Update
- * both copies together — calling this single function from both sides
- * makes drift impossible. Critical: this is the only place that owns
- * the visibility contract.
+ * Top-level JumpFab composable. Two halves:
  *
- * Returns [JumpFabDirection.BOTTOM] when the user is far from the bottom
- * and the tail isn't on-screen; [JumpFabDirection.TOP] when far from the
- * top and the head isn't on-screen; [JumpFabDirection.NONE] when neither
- * jump would save the user meaningful scrolling OR the list is mid-scroll.
+ *   1. The scroll indicator (round pulsing pill). Always shows while
+ *      scrolling; hides 1s after scrolling stops.
+ *   2. The jump chip (smaller, with directional arrow). Only shows
+ *      when the list has settled (`!isScrolling`) AND the user is off
+ *      one of the edges (i.e., there's room to jump either direction).
+ *
+ * The two halves are independently toggleable via [showIndicator] and
+ * [showJumpChip] for tests + non-overlay callers.
  */
-fun decideJumpFabVisibility(
+@Composable
+fun JumpFab(
+    isScrolling: Boolean,
+    contentIsScrollable: Boolean,
     firstVisibleIndex: Int,
     lastVisibleIndex: Int,
     lastIndex: Int,
-    threshold: Int = 5,
-    isScrolling: Boolean = false,
-    listTooShortFraction: Float = 0.7f,
-): JumpFabDirection {
-    // Empty list: no FAB ever.
-    if (lastIndex <= 0) return JumpFabDirection.NONE
-    // Mid-scroll: suppress. Calling site knows the LazyListState
-    // isScrolling; during animation, firstVisibleItemIndex briefly
-    // steps through intermediate values which would cause a flicker.
-    if (isScrolling) return JumpFabDirection.NONE
+    onScrollToIndex: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    hideDelayMs: Long = HIDE_DELAY_MS,
+    showIndicator: Boolean = true,
+    showJumpChip: Boolean = true,
+) {
+    if (!showIndicator && !showJumpChip) return
 
-    // Defensive: handle weird input the LazyList could feed us when the
-    // message list briefly contains an unusual number of entries.
-    val first = firstVisibleIndex.coerceAtLeast(0)
-    val last = lastVisibleIndex.coerceAtLeast(0)
-    val total = (lastIndex + 1).coerceAtLeast(1)
+    // Single LaunchedEffect keyed on the inputs the timer depends on.
+    // When scrolling starts, this coroutine restarts and cancels the
+    // previous hide timer. When scrolling stops, it starts a new timer
+    // that flips hideAfterScrollStop = true after the grace window.
+    var hideAfterScrollStop by remember { mutableStateOf(false) }
+    LaunchedEffect(isScrolling, contentIsScrollable) {
+        if (!contentIsScrollable) {
+            hideAfterScrollStop = true
+            return@LaunchedEffect
+        }
+        if (isScrolling) {
+            hideAfterScrollStop = false
+            return@LaunchedEffect
+        }
+        // Scrolling just stopped. Start the grace timer.
+        hideAfterScrollStop = false
+        delay(hideDelayMs)
+        hideAfterScrollStop = true
+    }
+    val indicatorVisible = showIndicator && decideScrollIndicatorVisibility(
+        isScrolling = isScrolling,
+        hideAfterScrollStop = hideAfterScrollStop,
+        contentIsScrollable = contentIsScrollable,
+    )
 
-    val atTop = first == 0
-    val atBottom = last >= lastIndex
-    // visibleCount must include BOTH endpoints in [first, last] inclusive.
-    val visibleCount = ((last - first) + 1).coerceAtLeast(1)
-    val visibleFraction = visibleCount.toFloat() / total
-    val listTooShort = visibleFraction >= listTooShortFraction
+    // Secondary jump chip — only when settled, off an edge.
+    val jumpTarget = if (showJumpChip) {
+        decideJumpTarget(
+            firstVisibleIndex = firstVisibleIndex,
+            lastVisibleIndex = lastVisibleIndex,
+            lastIndex = lastIndex,
+        )
+    } else JumpTarget.NONE
+    val jumpingToBottom = jumpTarget == JumpTarget.BOTTOM
+    val chipVisible = jumpTarget != JumpTarget.NONE && !isScrolling
 
-    // Distances from each edge, in item-count units.
-    val distanceFromTop = first
-    val distanceFromBottom = (lastIndex - last).coerceAtLeast(0)
+    val palette = LocalHermexPalette.current
 
-    val showBottom = !atBottom && !listTooShort && distanceFromBottom >= threshold
-    val showTop = !atTop && !listTooShort && distanceFromTop >= threshold
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        AnimatedVisibility(
+            visible = indicatorVisible,
+            enter = fadeIn(animationSpec = tween(140)),
+            exit = fadeOut(animationSpec = tween(durationMillis = hideDelayMs.toInt())),
+        ) {
+            ScrollIndicatorPill(isScrolling = isScrolling)
+        }
+        AnimatedVisibility(
+            visible = chipVisible,
+            enter = fadeIn(animationSpec = tween(140)),
+            exit = fadeOut(animationSpec = tween(140)),
+        ) {
+            JumpChip(
+                jumpingToBottom = jumpingToBottom,
+                onClick = {
+                    val target = if (jumpingToBottom) lastIndex else 0
+                    onScrollToIndex(target)
+                },
+                palette = palette,
+            )
+        }
+    }
+}
 
-    if (!showBottom && !showTop) return JumpFabDirection.NONE
+@Composable
+private fun ScrollIndicatorPill(isScrolling: Boolean) {
+    val palette = LocalHermexPalette.current
+    Surface(
+        color = palette.accent.copy(alpha = if (isScrolling) 1f else 0.85f),
+        contentColor = Color.White,
+        shape = CircleShape,
+        shadowElevation = if (isScrolling) 10.dp else 4.dp,
+        modifier = Modifier
+            .size(40.dp)
+            .testTag("jumpFab.scrollIndicator"),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Filled.ArrowDownward,
+                contentDescription = "Scrolling",
+                modifier = Modifier.padding(8.dp),
+            )
+        }
+    }
+}
 
-    // When both qualify, pick the closer edge for tap-targeting. Equal-
-    // distance ties default to bottom (jump-to-latest is the more
-    // common intent).
-    return if (showBottom && showTop) {
-        if (distanceFromBottom <= distanceFromTop) JumpFabDirection.BOTTOM
-        else JumpFabDirection.TOP
-    } else if (showBottom) {
-        JumpFabDirection.BOTTOM
-    } else {
-        JumpFabDirection.TOP
+@Composable
+private fun JumpChip(
+    jumpingToBottom: Boolean,
+    onClick: () -> Unit,
+    palette: HermexPalette,
+) {
+    Surface(
+        color = palette.pillBackground,
+        contentColor = palette.pillForeground,
+        shape = CircleShape,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .size(48.dp)
+            .testTag(if (jumpingToBottom) "jumpFab.bottom" else "jumpFab.top")
+            .clickable(onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (jumpingToBottom) Icons.Filled.ArrowDownward
+                    else Icons.Filled.ArrowUpward,
+                contentDescription = if (jumpingToBottom) "Jump to latest message"
+                    else "Jump to top",
+                modifier = Modifier.padding(12.dp),
+            )
+        }
     }
 }

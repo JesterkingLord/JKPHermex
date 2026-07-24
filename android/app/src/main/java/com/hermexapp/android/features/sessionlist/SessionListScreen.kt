@@ -507,23 +507,20 @@ fun SessionListScreen(
             }
             // Excellence v1 Wave 1: FastScrollbar overlays the list on the
             // right edge. Hidden when there are fewer than 20 items (no UX
-            // value and saves the hit zone). Letter-jump rail snaps to the
-            // first index of each letter group's title. Drag is handled by
-            // the FastScrollbar's internal pointerInput; on release it tells
-            // us which row to scroll to, and we drive `listState.scrollToItem`
-            // via the scope.
+            // FastScrollbar for the session list.
+            //
+            // Wave 9.6 (2026-07-24): rewired against the new signature
+            // (LazyListState-driven, no item-height estimation). Letter
+            // jump group is preserved so dragging still snaps to A, B,
+            // C, ... letter boundaries. Without the letterIndex the
+            // helper would just compute fraction → index linearly.
             FastScrollbar(
                 itemCount = visibleSessions.size,
                 firstVisibleIndex = listState.firstVisibleItemIndex,
-                firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                totalContentHeightPx = listState.layoutInfo
-                    .let { sumOfMeasuredHeights(it) },
-                visibleItemsFirstOffsetPx = listState.layoutInfo
-                    .visibleItemsInfo.firstOrNull()?.offset?.toInt() ?: 0,
-                visibleItemsLastBottomPx = listState.layoutInfo
-                    .visibleItemsInfo.lastOrNull()
-                    ?.let { v -> v.offset.toInt() + v.size } ?: 0,
-                estimatedItemHeightPx = 72,
+                visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
+                canScrollBackward = listState.canScrollBackward,
+                canScrollForward = listState.canScrollForward,
+                totalItemsCount = listState.layoutInfo.totalItemsCount,
                 letterIndex = letterIndex,
                 onScrollToIndex = { target ->
                     scope.launch { listState.scrollToItem(target) }
@@ -1042,23 +1039,6 @@ private fun SessionRow(
 }
 
 
-/**
- * Wave 9.5 — sum the measured heights of all items currently rendered
- * in the LazyList. Mirrors the helper in ChatScreen.kt. Used as the
- * [totalContentHeightPx] argument to the FastScrollbar so the thumb's
- * vertical position reflects real content size; the old 72 px estimate
- * was fine for uniform session rows but Wave 9 wants one math for all
- * surfaces so behavior is identical across screens.
- */
-private fun sumOfMeasuredHeights(layoutInfo: androidx.compose.foundation.lazy.LazyListLayoutInfo): Int {
-    val visible = layoutInfo.visibleItemsInfo
-    if (visible.isEmpty()) return 0
-    var measured = 0
-    for (i in 0 until visible.size) {
-        measured += visible[i].size
-    }
-    val totalItems = layoutInfo.totalItemsCount
-    if (totalItems <= visible.size) return measured
-    val avg = measured / visible.size.coerceAtLeast(1)
-    return measured + avg * (totalItems - visible.size)
-}
+// Wave 9.6 — `sumOfMeasuredHeights` removed. The FastScrollbar no
+// longer asks for a pixel-based total height; it uses item-count
+// fraction + LazyListState pixel-perfect edge flags.

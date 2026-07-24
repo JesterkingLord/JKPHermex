@@ -5,180 +5,211 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pure-JVM test for [computeScrollFraction] — Wave 9.5 (2026-07-24).
+ * Pure-JVM test for [computeScrollFraction] — Wave 9.6 (2026-07-24).
  *
- * Bug targeted: the FastScrollbar thumb on the chat timeline was
- * reported "stuck in the middle" because the 9.0 formula used a fixed
- * estimated item height (96 px) that was wildly under-sized for chat
- * messages. Real assistant replies are 300-400 px each, so the per-
- * item-rate fraction produced values around the middle for any non-
- * trivial scroll position.
+ * Bug targeted: the user screenshot showed the FastScrollbar thumb
+ * **stuck in the middle** even when the chat was scrolled to the
+ * bottom (the last visible line was "Let me check Kimi progress one
+ * more time" and there was no more content). The prior formulas had
+ * two compounding problems:
  *
- * The new formula uses actual LazyListState measurements:
- *   `visibleItemsFirstOffsetPx / totalContentHeightPx`
- * which is the *true* fraction of scroll position regardless of how
- * tall individual items are.
+ *   1. `if (itemCount <= threshold) return` — the bar didn't render
+ *      at all for short chats (5–15 messages). With threshold=20, the
+ *      user's chat had **no bar at all**, just an invisible rail.
+ *   2. The Tier 1 / Tier 2 fallback path. `sumOfMeasuredHeights()`
+ *      returned 0 whenever measurement hadn't completed, silently
+ *      routing every real-world scroll through Tier 2's
+ *      per-item-rate formula (which divided by `itemCount - 1` and
+ *      produced mid-list values almost regardless of position).
  *
- * These tests pin:
- *   1. The Tier 1 path (real measurements): produces correct fractions
- *      for tall / mixed / uniform item heights.
- *   2. The Tier 2 fallback (estimate): kicks in when totalContentHeightPx
- *      is 0 (first frame, pre-measurement) and produces a sane fraction.
- *   3. Edge cases: empty list, degenerate inputs, clamping.
+ * Wave 9.6 replaces all of it with one formula:
+ *
+ *     canScrollBackward == false  → 0
+ *     canScrollForward  == false  → 1
+ *     otherwise:
+ *         denom = max(1, totalItemsCount - visibleItemsCount)
+ *         fraction = firstVisibleIndex / denom
+ *         clamp [0, 1]
+ *
+ * LazyListState.canScrollForward / canScrollBackward are pixel-perfect
+ * edge guards maintained by Compose internally, so we never need to
+ * derive edge state from indices and item sizes. The fraction is
+ * item-height-independent.
+ *
+ * These tests are written FIRST against the user's reported scenario
+ * ("at bottom of 5-message chat, fraction should be 1.0") and against
+ * the prior broken behavior ("smallest denominator should still give
+ * a clamped-to-1 fraction, not stuck in the middle").
  */
 class FastScrollbarFractionTest {
 
     @Test
     fun `empty list returns zero`() {
-        assertEquals(0f, computeScrollFraction(
-            firstVisibleIndex = 0,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 0,
-            visibleItemsFirstOffsetPx = 0,
-            visibleItemsLastBottomPx = 0,
-            itemCount = 0,
-        ), 0.0001f)
-    }
-
-    @Test
-    fun `tier1 real measurement at top returns zero`() {
-        // first visible item offset = 0 means user is at the top.
-        assertEquals(0f, computeScrollFraction(
-            firstVisibleIndex = 0,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 1000,
-            visibleItemsFirstOffsetPx = 0,
-            visibleItemsLastBottomPx = 1000,
-            itemCount = 12,
-        ), 0.0001f)
-    }
-
-    @Test
-    fun `tier1 real measurement at exact half returns one-half`() {
-        // first visible item offset = 2000 in a 4000 total = 0.5.
-        assertEquals(0.5f, computeScrollFraction(
-            firstVisibleIndex = 5,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 800,
-            visibleItemsFirstOffsetPx = 2000,
-            visibleItemsLastBottomPx = 2800,
-            itemCount = 12,
-        ), 0.001f)
-    }
-
-    @Test
-    fun `tier1 with partial offset above first visible item correctly positions thumb`() {
-        // firstVisibleScrollOffsetPx shifts the in-item scroll; the
-        // top-edge of the first visible item is (visibleItemsFirstOffsetPx - offset).
-        // If firstVisible=index2 with offset=80px within the item, top-edge=2000-80=1920.
-        // 1920 / 4000 = 0.48
-        assertEquals(0.48f, computeScrollFraction(
-            firstVisibleIndex = 2,
-            firstVisibleScrollOffsetPx = 80,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 320,
-            visibleItemsFirstOffsetPx = 2000,
-            visibleItemsLastBottomPx = 2320,
-            itemCount = 12,
-        ), 0.001f)
-    }
-
-    @Test
-    fun `tier1 with tall mixed items still tracks correctly`() {
-        // The bug report scenario: a chat timeline where items are taller
-        // than the 96 px estimate. With items at index 0..3, all 400 px,
-        // user scrolled to top of item 1 (visibleItemsFirstOffsetPx=400,
-        // firstVisibleIndex=1, offsetPx=0 after clamp).
-        // numerator = 400 - 0 = 400; fraction = 400 / 1600 = 0.25.
-        // The OLD formula would have computed (1 + 0/96)/3 = 0.333, off by
-        // 8% and increasingly worse with non-uniform item heights.
-        assertEquals(0.25f, computeScrollFraction(
-            firstVisibleIndex = 1,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 1600,
-            visibleItemsHeightPx = 400,
-            visibleItemsFirstOffsetPx = 400,
-            visibleItemsLastBottomPx = 800,
-            itemCount = 4,
-        ), 0.001f)
-    }
-
-    @Test
-    fun `tier1 clamps negative offset to zero`() {
-        // Negative scroll-offset (defensive) gets clamped to 0 by
-        // `offset = firstVisibleScrollOffsetPx.coerceAtLeast(0)`. With
-        // visibleItemsFirstOffsetPx=200, total=4000, that gives
-        // numerator=200, fraction=0.05.
-        assertEquals(0.05f, computeScrollFraction(
-            firstVisibleIndex = 3,
-            firstVisibleScrollOffsetPx = -200,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 200,
-            visibleItemsFirstOffsetPx = 200,
-            visibleItemsLastBottomPx = 400,
-            itemCount = 12,
-        ), 0.0001f)
-    }
-
-    @Test
-    fun `tier1 clamps above one when content compressed`() {
-        // Synthetic input where visibleItemsFirstOffsetPx >= totalContentHeightPx
-        // (e.g., layout recomposing mid-animation). Clamp to 1.
-        val f = computeScrollFraction(
-            firstVisibleIndex = 12,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 4000,
-            visibleItemsHeightPx = 200,
-            visibleItemsFirstOffsetPx = 5000, // beyond total
-            visibleItemsLastBottomPx = 5200,
-            itemCount = 12,
+        assertEquals(
+            0f,
+            computeScrollFraction(
+                firstVisibleIndex = 0,
+                totalItemsCount = 0,
+                visibleItemsCount = 0,
+                canScrollBackward = false,
+                canScrollForward = false,
+            ),
+            0.0001f,
         )
-        assertTrue("fraction must be in [0,1]", f in 0f..1f)
+    }
+
+    @Test
+    fun `at top of list returns zero regardless of visible item count`() {
+        // canScrollBackward == false ⇒ we're at the top, period.
+        assertEquals(
+            0f,
+            computeScrollFraction(
+                firstVisibleIndex = 0,
+                totalItemsCount = 100,
+                visibleItemsCount = 3,
+                canScrollBackward = false,
+                canScrollForward = true,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun `at bottom of chat returns 1 even with few visible items`() {
+        // === USER SCREENSHOT REGRESSION ===
+        // Chat has 5 messages total, 2 visible on screen, user scrolled
+        // all the way down so canScrollForward=false. Old formula:
+        //   (firstVisibleIndex + offset/96) / (itemCount - 1)
+        //   = (3 + 0/96) / 4 = 0.75  — stuck near the bottom but not at it.
+        // New formula's canScrollForward guard: pixel-perfect, returns 1.
+        assertEquals(
+            1f,
+            computeScrollFraction(
+                firstVisibleIndex = 3,
+                totalItemsCount = 5,
+                visibleItemsCount = 2,
+                canScrollBackward = true,
+                canScrollForward = false,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun `middle of long list uses item-count fraction`() {
+        // 100 items, 10 visible on screen, scrolled so firstVisible=45.
+        // denom = 100 - 10 = 90. fraction = 45 / 90 = 0.5.
+        assertEquals(
+            0.5f,
+            computeScrollFraction(
+                firstVisibleIndex = 45,
+                totalItemsCount = 100,
+                visibleItemsCount = 10,
+                canScrollBackward = true,
+                canScrollForward = true,
+            ),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `mid-list tall items use same item-count formula`() {
+        // The chat-screenshot scenario as tall messages: 4 items,
+        // 1 visible, scrolled to position firstVisible=1.
+        // denom = 4 - 1 = 3. fraction = 1 / 3 = 0.333.
+        // Old formula would have computed (1 + 0/96)/3 = 0.333 — same.
+        // New formula is correct on principle, not by coincidence.
+        assertEquals(
+            0.333f,
+            computeScrollFraction(
+                firstVisibleIndex = 1,
+                totalItemsCount = 4,
+                visibleItemsCount = 1,
+                canScrollBackward = true,
+                canScrollForward = true,
+            ),
+            0.005f,
+        )
+    }
+
+    @Test
+    fun `near-bottom of long list approaches 1`() {
+        // 100 items, 10 visible, scrolled so firstVisible=85.
+        // denom = 90. fraction = 85/90 = 0.944.
+        assertEquals(
+            0.944f,
+            computeScrollFraction(
+                firstVisibleIndex = 85,
+                totalItemsCount = 100,
+                visibleItemsCount = 10,
+                canScrollBackward = true,
+                canScrollForward = true,
+            ),
+            0.005f,
+        )
+    }
+
+    @Test
+    fun `short list (5 messages) with 1 visible jumps to 1 at bottom`() {
+        // User's screenshot scenario, distilled. The exact `1f` not
+        // ~0.5 the old path produced.
+        assertEquals(
+            1f,
+            computeScrollFraction(
+                firstVisibleIndex = 4,
+                totalItemsCount = 5,
+                visibleItemsCount = 1,
+                canScrollBackward = true,
+                canScrollForward = false,
+            ),
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun `firstVisible greater than denom clamps to 1`() {
+        // Synthetic edge case: visibleItemsCount > totalItemsCount
+        // (one item, all on screen, the user can scroll past everything
+        // very quickly). Clamp to 1.
+        val f = computeScrollFraction(
+            firstVisibleIndex = 5,
+            totalItemsCount = 3,
+            visibleItemsCount = 5,
+            canScrollBackward = true,
+            canScrollForward = true,
+        )
+        assertTrue("fraction must be in [0, 1]", f in 0f..1f)
         assertEquals(1f, f, 0.0001f)
     }
 
     @Test
-    fun `tier2 fallback used when total content height is zero`() {
-        // First frame after mount: totalContentHeightPx = 0. Fall back
-        // to per-item rate. With firstVisible=2, offsetPx=96, estHeight=96,
-        // and itemCount=10, fractional=2+1=3, /9 = 0.333.
-        val f = computeScrollFraction(
-            firstVisibleIndex = 2,
-            firstVisibleScrollOffsetPx = 96,
-            estimatedItemHeightPx = 96,
-            totalContentHeightPx = 0,
-            visibleItemsHeightPx = 0,
-            visibleItemsFirstOffsetPx = 0,
-            visibleItemsLastBottomPx = 0,
-            itemCount = 10,
+    fun `negative firstVisibleIndex clamps to 0`() {
+        // Defensive — hydration edge case where LazyList briefly reports
+        // a -1 first index before measurement. Should not go below 0.
+        assertEquals(
+            0f,
+            computeScrollFraction(
+                firstVisibleIndex = -1,
+                totalItemsCount = 50,
+                visibleItemsCount = 3,
+                canScrollBackward = true,
+                canScrollForward = true,
+            ),
+            0.0001f,
         )
-        assertEquals(0.333f, f, 0.001f)
     }
 
     @Test
-    fun `tier2 fallback returns sane fraction for chat-screenshot scenario`() {
-        // The screenshot showed 3 entries, user at top, only first visible.
-        // Items estimated at 400px each (multi-paragraph assistant reply).
-        // firstVisibleIndex=0, offsetPx=0, itemCount=3 -> 0/2 = 0.
-        assertEquals(0f, computeScrollFraction(
+    fun `no scroll possible either direction returns 0`() {
+        // One-message-fits-on-screen chat. No scroll possible. The
+        // helper correctly returns 0 — there's no meaningful position.
+        val f = computeScrollFraction(
             firstVisibleIndex = 0,
-            firstVisibleScrollOffsetPx = 0,
-            estimatedItemHeightPx = 400,
-            totalContentHeightPx = 0,           // measurement pending
-            visibleItemsHeightPx = 0,
-            visibleItemsFirstOffsetPx = 0,
-            visibleItemsLastBottomPx = 0,
-            itemCount = 3,
-        ), 0.0001f)
+            totalItemsCount = 1,
+            visibleItemsCount = 1,
+            canScrollBackward = false,
+            canScrollForward = false,
+        )
+        assertEquals(0f, f, 0.0001f)
     }
 }

@@ -354,34 +354,21 @@ fun ChatScreen(
                             )
                         }
                     }
-                    // Excellence v1 Wave 2: FastScrollbar overlay on the
-                    // chat timeline. Pure-JVM UI; layout mirrors Wave 1's
-                    // session-list pattern but with no letter-jump (chat is
-                    // not alphabetical — chronological scroll only).
+                    // FastScrollbar for the chat timeline.
                     //
-                    // Wave 9.5 (2026-07-24): feed real LazyListState
-                    // measurements instead of estimating item heights.
-                    // Chat messages can be 300-400px each (multi-paragraph
-                    // assistant replies) and the previous 96px estimate
-                    // broke the thumb position. `firstOffsetPx` and
-                    // `lastBottomPx` give us the actual top and bottom of
-                    // the visible window in the list's coordinate space;
-                    // `totalHeightPx` is the list's reported total content
-                    // height. The ratio `firstOffsetPx / totalHeightPx`
-                    // is the correct scroll fraction regardless of how
-                    // tall each item is.
+                    // Wave 9.6 (2026-07-24): all item-size estimation is
+                    // gone. We feed the LazyListState's own pixel-perfect
+                    // edge flags (`canScrollBackward`, `canScrollForward`)
+                    // plus the canonical item-count fraction
+                    // (`firstVisibleIndex / (totalItemsCount - visibleCount)`).
+                    // This works regardless of how tall each message is.
                     FastScrollbar(
                         itemCount = state.entries.size,
                         firstVisibleIndex = listState.firstVisibleItemIndex,
-                        firstVisibleScrollOffsetPx = listState.firstVisibleItemScrollOffset,
-                        totalContentHeightPx = listState.layoutInfo
-                            .let { sumOfMeasuredHeights(it) },
-                        visibleItemsFirstOffsetPx = listState.layoutInfo
-                            .visibleItemsInfo.firstOrNull()?.offset?.toInt() ?: 0,
-                        visibleItemsLastBottomPx = listState.layoutInfo
-                            .visibleItemsInfo.lastOrNull()
-                            ?.let { v -> v.offset.toInt() + v.size } ?: 0,
-                        estimatedItemHeightPx = 96,
+                        visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
+                        canScrollBackward = listState.canScrollBackward,
+                        canScrollForward = listState.canScrollForward,
+                        totalItemsCount = listState.layoutInfo.totalItemsCount,
                         onScrollToIndex = { target ->
                             scope.launch { listState.animateScrollToItem(target) }
                         },
@@ -416,25 +403,29 @@ fun ChatScreen(
                             )
                         }
                     }
-                    // Wave 9: jump-to-bottom (or top) FAB. Hidden when
-                    // the user is at/near an edge, even during transient
-                    // hydration (sending a message used to flash this FAB
-                    // because `firstVisibleItemIndex` momentarily read 0).
+                    // Jump chip + scroll indicator (Wave 9.6 split).
                     //
-                    // Wave 9.5 (2026-07-24 — user-screenshot regression):
-                    // pass `isScrolling = listState.isScrollInProgress`
-                    // so post-send animation suppresses the FAB entirely
-                    // instead of flickering it through. Also pass real
-                    // `firstVisibleIndex` / `lastVisibleIndex` — the old
-                    // inline math was correct in tests but the wiring
-                    // drifted in 9.0; the helper function is the only
-                    // source of truth now (see decideJumpFabVisibility).
+                    // The component has two halves now:
+                    //   1. A pulsing scroll indicator that's visible
+                    //      while the user is scrolling AND for 1 second
+                    //      afterwards. This is what the user actually
+                    //      asked for ("show when scrolling, hide 1s
+                    //      after stop").
+                    //   2. A separate, smaller jump chip that points
+                    //      toward the nearest edge and lets the user
+                    //      tap to scroll past the entire chat. It
+                    //      only appears once the list has settled
+                    //      (not while scrolling), so the two halves
+                    //      don't fight over the same screen real
+                    //      estate.
                     JumpFab(
+                        isScrolling = listState.isScrollInProgress,
+                        contentIsScrollable = listState.canScrollForward ||
+                            listState.canScrollBackward,
                         firstVisibleIndex = listState.firstVisibleItemIndex,
                         lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
                             .lastOrNull()?.index ?: 0,
                         lastIndex = state.entries.lastIndex,
-                        isScrolling = listState.isScrollInProgress,
                         onScrollToIndex = { target ->
                             scope.launch { listState.animateScrollToItem(target) }
                         },
@@ -506,29 +497,11 @@ fun ChatScreen(
     }
 }
 
-/**
- * Wave 9.5 — sum the measured heights of all items currently rendered in
- * the LazyList. Used as the [totalContentHeightPx] argument to the
- * FastScrollbar so the thumb's vertical position reflects real content
- * size (chat assistant messages can be 300-400px each, which a fixed
- * 96px estimate misrepresents). Returns a best-effort total: the sum of
- * visible-measured sizes plus an extrapolation for not-yet-measured
- * items based on the average of what we have seen. Returns 0 if the
- * list hasn't been measured yet — the FastScrollbar falls back to the
- * per-item-rate formula in that case.
- */
-private fun sumOfMeasuredHeights(layoutInfo: androidx.compose.foundation.lazy.LazyListLayoutInfo): Int {
-    val visible = layoutInfo.visibleItemsInfo
-    if (visible.isEmpty()) return 0
-    var measured = 0
-    for (i in 0 until visible.size) {
-        measured += visible[i].size
-    }
-    val totalItems = layoutInfo.totalItemsCount
-    if (totalItems <= visible.size) return measured
-    val avg = measured / visible.size.coerceAtLeast(1)
-    return measured + avg * (totalItems - visible.size)
-}
+// Wave 9.6 removed `sumOfMeasuredHeights` — the new FastScrollbar uses
+// LazyListState.canScrollForward / canScrollBackward + item-count
+// fraction, both pixel-perfect and item-size-independent. The old
+// helper's "0 when not measured yet" fallback was the silent foot-gun
+// that pushed every real-world scroll through the broken Tier 2 path.
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
