@@ -4,17 +4,25 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -74,9 +82,23 @@ private fun BlockView(block: MdBlock, baseStyle: androidx.compose.ui.text.TextSt
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                block.language?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = block.language?.takeIf { it.isNotBlank() } ?: "code",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    CodeCopyButton(
+                        code = block.code,
+                        language = block.language.orEmpty(),
+                    )
                 }
+                Spacer(Modifier.height(4.dp))
                 val codeColors = CodeColors(
                     keyword = palette.accent,
                     string = palette.success,
@@ -238,4 +260,62 @@ private fun parseMathTag(tag: String): Pair<String?, Boolean> {
     val isInline = tag.startsWith("inline:")
     if (!isDisplay && !isInline) return null to false
     return tag.substringAfter(':') to isDisplay
+}
+
+/**
+ * Wave 9 — copy-to-clipboard button on every code block.
+ *
+ * One of the highest-friction moments in a chat shell is "the model
+ * just spewed 30 lines of code; I want to paste it into my editor."
+ * Without a button the user has to long-press the bubble, select all,
+ * copy — which inside a horizontal scroll container is a chore.
+ *
+ * The button shows "Copy" then briefly flips to "Copied ✓" for
+ * confirmation. The confirmation uses a single `var copied by
+ * remember { mutableStateOf(false) }` keyed by `code` so a second
+ * distinct code block doesn't share the flag.
+ */
+@Composable
+private fun CodeCopyButton(code: String, language: String) {
+    val clipboard = LocalClipboardManager.current
+    val palette = LocalHermexPalette.current
+    var copied by remember(code) { mutableStateOf(false) }
+    androidx.compose.material3.TextButton(
+        onClick = {
+            clipboard.setText(AnnotatedString(code))
+            copied = true
+        },
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 10.dp,
+            vertical = 2.dp,
+        ),
+    ) {
+        if (copied) {
+            Text(
+                "Copied ✓",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.success,
+                fontWeight = FontWeight.SemiBold,
+            )
+        } else {
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Filled.ContentCopy,
+                contentDescription = null,
+                modifier = Modifier.height(12.dp).width(12.dp),
+                tint = palette.textSecondary,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "Copy",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textSecondary,
+            )
+        }
+    }
+    if (copied) {
+        androidx.compose.runtime.LaunchedEffect(code) {
+            kotlinx.coroutines.delay(1_500L)
+            copied = false
+        }
+    }
 }
