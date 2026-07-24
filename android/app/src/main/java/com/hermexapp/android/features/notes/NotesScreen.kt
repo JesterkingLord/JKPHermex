@@ -24,11 +24,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermexapp.android.persistence.NoteEntity
+import com.hermexapp.android.persistence.NoteStatus
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -89,6 +95,17 @@ import java.util.Date
 fun NotesScreen(
     onClose: () -> Unit,
     viewModel: NotesViewModel,
+    /**
+     * Wave 9 (AI Notes): when the user taps 🤖 Implement on a note,
+     * this callback fires with the resolved NoteEntity. The caller
+     * (MainActivity) is expected to drop the user into a chat with
+     * the composer pre-filled via [NotesViewModel.buildImplementationPrompt]
+     * — though the VM build is here so the NotesScreen can keep its
+     * own concerns tidy. When null, the 🤖 button is hidden so screens
+     * that don't have a chat to drop into (e.g. the Settings variant)
+     * don't render a dead-button affordance.
+     */
+    onImplementNote: ((NoteEntity) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -177,6 +194,11 @@ fun NotesScreen(
                     viewModel = viewModel,
                     state = state,
                     onClose = { editor = EditorState.Closed },
+                    onImplement = { note ->
+                        viewModel.setStatus(note.id, NoteStatus.ACTION)
+                        onImplementNote?.invoke(note)
+                        editor = EditorState.Closed
+                    },
                 )
             }
 
@@ -227,6 +249,13 @@ private sealed class EditorState {
  * NoteEditor — the small two-field card (title + body) that appears at
  * the top of the screen when [editor] is Open. Saves are debounced into
  * the VM via upsert(NoteEntity).
+ *
+ * Wave 9: gained the status chip (cycle on tap) and a 🤖 Implement
+ * button. The button becomes live when status=ACTION and routes
+ * through [onImplement] so the caller can put the note body into a
+ * chat composer. When [onImplement] is null the button is hidden —
+ * places that don't have a chat to drop into can use this editor
+ * without rendering a dead control.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -235,11 +264,13 @@ private fun NoteEditor(
     viewModel: NotesViewModel,
     state: com.hermexapp.android.features.notes.NotesViewModel.UiState,
     onClose: () -> Unit,
+    onImplement: (NoteEntity) -> Unit = {},
 ) {
     val existing = state.notes.firstOrNull { it.id == noteId }
     var title by remember(noteId) { mutableStateOf(existing?.title ?: "") }
     var body by remember(noteId) { mutableStateOf(existing?.body ?: "") }
     val colorHex = existing?.colorHex ?: com.hermexapp.android.features.notes.NotesViewModel.DEFAULT_COLOR_HEX
+    val status = existing?.status ?: NoteStatus.IDEA
 
     // Whenever the backing store changes (other edits, refresh), refresh
     // local field state ONLY when it differs — otherwise we'd overwrite
@@ -275,6 +306,7 @@ private fun NoteEditor(
                                 body = body,
                                 colorHex = colorHex,
                                 pinned = existing?.pinned == true,
+                                status = status,
                                 updatedAtMillis = System.currentTimeMillis(),
                                 createdAtMillis = existing?.createdAtMillis
                                     ?: System.currentTimeMillis(),
@@ -305,6 +337,7 @@ private fun NoteEditor(
                             body = it,
                             colorHex = colorHex,
                             pinned = existing?.pinned == true,
+                            status = status,
                             updatedAtMillis = System.currentTimeMillis(),
                             createdAtMillis = existing?.createdAtMillis
                                 ?: System.currentTimeMillis(),
@@ -315,8 +348,87 @@ private fun NoteEditor(
                 singleLine = false,
                 fontWeight = FontWeight.Normal,
             )
+            // Wave 9: status chip + 🤖 Implement button.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NoteStatusChip(
+                    currentStatus = status,
+                    onCycle = { next ->
+                        viewModel.setStatus(noteId, next)
+                    },
+                )
+                Spacer(Modifier.weight(1f))
+                val canImplement = existing != null
+                Button(
+                    onClick = { existing?.let(onImplement) },
+                    enabled = canImplement,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    modifier = Modifier.testTag("note_editor_implement"),
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when (status) {
+                            NoteStatus.ACTION -> "🤖 Implement"
+                            else -> "Mark action first"
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * Wave 9: tap-to-cycle status chip.
+ *
+ * The user is most likely going to flip through IDEA → PLAN → ACTION
+ * sequentially, so tap cycles to the next stage; long-press opens a
+ * picker. We only show the cycle (not the long-press) for now — the
+ * picker is reserved for a future wave where we'd have many statuses
+ * to choose from. Three statuses is fine to cycle through.
+ */
+@Composable
+private fun NoteStatusChip(
+    currentStatus: String,
+    onCycle: (String) -> Unit,
+) {
+    val display = NoteStatus.displayFor(currentStatus)
+    val next = NoteStatus.ALL.let { all ->
+        val idx = all.indexOf(currentStatus).coerceAtLeast(0)
+        all[(idx + 1) % all.size]
+    }
+    AssistChip(
+        onClick = { onCycle(next) },
+        label = {
+            Text(
+                "${display.glyph} ${display.label}",
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = when (currentStatus) {
+                NoteStatus.ACTION -> MaterialTheme.colorScheme.primary
+                NoteStatus.PLAN -> MaterialTheme.colorScheme.secondaryContainer
+                else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+            labelColor = when (currentStatus) {
+                NoteStatus.ACTION -> MaterialTheme.colorScheme.onPrimary
+                NoteStatus.PLAN -> MaterialTheme.colorScheme.onSecondaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+        ),
+        modifier = Modifier.testTag("note_status_chip_$currentStatus"),
+    )
 }
 
 @Composable
@@ -505,11 +617,23 @@ private fun NoteRow(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        formatRelative(note.updatedAtMillis),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            formatRelative(note.updatedAtMillis),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Wave 9: small status badge so users can tell at a
+                        // glance which of their notes are *actionable* (🤖)
+                        // vs. plans (🧭) vs. ideas (💡).
+                        if (!selectionMode && note.status != NoteStatus.IDEA) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                NoteStatus.displayFor(note.status).glyph,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
                 }
                 if (!selectionMode && note.pinned) {
                     Icon(Icons.Filled.PushPin, contentDescription = "Pinned", tint = MaterialTheme.colorScheme.primary)

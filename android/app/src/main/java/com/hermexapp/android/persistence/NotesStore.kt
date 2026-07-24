@@ -48,9 +48,43 @@ data class NoteEntity(
     val body: String,
     @ColumnInfo(name = "color_hex") val colorHex: String,
     val pinned: Boolean,
+    @ColumnInfo(name = "status") val status: String = NoteStatus.IDEA,
     @ColumnInfo(name = "updated_at_millis") val updatedAtMillis: Long,
     @ColumnInfo(name = "created_at_millis") val createdAtMillis: Long,
 )
+
+/**
+ * Wave 9 (2026-07-28) — note lifecycle stage.
+ *
+ *   * IDEA  – free-form scratch. The user is still collecting thoughts.
+ *   * PLAN  – the user thinks this is a recipe they might run someday,
+ *             but it isn't ready to be implemented yet.
+ *   * ACTION – the user has marked this as something to *do*, not just
+ *             to store. The "Implement with AI" button becomes live in
+ *             the editor; the user's chat composer can be pre-filled
+ *             with the note's body via the NotesScreen "🤖 Implement"
+ *             action.
+ *
+ * Persisted as a string for forward compatibility (new statuses can be
+ * added without a schema bump). UI surfaces a chip with the matching
+ * glyph and a one-tap switcher for the next two statuses; long-press
+ * lets the user pick any value.
+ */
+object NoteStatus {
+    const val IDEA = "idea"
+    const val PLAN = "plan"
+    const val ACTION = "action"
+
+    val ALL: List<String> = listOf(IDEA, PLAN, ACTION)
+
+    /** Short glyph + label combo used by the status chip in the editor. */
+    data class Display(val glyph: String, val label: String)
+    fun displayFor(status: String): Display = when (status) {
+        ACTION -> Display("⚡", "Action")
+        PLAN -> Display("🧭", "Plan")
+        else -> Display("💡", "Idea")
+    }
+}
 
 @Dao
 interface NotesDao {
@@ -69,6 +103,10 @@ interface NotesDao {
 
     @Query("UPDATE local_notes SET pinned = :pinned, updated_at_millis = :updatedAtMillis WHERE id = :id")
     suspend fun setPinned(id: String, pinned: Boolean, updatedAtMillis: Long)
+
+    /** Wave 9: stage marker. Defaults preserve the status column if absent. */
+    @Query("UPDATE local_notes SET status = :status, updated_at_millis = :updatedAtMillis WHERE id = :id")
+    suspend fun setStatus(id: String, status: String, updatedAtMillis: Long)
 
     @Query("DELETE FROM local_notes WHERE id = :id")
     suspend fun delete(id: String)
@@ -94,6 +132,7 @@ interface NoteStore {
     suspend fun get(id: String): NoteEntity?
     suspend fun upsert(note: NoteEntity)
     suspend fun setPinned(id: String, pinned: Boolean)
+    suspend fun setStatus(id: String, status: String)
     suspend fun delete(id: String)
     suspend fun count(): Int
 }
@@ -113,6 +152,8 @@ class RoomNoteStore(private val dao: NotesDao) : NoteStore {
     }
     override suspend fun setPinned(id: String, pinned: Boolean) =
         dao.setPinned(id, pinned, System.currentTimeMillis())
+    override suspend fun setStatus(id: String, status: String) =
+        dao.setStatus(id, status, System.currentTimeMillis())
     override suspend fun delete(id: String) = dao.delete(id)
     override suspend fun count(): Int = dao.count()
 }
@@ -144,6 +185,11 @@ class InMemoryNoteStore(
     override suspend fun setPinned(id: String, pinned: Boolean) {
         val cur = map[id] ?: return
         map[id] = cur.copy(pinned = pinned, updatedAtMillis = clock())
+        publish()
+    }
+    override suspend fun setStatus(id: String, status: String) {
+        val cur = map[id] ?: return
+        map[id] = cur.copy(status = status, updatedAtMillis = clock())
         publish()
     }
     override suspend fun delete(id: String) {

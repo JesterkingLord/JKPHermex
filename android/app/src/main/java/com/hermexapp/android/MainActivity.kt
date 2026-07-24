@@ -609,6 +609,25 @@ private fun renderScreen(
             com.hermexapp.android.features.notes.NotesScreen(
                 viewModel = notesVm,
                 onClose = { setScreen(Screen.SessionList) },
+                // Wave 9 (AI Notes): tapping 🤖 Implement on a note drops
+                // the user into a brand-new chat with the composer
+                // pre-filled with the implementation prompt. We use the
+                // existing `sharePrefill` channel so the chat screen
+                // adopts it on next mount, then navigate to a chat on
+                // the (about-to-be-created) session. Note this currently
+                // sends the *existing* new-chat session id; if a
+                // session is needed, the sessionList VM still has to
+                // allocate a new id — for now we re-use the empty
+                // "new chat" path the SessionList already exposes.
+                onImplementNote = { note ->
+                    val prompt = notesVm.buildImplementationPrompt(note)
+                    sharePrefill = prompt
+                    // Re-use the "next chat" navigation by routing through
+                    // SessionList's "new chat" entry point.
+                    MainActivity.pendingNewChatFromWidget = true
+                    container.sharedDraftStore.offer(prompt)
+                    setScreen(Screen.SessionList)
+                },
             )
         }
         Screen.Prompts -> {

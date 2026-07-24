@@ -124,10 +124,18 @@ interface CachedPayloadDao {
  * v1 creation in this migration adds the table without dropping any
  * data. If we ever need a v3 (renames, splits), write a real
  * Migration(1,2) object before bumping @Database.version.
+ *
+ * Wave 9 (2026-07-28): v2 → v3 adds the `status` column to `local_notes`.
+ * Notes carry an IDEA / PLAN / ACTION marker (defaults to IDEA for any
+ * row from an older build, since SQLite will fill with the column
+ * default). With `fallbackToDestructiveMigration` we don't need a
+ * Migration object for now — if a future release wants to preserve
+ * user notes across upgrades, add a Migration(2,3) object before
+ * bumping @Database.version.
  */
 @Database(
     entities = [CachedPayload::class, NoteEntity::class, PromptEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class HermexDatabase : RoomDatabase() {

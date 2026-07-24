@@ -106,6 +106,37 @@ class NotesViewModel(
         viewModelScope.launch { store.setPinned(id, !currentPinned) }
     }
 
+    /**
+     * Wave 9: cycle the note's lifecycle stage.
+     *
+     * The editor exposes a tap-to-cycle chip — IDEA → PLAN → ACTION →
+     * IDEA. Long-pressing the chip opens a picker for explicit selection.
+     * Set is delegated straight through so the store owns the timestamp;
+     * the VM doesn't double-bookkeep the value.
+     */
+    fun setStatus(id: String, status: String) {
+        viewModelScope.launch { store.setStatus(id, status) }
+    }
+
+    /**
+     * Wave 9: build the "implement this note" prompt we pre-fill the
+     * chat composer with when the user taps 🤖 Implement on a note.
+     * Returns a single string the caller drops into the composer (and
+     * optionally auto-sends).
+     */
+    fun buildImplementationPrompt(note: NoteEntity): String {
+        val title = note.title.takeIf { it.isNotBlank() }
+        val body = note.body.takeIf { it.isNotBlank() }
+        val header = if (title != null) "# ${title.trim()}\n\n" else ""
+        val bodyBlock = body?.trim().orEmpty()
+        return if (bodyBlock.isBlank()) {
+            "Follow this note (titled \"${title.orEmpty().ifBlank { "Untitled" }}\"):\n\n${header}— describe what you would do, step by step."
+        } else {
+            "Implement this note step by step. Follow each instruction exactly. " +
+                "Show your reasoning and ship clean diffs:\n\n${header}${bodyBlock}"
+        }
+    }
+
     fun delete(id: String) {
         viewModelScope.launch {
             store.delete(id)

@@ -170,4 +170,76 @@ class NotesViewModelTest {
             pinned = pinned,
             updatedAtMillis = now, createdAtMillis = now,
         )
+
+    // ─── Wave 9 (AI Notes) tests ─────────────────────────────────────
+
+    @Test fun `setStatus updates the note on disk`() = runTest(dispatcher) {
+        val vm = newVm()
+        now = 1000L
+        vm.upsert(mk("a"))
+        advanceUntilIdle()
+        vm.setStatus("a", "plan")
+        advanceUntilIdle()
+        assertEquals("plan", vm.uiState.value.notes.first { it.id == "a" }.status)
+    }
+
+    @Test fun `setStatus cycles through IDEA to PLAN to ACTION`() = runTest(dispatcher) {
+        val vm = newVm()
+        now = 1000L
+        vm.upsert(mk("a"))
+        advanceUntilIdle()
+        vm.setStatus("a", "plan")
+        advanceUntilIdle()
+        vm.setStatus("a", "action")
+        advanceUntilIdle()
+        assertEquals("action", vm.uiState.value.notes.first { it.id == "a" }.status)
+    }
+
+    @Test fun `buildImplementationPrompt wraps body with a step-by-step instruction`() {
+        val vm = newVm()
+        val prompt = vm.buildImplementationPrompt(
+            mk("a", title = "Add logout", body = "1. Add /logout route\n2. Clear cookies")
+        )
+        assertTrue(
+            "Prompt should carry the body block. Was: $prompt",
+            prompt.contains("1. Add /logout route") &&
+                prompt.contains("2. Clear cookies"),
+        )
+        assertTrue("Prompt should carry the title.", prompt.contains("Add logout"))
+        assertTrue("Prompt should ask for step-by-step reasoning.", prompt.contains("step by step"))
+    }
+
+    @Test fun `buildImplementationPrompt handles empty body but non-empty title`() {
+        val vm = newVm()
+        val prompt = vm.buildImplementationPrompt(mk("a", title = "Refactor login", body = ""))
+        assertTrue(
+            "Empty body should fall through to a plan note. Was: $prompt",
+            prompt.contains("Refactor login"),
+        )
+        // With no body, the prompt tells the LLM to *describe* what it
+        // would do rather than ask it to execute empty steps.
+        assertTrue(prompt.contains("describe what you would do"))
+    }
+
+    @Test fun `NoteStatus displayFor maps each value to a glyph and label`() {
+        assertEquals("💡", com.hermexapp.android.persistence.NoteStatus.displayFor("idea").glyph)
+        assertEquals("Idea",
+            com.hermexapp.android.persistence.NoteStatus.displayFor("idea").label)
+        assertEquals("🧭", com.hermexapp.android.persistence.NoteStatus.displayFor("plan").glyph)
+        assertEquals("Plan",
+            com.hermexapp.android.persistence.NoteStatus.displayFor("plan").label)
+        assertEquals("⚡", com.hermexapp.android.persistence.NoteStatus.displayFor("action").glyph)
+        assertEquals("Action",
+            com.hermexapp.android.persistence.NoteStatus.displayFor("action").label)
+        // Unknown values should fall back to "idea" with a 💡 glyph so a
+        // future schema-add never crashes the UI.
+        assertEquals("💡", com.hermexapp.android.persistence.NoteStatus.displayFor("garbage").glyph)
+    }
+
+    @Test fun `NoteStatus ALL ordering suggests cycle direction`() {
+        val all = com.hermexapp.android.persistence.NoteStatus.ALL
+        // The editor chip cycles through ALL in order, so the sequence
+        // should be readable left-to-right as "more actionable".
+        assertEquals(listOf("idea", "plan", "action"), all)
+    }
 }
