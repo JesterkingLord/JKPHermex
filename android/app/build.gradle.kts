@@ -80,8 +80,8 @@ android {
         applicationId = "com.hermexapp.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.8.7"
+        versionCode = 32
+        versionName = "0.8.8"
     }
 
     buildTypes {

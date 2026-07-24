@@ -51,7 +51,7 @@ import com.hermexapp.android.features.chat.ChatViewModel.TimelineEntry
 import com.hermexapp.android.ui.CircleButton
 import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexHeader
-import com.hermexapp.android.ui.JumpFab
+import com.hermexapp.android.ui.ScrollIndicatorOnly
 import com.hermexapp.android.ui.markdown.MarkdownText
 import com.hermexapp.android.ui.shareAsMarkdown
 import com.hermexapp.android.ui.theme.LocalHermexPalette
@@ -419,17 +419,21 @@ fun ChatScreen(
                     //      (not while scrolling), so the two halves
                     //      don't fight over the same screen real
                     //      estate.
-                    JumpFab(
+                    // Wave 9.8 — single yellow scroll indicator.
+                    //
+                    // Renamed from JumpFab: the prior "tap to jump"
+                    // affordance was removed entirely. The user
+                    // explicitly asked for the white button to be
+                    // deleted, not coexist with the scroll indicator.
+                    //
+                    // Visible while the user is scrolling, hidden 1s
+                    // after scrolling stops. No click handler, no
+                    // arrow direction. Just the small accent pill
+                    // that confirms "yes, you're scrolling."
+                    ScrollIndicatorOnly(
                         isScrolling = listState.isScrollInProgress,
                         contentIsScrollable = listState.canScrollForward ||
                             listState.canScrollBackward,
-                        firstVisibleIndex = listState.firstVisibleItemIndex,
-                        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
-                            .lastOrNull()?.index ?: 0,
-                        lastIndex = state.entries.lastIndex,
-                        onScrollToIndex = { target ->
-                            scope.launch { listState.animateScrollToItem(target) }
-                        },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 16.dp, bottom = 24.dp),
