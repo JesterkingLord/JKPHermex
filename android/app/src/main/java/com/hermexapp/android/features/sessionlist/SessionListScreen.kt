@@ -509,14 +509,15 @@ fun SessionListScreen(
             // right edge. Hidden when there are fewer than 20 items (no UX
             // FastScrollbar for the session list.
             //
-            // Wave 9.6 (2026-07-24): rewired against the new signature
-            // (LazyListState-driven, no item-height estimation). Letter
-            // jump group is preserved so dragging still snaps to A, B,
-            // C, ... letter boundaries. Without the letterIndex the
-            // helper would just compute fraction → index linearly.
+            // Wave 9.7 (2026-07-24): rewired against the new signature
+            // (LazyListState-driven, with lastVisibleIndex + scrollOffset
+            // for the bottom-snap fix). Letter jump group preserved.
             FastScrollbar(
                 itemCount = visibleSessions.size,
                 firstVisibleIndex = listState.firstVisibleItemIndex,
+                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()?.index ?: 0,
+                firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
                 visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
                 canScrollBackward = listState.canScrollBackward,
                 canScrollForward = listState.canScrollForward,

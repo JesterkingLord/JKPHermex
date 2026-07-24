@@ -356,15 +356,16 @@ fun ChatScreen(
                     }
                     // FastScrollbar for the chat timeline.
                     //
-                    // Wave 9.6 (2026-07-24): all item-size estimation is
-                    // gone. We feed the LazyListState's own pixel-perfect
-                    // edge flags (`canScrollBackward`, `canScrollForward`)
-                    // plus the canonical item-count fraction
-                    // (`firstVisibleIndex / (totalItemsCount - visibleCount)`).
-                    // This works regardless of how tall each message is.
+                    // Wave 9.7 (2026-07-24): added `lastVisibleIndex` and
+                    // `firstVisibleItemScrollOffsetPx` so the helper can
+                    // snap to fraction=1 when the last item is in the
+                    // viewport (the v0.8.6 screenshot's bug).
                     FastScrollbar(
                         itemCount = state.entries.size,
                         firstVisibleIndex = listState.firstVisibleItemIndex,
+                        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo
+                            .lastOrNull()?.index ?: 0,
+                        firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
                         visibleItemsCount = listState.layoutInfo.visibleItemsInfo.size,
                         canScrollBackward = listState.canScrollBackward,
                         canScrollForward = listState.canScrollForward,

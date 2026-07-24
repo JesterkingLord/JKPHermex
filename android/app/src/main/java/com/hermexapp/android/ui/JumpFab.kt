@@ -5,10 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -32,45 +29,57 @@ import com.hermexapp.android.ui.theme.LocalHermexPalette
 import kotlinx.coroutines.delay
 
 /**
- * Wave 9.6 (2026-07-24) — JumpFab rewritten to match the user-requested
- * UX verbatim. After the v0.8.5 build shipped with the navigation FAB
- * (at-edge show/hide), the user reported the actual desired behavior:
+ * Wave 9.7 (2026-07-24) — JumpFab rewritten to render **at most one**
+ * floating control at any moment, in response to the v0.8.6 screenshot
+ * regression: the user saw two pills (a yellow accent pill AND a white
+ * pill) stacked on the right side of the chat.
  *
- *   "I want it to show while scrolling, then hide 1 second after
- *    scrolling stops, and the scrollbar to reflect actual position."
+ * v0.8.6 had two separate `AnimatedVisibility` widgets — a yellow
+ * "scroll indicator" that pulsed while scrolling and a white
+ * "jump chip" that appeared after the grace window — stacked in a
+ * single Column. When both were visible simultaneously (any time you
+ * were off-edge AND had scrolled within the last second), the user saw
+ * two pills. The fix: **one widget, role-based content**.
  *
- * The JumpFab is now an **iOS-style scroll indicator**: visible while
- * the user is scrolling, hidden 1 second after scrolling stops. A
- * separate, smaller jump-to-top/jump-to-bottom chip lives next to it
- * and only appears once the list is settled at a non-edge position.
+ * ## Single-pill contract (enforced at the composable level)
  *
- * Implementation details:
+ * 1. `!contentIsScrollable` — no pills, ever (nothing to scroll).
  *
- *   * [decideScrollIndicatorVisibility] is the pure helper for the
- *     "am I visible **right now**?" question. It takes the LazyList's
- *     own `isScrolling` flag plus a `hideAfterScrollStop` boolean that
- *     flips `true` exactly once after a [HIDE_DELAY_MS] grace window.
+ * 2. `isScrolling == true` — show the **yellow pill** (accent color)
+ *    with an `↓` glyph at full opacity. This is the "yes, you're
+ *    scrolling" confirmation.
  *
- *   * The grace timer is driven by [LaunchedEffect] keyed on `isScrolling`
- *     and `contentIsScrollable`. When scrolling starts we flip
- *     `hideAfterScrollStop` back to `false` and cancel the timer; when
- *     scrolling stops we restart the timer.
+ * 3. `isScrolling == false`, within 1 s of last scroll, off an edge —
+ *    show the **yellow pill** during the grace window. Same pill, same
+ *    role: "you just scrolled."
  *
- *   * [decideJumpTarget] is the pure helper for the secondary chip's
- *     at-edge detection. Preserved as a separate concept so its tests
- *     still pin the old contract.
+ * 4. `isScrolling == false`, after 1 s grace, off an edge — show the
+ *    **white pill** (palette.pillBackground) with a directional glyph
+ *    (↓ if there's more content below, ↑ if scrolled up). Tap to jump.
  *
- *   * The at-edge hide-after-the-fact behavior is broken. The old
- *     "JumpFab should disappear when I'm at the bottom" was a bug; the
- *     user explicitly asked for a scroll indicator, not a navigation
- *     control. We keep the navigation affordance as a smaller, less
- *     prominent jump chip that's only shown when the list has settled
- *     (i.e., not while scrolling).
+ * 5. `isScrolling == false`, after 1 s grace, at-edge — show **no pill**.
+ *    The list is at the natural resting point; nothing to confirm.
+ *
+ * The previously-separate `decideJumpTarget()` is preserved as a
+ * helper that's still called by the unit tests, but the **single-pill**
+ * composable reads `decideScrollIndicatorVisibility()` and chooses
+ * what to render.
+ *
+ * ## Pure-helper split
+ *
+ *  - [decideScrollIndicatorVisibility] → boolean: do we show the
+ *    yellow "scrolling" pill? YES exactly while `isScrolling` is true
+ *    OR during the post-scroll grace window. (No role distinction —
+ *    the pill is always yellow when visible.)
+ *
+ *  - [decideJumpTarget] → enum: is there a useful jump from the
+ *    current position, and which direction? Tests pin the at-edge
+ *    contract separately.
  */
 private const val HIDE_DELAY_MS: Long = 1_000L
 
 /**
- * Decides whether the scroll indicator should be visible **right now**.
+ * Decides whether the yellow "scrolling" pill should be visible **right now**.
  *
  * Inputs:
  *   * [isScrolling] — from `LazyListState.isScrollInProgress`.
@@ -78,10 +87,10 @@ private const val HIDE_DELAY_MS: Long = 1_000L
  *     grace window has elapsed since the last `isScrolling=true`. The
  *     composable drives this via a single [LaunchedEffect].
  *   * [contentIsScrollable] — `LazyListState.canScrollForward ||
- *     LazyListState.canScrollBackward`. When false, the indicator is
+ *     LazyListState.canScrollBackward`. When false, the pill is
  *     permanently hidden (there's nothing to scroll).
  *
- * Returns `true` exactly when the indicator chip should paint.
+ * Returns `true` exactly when the yellow pill should paint.
  */
 fun decideScrollIndicatorVisibility(
     isScrolling: Boolean,
@@ -90,21 +99,19 @@ fun decideScrollIndicatorVisibility(
 ): Boolean {
     if (!contentIsScrollable) return false
     if (isScrolling) return true
-    // isScrolling == false; we're either in the 1s grace window or past it.
     return !hideAfterScrollStop
 }
 
 /**
- * Computes which direction the (secondary) jump chip should point and
- * the index it would scroll to. Pure function.
+ * At-edge probe for the jump chip. Pure function, exposed for unit tests.
  *
- * Contract:
- *   * Empty / single-item list (`lastIndex <= 0`): NONE.
- *   * At both edges (only possible with <= 1 item): NONE.
- *   * At top, not at bottom: BOTTOM.
- *   * At bottom, not at top: TOP.
- *   * Mid-list: BOTTOM (the dominant intent in long chat threads —
- *     "jump to latest").
+ * Returns:
+ *   * [JumpTarget.NONE] when there's nothing meaningful to jump to
+ *     (empty list, single-item list, or at-both-edges with no room).
+ *   * [JumpTarget.BOTTOM] when the user is at-or-near the top (room
+ *     to scroll down to latest).
+ *   * [JumpTarget.TOP] when the user is at-or-near the bottom and
+ *     there's history to scroll back to.
  */
 enum class JumpTarget { NONE, TOP, BOTTOM }
 
@@ -127,16 +134,72 @@ fun decideJumpTarget(
 }
 
 /**
- * Top-level JumpFab composable. Two halves:
+ * Decide what the JumpFab should be in this exact state.
  *
- *   1. The scroll indicator (round pulsing pill). Always shows while
- *      scrolling; hides 1s after scrolling stops.
- *   2. The jump chip (smaller, with directional arrow). Only shows
- *      when the list has settled (`!isScrolling`) AND the user is off
- *      one of the edges (i.e., there's room to jump either direction).
+ * Three-state model — at most one of these is true at any time, so
+ * the composable never renders two pills.
  *
- * The two halves are independently toggleable via [showIndicator] and
- * [showJumpChip] for tests + non-overlay callers.
+ *   * SCROLL_PILL — yellow pill, ↓ at full opacity. Confirms that the
+ *     user just scrolled or is currently scrolling.
+ *   * JUMP_CHIP — white pill, directional glyph (↑ or ↓). Tap to jump
+ *     to the far edge. Visible only after the 1 s grace, and only when
+ *     the user is currently off-edge.
+ *   * NONE — no pill. The list is at rest at an edge; nothing useful
+ *     to confirm or jump to.
+ */
+enum class JumpFabRole { SCROLL_PILL, JUMP_CHIP_BOTTOM, JUMP_CHIP_TOP, NONE }
+
+/**
+ * Pure function — at most one of `SCROLL_PILL`, `JUMP_CHIP_BOTTOM`,
+ * `JUMP_CHIP_TOP`, or `NONE` for any input combination.
+ *
+ * The v0.8.6 double-pill bug was caused by letting two independent
+ * computations both be visible at the same time. This function enforces
+ * mutual exclusion: when the SCROLL_PILL is on, the JUMP_CHIP is
+ * suppressed (and vice versa).
+ */
+fun decideJumpFabRole(
+    isScrolling: Boolean,
+    hideAfterScrollStop: Boolean,
+    contentIsScrollable: Boolean,
+    firstVisibleIndex: Int,
+    lastVisibleIndex: Int,
+    lastIndex: Int,
+    showJumpChip: Boolean = true,
+): JumpFabRole {
+    if (!contentIsScrollable) return JumpFabRole.NONE
+
+    // While scrolling, the yellow SCROLL_PILL wins outright. The chip
+    // is suppressed entirely — they don't share screen real estate.
+    if (isScrolling) return JumpFabRole.SCROLL_PILL
+
+    // In the 1 s grace window: still SCROLL_PILL (the indicator the
+    // user asked for).
+    if (!hideAfterScrollStop) return JumpFabRole.SCROLL_PILL
+
+    // Past the grace window. Decide whether a JUMP_CHIP helps.
+    if (!showJumpChip) return JumpFabRole.NONE
+    return when (
+        decideJumpTarget(
+            firstVisibleIndex = firstVisibleIndex,
+            lastVisibleIndex = lastVisibleIndex,
+            lastIndex = lastIndex,
+        )
+    ) {
+        JumpTarget.TOP -> JumpFabRole.JUMP_CHIP_TOP
+        JumpTarget.BOTTOM -> JumpFabRole.JUMP_CHIP_BOTTOM
+        JumpTarget.NONE -> JumpFabRole.NONE
+    }
+}
+
+/**
+ * The JumpFab composable. Renders **at most one** floating pill.
+ *
+ * Behavior is driven by [decideJumpFabRole]:
+ *   * SCROLL_PILL        → yellow accent pill, ↓ icon, full opacity.
+ *   * JUMP_CHIP_BOTTOM    → white pill, ↓ icon, clickable to jump to bottom.
+ *   * JUMP_CHIP_TOP       → white pill, ↑ icon, clickable to jump to top.
+ *   * NONE                → composable returns early, no rendering.
  */
 @Composable
 fun JumpFab(
@@ -153,10 +216,7 @@ fun JumpFab(
 ) {
     if (!showIndicator && !showJumpChip) return
 
-    // Single LaunchedEffect keyed on the inputs the timer depends on.
-    // When scrolling starts, this coroutine restarts and cancels the
-    // previous hide timer. When scrolling stops, it starts a new timer
-    // that flips hideAfterScrollStop = true after the grace window.
+    // Single LaunchedEffect drives the 1-second hide-after-scroll-stop.
     var hideAfterScrollStop by remember { mutableStateOf(false) }
     LaunchedEffect(isScrolling, contentIsScrollable) {
         if (!contentIsScrollable) {
@@ -164,58 +224,47 @@ fun JumpFab(
             return@LaunchedEffect
         }
         if (isScrolling) {
+            // Cancels the pending hide timer; recreating from scratch.
             hideAfterScrollStop = false
             return@LaunchedEffect
         }
-        // Scrolling just stopped. Start the grace timer.
+        // Scrolling just stopped → start grace timer.
         hideAfterScrollStop = false
         delay(hideDelayMs)
         hideAfterScrollStop = true
     }
-    val indicatorVisible = showIndicator && decideScrollIndicatorVisibility(
+
+    val role = decideJumpFabRole(
         isScrolling = isScrolling,
         hideAfterScrollStop = hideAfterScrollStop,
         contentIsScrollable = contentIsScrollable,
+        firstVisibleIndex = firstVisibleIndex,
+        lastVisibleIndex = lastVisibleIndex,
+        lastIndex = lastIndex,
+        showJumpChip = showJumpChip && showIndicator, // both default-on
     )
-
-    // Secondary jump chip — only when settled, off an edge.
-    val jumpTarget = if (showJumpChip) {
-        decideJumpTarget(
-            firstVisibleIndex = firstVisibleIndex,
-            lastVisibleIndex = lastVisibleIndex,
-            lastIndex = lastIndex,
-        )
-    } else JumpTarget.NONE
-    val jumpingToBottom = jumpTarget == JumpTarget.BOTTOM
-    val chipVisible = jumpTarget != JumpTarget.NONE && !isScrolling
 
     val palette = LocalHermexPalette.current
 
-    Column(
+    AnimatedVisibility(
+        visible = role != JumpFabRole.NONE,
+        enter = fadeIn(animationSpec = tween(140)),
+        exit = fadeOut(animationSpec = tween(140)),
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        horizontalAlignment = Alignment.End,
     ) {
-        AnimatedVisibility(
-            visible = indicatorVisible,
-            enter = fadeIn(animationSpec = tween(140)),
-            exit = fadeOut(animationSpec = tween(durationMillis = hideDelayMs.toInt())),
-        ) {
-            ScrollIndicatorPill(isScrolling = isScrolling)
-        }
-        AnimatedVisibility(
-            visible = chipVisible,
-            enter = fadeIn(animationSpec = tween(140)),
-            exit = fadeOut(animationSpec = tween(140)),
-        ) {
-            JumpChip(
-                jumpingToBottom = jumpingToBottom,
-                onClick = {
-                    val target = if (jumpingToBottom) lastIndex else 0
-                    onScrollToIndex(target)
-                },
+        when (role) {
+            JumpFabRole.SCROLL_PILL -> ScrollIndicatorPill(isScrolling = false)
+            JumpFabRole.JUMP_CHIP_BOTTOM -> JumpChip(
+                jumpingToBottom = true,
+                onClick = { onScrollToIndex(lastIndex) },
                 palette = palette,
             )
+            JumpFabRole.JUMP_CHIP_TOP -> JumpChip(
+                jumpingToBottom = false,
+                onClick = { onScrollToIndex(0) },
+                palette = palette,
+            )
+            JumpFabRole.NONE -> { /* unreachable: AnimatedVisibility is gated on role != NONE */ }
         }
     }
 }
@@ -224,10 +273,12 @@ fun JumpFab(
 private fun ScrollIndicatorPill(isScrolling: Boolean) {
     val palette = LocalHermexPalette.current
     Surface(
-        color = palette.accent.copy(alpha = if (isScrolling) 1f else 0.85f),
+        // Yellow accent for the scroll indicator — same color as
+        // the active fab in the live-debug chip, intentional.
+        color = palette.accent,
         contentColor = Color.White,
         shape = CircleShape,
-        shadowElevation = if (isScrolling) 10.dp else 4.dp,
+        shadowElevation = 8.dp,
         modifier = Modifier
             .size(40.dp)
             .testTag("jumpFab.scrollIndicator"),
@@ -236,7 +287,7 @@ private fun ScrollIndicatorPill(isScrolling: Boolean) {
             Icon(
                 imageVector = Icons.Filled.ArrowDownward,
                 contentDescription = "Scrolling",
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -264,7 +315,7 @@ private fun JumpChip(
                     else Icons.Filled.ArrowUpward,
                 contentDescription = if (jumpingToBottom) "Jump to latest message"
                     else "Jump to top",
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.size(24.dp),
             )
         }
     }

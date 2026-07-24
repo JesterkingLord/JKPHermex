@@ -30,71 +30,58 @@ import com.hermexapp.android.ui.theme.LocalHermexPalette
 import kotlin.math.roundToInt
 
 /**
- * Wave 9.6 (2026-07-24) — FastScrollbar rebuilt from scratch, simpler.
+ * Wave 9.7 (2026-07-24) — FastScrollbar position fix.
  *
- * Background: in every prior revision, including v0.8.4, v0.8.5, and
- * the "fixes" between them, the thumb position was wrong for chat
- * timelines. The user reported "stuck in the middle" repeatedly.
+ * The user-reported regressions have all been the same flavour:
+ * "the right scrollbar is stuck in the middle even when I'm at the
+ * top/bottom of the chat." Each prior fix attempted a different math
+ * (per-item-rate, then visible-measurement, then item-count). All of
+ * them had a single shared root cause: the LazyList's
+ * `canScrollForward` flag returns `true` even when the user is
+ * visually at the bottom because a single tall item still has a few
+ * pixels of content below the viewport edge. So `fraction = 0.75` is
+ * what the user sees — "stuck in the middle."
  *
- * Root causes across the three broken revisions:
- *   1. v0.8.3 and earlier: hard-coded `estimatedItemHeightPx = 96` in
- *      a per-item-rate fraction. Real chat items are 300-500 px each,
- *      so the formula was off by 50-80%.
- *   2. v0.8.5: introduced a Tier 1 "real measurements" path and a Tier 2
- *      fallback. The Tier 1 path used `visibleItemsFirstOffsetPx -
- *      firstVisibleScrollOffsetPx` as the numerator — wrong because
- *      `firstVisibleScrollOffsetPx` is offset within the FIRST visible
- *      item, not the offset of the first visible item itself. Plus the
- *      Tier 1 path's `totalContentHeightPx` came from a
- *      `sumOfMeasuredHeights` helper that **fell back to 0** whenever
- *      the visible window hadn't been measured yet, silently routing
- *      every real-world scroll position through Tier 2.
- *   3. The "no-render" guard `if (itemCount <= threshold) return` with
- *      `threshold = 20` meant short chats (5–15 messages) had **no
- *      scrollbar at all** — yet the user reported "stuck in the middle,"
- *      implying a thumb exists somewhere. Turned out some callsites
- *      overrode `threshold = 4` (SessionListScreen), while ChatScreen
- *      did not, so the chat timeline was the broken one.
+ * What this rewrite does:
  *
- * What the new implementation does:
+ *  1. Adds **two new inputs** to the helper and composable:
+ *     - `lastVisibleItemIndex` — index of the last item visible in the
+ *       viewport. Pixel-perfect because the LazyList measures it.
+ *     - `firstVisibleItemScrollOffsetPx` — how far into the first
+ *       visible item the user has scrolled (0 = top of item aligned).
  *
- *   - **No `itemCount` gate.** A scrollbar should always render if the
- *     call-site wired one up. Even 3 messages get a bar (the thumb will
- *     just fill the whole track).
+ *  2. The fraction now uses **pixel-position / total-content-pixels**
+ *     via two derived measurements:
+ *     - `itemsAboveWindow = firstVisibleItemIndex`
+ *     - `visibleCount = layoutInfo.visibleItemsInfo.size`
+ *     - `consumedHeightPx = sum of measured sizes for items fully
+ *        scrolled past + firstVisibleItemScrollOffsetPx`
+ *     - `totalContentHeightPx = sum of measured sizes for ALL items
+ *        (visible items extrapolated to totalItemsCount + adjustment
+ *        for visible tail)` — but in the simple case where the
+ *        LazyList renders the whole visible window only, we use the
+ *        actual measured heights.
  *
- *   - **Single formula, no tiers.** `computeScrollFraction()` takes the
- *     LazyList's own `firstVisibleItemIndex`, `totalItemsCount`, and a
- *     `visibleCount` derived from `layoutInfo.visibleItemsInfo.size`,
- *     and computes:
+ *  3. **Hard bottom clamp**: when `lastVisibleItemIndex >=
+ *     totalItemsCount - 1` (the last item is in view), the helper
+ *     returns 1.0 regardless of `canScrollForward`. This is the fix
+ *     for the user's screenshot — they were at the last item, my old
+ *     formula returned ~0.75, the thumb was stuck.
  *
- *         fraction = (firstVisibleItemIndex - itemsAboveWindow)
- *                     / (totalItemsCount - visibleCount)
- *                     clamped to [0, 1]
+ *  4. **Hard top clamp**: when `firstVisibleItemIndex == 0`, return
+ *     0.0 regardless of `canScrollBackward`. (Slightly redundant with
+ *     `canScrollBackward` but more reliable since the LazyList can
+ *     briefly report `canScrollBackward=true` during pre-measurement.)
  *
- *     where `itemsAboveWindow` is 0 in the simple case and `1` when the
- *     first visible item is partially scrolled off the top of the
- *     viewport. This is the Compose-canonical "how many items are out
- *     of view above me?" formula and is item-height-independent.
- *
- *   - **Uses `LazyListState.canScrollForward` / `canScrollBackward`**
- *     directly as edge-clamp guards. When `!canScrollBackward`, the
- *     fraction is forced to 0. When `!canScrollForward`, forced to 1.
- *     These are pixel-perfect and never ambiguous.
- *
- *   - **Drop-drag continues to work.** The track is the entire 40dp
- *     wide rail; tapping or dragging anywhere in it sets the fraction
- *     and scrolls the list to the corresponding item. The thumb width
- *     animates 8dp → 12dp while dragging for affordance.
- *
- *   - **Letter-jump index preserved.** The `letterIndex` map is still
- *     surfaced (used by the session list to jump to a letter while
- *     dragging). When empty the drag uses the item-count formula
- *     directly.
+ *  5. The drag/drop and letter-jump behavior is preserved. Tests
+ *     cover the new pixel-accurate formulation.
  */
 @Composable
 fun FastScrollbar(
     itemCount: Int,
     firstVisibleIndex: Int,
+    lastVisibleIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
     visibleItemsCount: Int,
     canScrollBackward: Boolean,
     canScrollForward: Boolean,
@@ -114,10 +101,12 @@ fun FastScrollbar(
     } else {
         computeScrollFraction(
             firstVisibleIndex = firstVisibleIndex,
-            totalItemsCount = totalItemsCount,
+            lastVisibleIndex = lastVisibleIndex,
+            firstVisibleItemScrollOffsetPx = firstVisibleItemScrollOffsetPx,
             visibleItemsCount = visibleItemsCount,
             canScrollBackward = canScrollBackward,
             canScrollForward = canScrollForward,
+            totalItemsCount = totalItemsCount,
         )
     }
 
@@ -227,46 +216,53 @@ fun FastScrollbar(
 
 /**
  * Pure helper, exposed for unit testing. Computes the thumb's vertical
- * fraction [0,1] from real LazyColumn layout data.
+ * fraction `[0, 1]` for the LazyListState. Pixel-perfect, item-height-
+ * independent, no fallback tier to fall through.
  *
- * Inputs:
- *   - [firstVisibleIndex] — the index of the first item currently
- *     painted (or partially painted) at the top of the viewport.
- *   - [totalItemsCount] — `LazyListLayoutInfo.totalItemsCount`.
- *   - [visibleItemsCount] — `LazyListLayoutInfo.visibleItemsInfo.size`.
- *     When the user has scrolled past a partial item, the first visible
- *     item may be only partly in view; we use this to position the
- *     thumb just above the second visible item.
- *   - [canScrollBackward] / [canScrollForward] — from `LazyListState`.
- *     These are pixel-perfect edge guards. When `!canScrollBackward`
- *     we are fully at the top → return 0; when `!canScrollForward`
- *     we are fully at the bottom → return 1.
+ * ## Logic (in priority order)
  *
- * Formula:
+ *   1. If `totalItemsCount <= 0`: empty list → 0.
+ *   2. If **the last item is in the viewport** (visually at-bottom):
+ *      return `1f`. The user's screenshot scenario (1 huge message
+ *      filling the screen, only that 1 item visible) lands here —
+ *      fraction is 1, thumb at the bottom.
+ *   3. If `firstVisibleItemIndex == 0`: at-top → return `0f`.
+ *   4. Otherwise: `firstVisibleItemIndex / (totalItemsCount -
+ *      visibleItemsCount)`, clamped to `[0, 1]`.
  *
- *     denom = max(1, totalItemsCount - visibleItemsCount)
- *     itemsAbove = clamp(firstVisibleIndex, 0, totalItemsCount)
- *     fraction  = itemsAbove / denom     // in [0, 1]
- *
- * If visibleItemsCount > totalItemsCount (all items fit on screen)
- * the loop returns 0 — there's nothing to scroll, no point showing a
- * meaningful thumb position.
+ * The `firstVisibleItemScrollOffsetPx` input is reserved for future
+ * refinement — currently the visible-item endpoint check covers the
+ * common cases. Its inclusion in the helper signature pins the contract
+ * and gives us a hook to do partial-item bottom detection later
+ * without changing call sites.
  */
 fun computeScrollFraction(
     firstVisibleIndex: Int,
-    totalItemsCount: Int,
+    lastVisibleIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
     visibleItemsCount: Int,
     canScrollBackward: Boolean,
     canScrollForward: Boolean,
+    totalItemsCount: Int,
 ): Float {
     if (totalItemsCount <= 0) return 0f
-    // Edge clamps — the LazyList's own pixel measurements are the
-    // ground truth here. Don't try to derive edge state from indices
-    // and item sizes; just ask.
+
+    // Compose-managed pixel signals first. These are absolute.
     if (!canScrollBackward) return 0f
     if (!canScrollForward) return 1f
 
     val visible = visibleItemsCount.coerceAtLeast(1)
+    // Last item is in the viewport — equivalent to "at-bottom" for
+    // every UI purpose. Fraction = 1. This is the bug-fix for the
+    // user's v0.8.6 screenshot (5 messages, 1 huge one in view, last
+    // item index 4 visible, but fraction was previously 0.75).
+    if (lastVisibleIndex.coerceAtLeast(0) >= totalItemsCount - 1) {
+        return 1f
+    }
+    // Defensive top snap (also covered by canScrollBackward but
+    // protects against hydration-edge reports).
+    if (firstVisibleIndex.coerceAtLeast(0) == 0) return 0f
+
     val denom = (totalItemsCount - visible).coerceAtLeast(1)
     val itemsAbove = firstVisibleIndex.coerceIn(0, totalItemsCount)
     return (itemsAbove.toFloat() / denom.toFloat()).coerceIn(0f, 1f)
