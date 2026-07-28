@@ -61,6 +61,7 @@ import com.hermexapp.android.ui.CircleButton
 import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexHeader
 import com.hermexapp.android.ui.JumpToLatestButton
+import com.hermexapp.android.ui.jumpToLatestTarget
 import com.hermexapp.android.ui.markdown.MarkdownText
 import com.hermexapp.android.ui.shareAsMarkdown
 import com.hermexapp.android.ui.theme.LocalHermexPalette
@@ -167,7 +168,9 @@ fun ChatScreen(
         previousSize.intValue = current
         if (grew && state.entries.isNotEmpty()) {
             if (isAtBottom) {
-                listState.animateScrollToItem(state.entries.lastIndex)
+                jumpToLatestTarget(state.entries.size)?.let { target ->
+                    listState.animateScrollToItem(target.itemIndex, target.itemScrollOffsetPx)
+                }
                 viewModel.markSeen()
             } else {
                 viewModel.bumpUnreadCount()
@@ -410,8 +413,13 @@ fun ChatScreen(
                             .padding(end = 56.dp, bottom = 24.dp),
                         onClick = {
                             scope.launch {
-                                if (listState.canScrollForward && state.entries.isNotEmpty()) {
-                                    listState.animateScrollToItem(state.entries.lastIndex)
+                                if (listState.canScrollForward) {
+                                    jumpToLatestTarget(state.entries.size)?.let { target ->
+                                        listState.animateScrollToItem(
+                                            target.itemIndex,
+                                            target.itemScrollOffsetPx,
+                                        )
+                                    }
                                     viewModel.markSeen()
                                 }
                             }
