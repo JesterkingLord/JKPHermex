@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -109,6 +110,7 @@ fun FileBrowserScreen(viewModel: WorkspaceViewModel, onClose: () -> Unit) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .clickable {
                                     val path = entry.path ?: return@clickable
                                     if (entry.isBrowsableDirectory) viewModel.loadDirectory(path)
@@ -154,7 +156,12 @@ fun GitScreen(viewModel: WorkspaceViewModel, onClose: () -> Unit) {
                     if (state.openDiff != null) viewModel.closeDiff() else onClose()
                 },
                 actions = {
-                    CircleButton(onClick = { viewModel.loadGit() }, icon = Icons.Filled.Refresh, size = 40)
+                    CircleButton(
+                        onClick = { viewModel.loadGit() },
+                        contentDescription = "Refresh Git workspace",
+                        icon = Icons.Filled.Refresh,
+                        size = 40,
+                    )
                 },
             )
         },
@@ -237,6 +244,7 @@ private fun GitStatusList(status: com.hermexapp.android.model.GitStatus, viewMod
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .combinedClickable(
                                 onClick = { file.path?.let { viewModel.openDiff(it, file.staged) } },
                                 onLongClick = { actionFile = file },

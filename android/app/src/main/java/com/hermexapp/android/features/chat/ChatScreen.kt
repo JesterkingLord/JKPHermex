@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -525,6 +526,7 @@ private fun TimelineEntryView(
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .widthIn(max = 320.dp)
+                        .heightIn(min = 48.dp)
                         .combinedClickable(
                             onClick = { showEdit = true },
                             onLongClick = {
@@ -566,13 +568,16 @@ private fun TimelineEntryView(
         is TimelineEntry.AssistantMessage -> {
             var showActions by remember(entry.id) { mutableStateOf(false) }
             Column(
-                modifier = Modifier.combinedClickable(
-                    onClick = { showActions = true },
-                    onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        showActions = true
-                    },
-                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .combinedClickable(
+                        onClick = { showActions = true },
+                        onLongClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showActions = true
+                        },
+                    ),
             ) {
                 com.hermexapp.android.ui.markdown.MarkdownText(
                     text = entry.text + if (entry.isStreaming) " ▍" else "",
@@ -605,9 +610,15 @@ private fun TimelineEntryView(
             ) {
                 Column(
                     modifier = Modifier
-                        .let { if (hasPreview) it.clickable { userToggled = !expanded } else it }
-                        .padding(12.dp)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .let {
+                            if (hasPreview) {
+                                it.heightIn(min = 48.dp).clickable { userToggled = !expanded }
+                            } else {
+                                it
+                            }
+                        }
+                        .padding(12.dp),
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -688,6 +699,8 @@ private fun ThinkingCard(
     ) {
         Column(
             modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clickable(onClick = { userToggled = !(expanded) })
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),

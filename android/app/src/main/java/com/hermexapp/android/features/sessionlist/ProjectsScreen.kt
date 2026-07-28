@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -213,6 +214,7 @@ private fun ProjectSessionRow(session: SessionSummary, onClick: () -> Unit) {
         session.title?.ifBlank { null } ?: "Untitled session",
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .padding(start = 46.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
         style = MaterialTheme.typography.bodyMedium,

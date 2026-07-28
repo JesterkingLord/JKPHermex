@@ -12,17 +12,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,8 +44,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,12 +65,31 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class ComposerPrimaryAction { SEND, STOP, DISABLED_SEND }
+
+fun composerPrimaryAction(isStreaming: Boolean, hasDraft: Boolean): ComposerPrimaryAction = when {
+    isStreaming && !hasDraft -> ComposerPrimaryAction.STOP
+    hasDraft -> ComposerPrimaryAction.SEND
+    else -> ComposerPrimaryAction.DISABLED_SEND
+}
+
+/** Keep system-button clearance only while the software keyboard is absent. */
+fun shouldApplyComposerNavigationBarPadding(imeVisible: Boolean): Boolean = !imeVisible
+
+/** Match modern chat composers so Gboard renders its candidate toolbar when empty. */
+fun chatComposerKeyboardOptions(): KeyboardOptions = KeyboardOptions(
+    capitalization = KeyboardCapitalization.Sentences,
+)
+
 /**
  * The iOS composer: one large rounded dark container holding the text field
  * ("Ask anything... /commands") and a control row (+ attach, model selector,
  * send circle), with workspace/profile pills beneath it.
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+)
 @Composable
 fun ComposerBar(
     viewModel: ChatViewModel,
@@ -104,7 +139,13 @@ fun ComposerBar(
             // The Scaffold root owns `imePadding()`, which already raises
             // the composer when the keyboard appears — so this only adds
             // space when the keyboard is *down*.
-            .navigationBarsPadding()
+            .then(
+                if (shouldApplyComposerNavigationBarPadding(WindowInsets.isImeVisible)) {
+                    Modifier.navigationBarsPadding()
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -117,6 +158,7 @@ fun ComposerBar(
                 BasicTextField(
                     value = state.composerText,
                     onValueChange = viewModel::updateComposerText,
+                    keyboardOptions = chatComposerKeyboardOptions(),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     textStyle = TextStyle(
                         color = MaterialTheme.colorScheme.onSurface,
@@ -160,45 +202,53 @@ fun ComposerBar(
 
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        if (state.isUploadingAttachment) "…" else "+",
-                        fontSize = 24.sp,
-                        color = palette.textSecondary,
-                        modifier = Modifier.clickable(enabled = !state.isUploadingAttachment) {
+                    IconButton(
+                        onClick = {
                             imagePicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                             )
                         },
-                    )
+                        enabled = !state.isUploadingAttachment,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        if (state.isUploadingAttachment) {
+                            Text("…", color = palette.textSecondary, fontSize = 20.sp)
+                        } else {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Attach image",
+                                tint = palette.textSecondary,
+                            )
+                        }
+                    }
                     SelectorText(
                         label = (config.selectedModelDisplayName ?: "model").take(14),
                         onClick = { openPicker = PickerKind.MODEL },
+                        modifier = Modifier.weight(1f),
                     )
-                    SelectorText(
-                        label = "⚡ ${reasoningShortLabel(state.selectedReasoningEffort)}",
-                        onClick = { openPicker = PickerKind.REASONING },
-                    )
-                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
 
                     // Voice dictation → populates the composer only (iOS voice-input contract).
                     if (voice.isAvailable) {
-                        Text(
-                            if (voice.isListening) "◉" else "🎤",
-                            fontSize = 20.sp,
-                            color = if (voice.isListening) palette.destructive else palette.textSecondary,
-                            modifier = Modifier.clickable {
-                                if (voice.isListening) voice.stop() else voice.start()
-                            },
-                        )
+                        IconButton(
+                            onClick = { if (voice.isListening) voice.stop() else voice.start() },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = if (voice.isListening) "Stop dictation" else "Start dictation",
+                                tint = if (voice.isListening) palette.destructive else palette.textSecondary,
+                            )
+                        }
                     }
 
                     // Send when there's a draft; stop when idle-handed mid-run.
-                    val showStop = state.isStreaming &&
-                        state.composerText.isBlank() && state.attachments.isEmpty()
-                    val canSend = state.composerText.isNotBlank() || state.attachments.isNotEmpty()
+                    val hasDraft = state.composerText.isNotBlank() || state.attachments.isNotEmpty()
+                    val primaryAction = composerPrimaryAction(state.isStreaming, hasDraft)
+                    val showStop = primaryAction == ComposerPrimaryAction.STOP
+                    val canSend = primaryAction == ComposerPrimaryAction.SEND
                     // Long-press to open the insert palette. We map this to the
                     // Show ↑, not Show ■, so a long-press during a run does
                     // nothing — it's discoverable, but doesn't conflict with the
@@ -207,11 +257,12 @@ fun ComposerBar(
                     val longPressEnabled = onLongPressSend != null && !showStop && canSend
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(
-                                if (showStop) palette.destructive else palette.control,
-                                CircleShape,
-                            )
+                            .size(48.dp)
+                            .semantics {
+                                contentDescription = if (showStop) "Stop response" else "Send message"
+                                role = Role.Button
+                                if (!enabled) disabled()
+                            }
                             .then(
                                 if (longPressEnabled) {
                                     Modifier.combinedClickable(
@@ -244,12 +295,25 @@ fun ComposerBar(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            if (showStop) "■" else "↑",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = if (showStop) 14.sp else 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(
+                                    if (showStop) palette.destructive else palette.control,
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                if (showStop) Icons.Filled.Stop else Icons.Filled.ArrowUpward,
+                                contentDescription = null,
+                                tint = if (enabled) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    palette.textSecondary
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -257,22 +321,28 @@ fun ComposerBar(
 
         // Workspace + profile pills under the composer, like iOS.
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             PillChip(
-                text = "📁 ${
+                text = "Reasoning: ${reasoningShortLabel(state.selectedReasoningEffort)}",
+                onClick = { openPicker = PickerKind.REASONING },
+            )
+            PillChip(
+                text = "Workspace: ${
                     ((config.selectedWorkspace ?: config.lastWorkspace)
                         ?.substringAfterLast('/') ?: "workspace").take(16)
-                } ⌄",
+                }",
                 onClick = { openPicker = PickerKind.WORKSPACE },
             )
             PillChip(
-                text = "👤 ${(config.selectedProfile ?: config.activeProfile ?: "Default").take(14)} ⌄",
+                text = "Profile: ${(config.selectedProfile ?: config.activeProfile ?: "Default").take(14)}",
                 onClick = { openPicker = PickerKind.PROFILE },
             )
             PillChip(
-                text = "${if (state.showReasoning) "🧠" else "💭"} show thinking ${if (state.showReasoning) "on" else "off"}",
+                text = "Thinking: ${if (state.showReasoning) "on" else "off"}",
                 onClick = { viewModel.setShowReasoning(!state.showReasoning) },
             )
         }
@@ -396,24 +466,37 @@ private fun reasoningSublabel(effort: ReasoningEffort): String? = when (effort) 
 }
 
 @Composable
-private fun SelectorText(label: String, onClick: () -> Unit) {
+private fun SelectorText(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val palette = LocalHermexPalette.current
-    Text(
-        "$label ⌄",
-        style = MaterialTheme.typography.labelLarge,
-        color = palette.textSecondary,
-        modifier = Modifier.clickable(onClick = onClick),
-        maxLines = 1,
-    )
+    Surface(
+        color = palette.bubble,
+        shape = CircleShape,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
 private fun PillChip(text: String, onClick: () -> Unit) {
     val palette = LocalHermexPalette.current
-    Surface(color = palette.card, shape = CircleShape, onClick = onClick) {
+    Surface(
+        color = palette.card,
+        shape = CircleShape,
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp),
+    ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -440,6 +523,7 @@ fun AttachmentStrip(state: ChatViewModel.UiState, viewModel: ChatViewModel) {
                 color = palette.card,
                 shape = CircleShape,
                 onClick = { viewModel.removeAttachment(attachment) },
+                modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(
                     "${if (attachment.isImage) "🖼 " else "📄 "}${attachment.name}  ✕",
@@ -469,6 +553,7 @@ fun SlashSuggestionList(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .clickable { onPick(command) }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
