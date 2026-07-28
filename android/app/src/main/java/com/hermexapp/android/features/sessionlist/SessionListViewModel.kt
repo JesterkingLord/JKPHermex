@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hermexapp.android.model.SessionSummary
 import com.hermexapp.android.network.ApiError
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -15,6 +16,15 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+fun filterSessions(
+    sessions: List<SessionSummary>,
+    mode: SessionListViewModel.FilterMode,
+): List<SessionSummary> = when (mode) {
+    SessionListViewModel.FilterMode.All -> sessions
+    SessionListViewModel.FilterMode.Pinned -> sessions.filter { it.pinned == true }
+    SessionListViewModel.FilterMode.Archived -> sessions.filter { it.archived == true }
+}
 
 class SessionListViewModel(
     private val repository: SessionRepository,
@@ -118,7 +128,6 @@ class SessionListViewModel(
                 it.copy(
                     sessions = result.sessions,
                     isFromCache = result.fromCache,
-                    isLoading = false,
                     // Clear the last-failed marker on a successful refresh;
                     // a previous failure should not bleed into the next
                     // attempt's empty state.
@@ -130,10 +139,24 @@ class SessionListViewModel(
             _uiState.update {
                 it.copy(
                     errorMessage = e.userMessage,
-                    isLoading = false,
                     lastFailedServer = serverAtRequestTime,
                 )
             }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (unexpected: Exception) {
+            // Repository boundaries include local Room/cache work as well as
+            // HTTP. An unexpected local failure must become a retryable UI
+            // state instead of escaping the coroutine and leaving the pull-
+            // to-refresh indicator spinning forever.
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Sessions couldn't be loaded. Pull down to retry.",
+                    lastFailedServer = serverAtRequestTime,
+                )
+            }
+        } finally {
+            _uiState.update { it.copy(isLoading = false) }
         }
         // Projects are best-effort: never block or error the session list on them.
         runCatching { repository.loadProjects() }.getOrNull()?.let { projects ->
@@ -425,9 +448,5 @@ class SessionListViewModel(
      * owns the actual ordering.
      */
     val filteredSessions: List<SessionSummary>
-        get() = when (_uiState.value.filterMode) {
-            FilterMode.All -> _uiState.value.sessions
-            FilterMode.Pinned -> _uiState.value.sessions.filter { it.pinned == true }
-            FilterMode.Archived -> _uiState.value.sessions.filter { it.archived == true }
-        }
+        get() = filterSessions(_uiState.value.sessions, _uiState.value.filterMode)
 }

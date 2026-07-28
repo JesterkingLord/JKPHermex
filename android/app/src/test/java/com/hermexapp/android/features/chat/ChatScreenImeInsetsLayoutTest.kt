@@ -6,7 +6,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Structural regression test for the v0.6.1 grey-band fix.
+ * Structural regression tests for the chat window's edge-to-edge/IME contract.
  *
  * Root cause recap (so the next person doesn't have to re-derive it):
  *   * `MainActivity.enableEdgeToEdge()` is on.
@@ -16,8 +16,12 @@ import java.io.File
  *     so the lambda-received `innerPadding` contained a residual nav-bar bottom
  *     inset even when the IME was up — that residual inset rendered as a visible
  *     "grey band" between the composer and the keyboard.
- *   * Fix: zero out `contentWindowInsets` and keep `.imePadding()` as the single
- *     source of truth for the IME inset.
+ *   * Zeroing `contentWindowInsets` and keeping `.imePadding()` prevents Compose
+ *     from adding a second system-bar inset inside the chat layout.
+ *   * Transparent system bars prevent a separate edge-to-edge scrim.
+ *   * Physical ColorOS/Gboard comparison against ChatGPT showed the persistent
+ *     candidate-area gap was the Activity resolving to `ADJUST_PAN`. The
+ *     manifest must explicitly request `adjustResize`.
  *
  * Without bringing in Robolectric / compose-ui-test (≈200 MB of extra deps for
  * one assertion), this test reads the source file via the well-known
@@ -111,18 +115,14 @@ class ChatScreenImeInsetsLayoutTest {
 
     @Test
     fun `MainActivity enables edge-to-edge with both system bars fully transparent`() {
-        // The second half of the grey-band fix. `enableEdgeToEdge()` without
-        // arguments draws a scrim under the navigation bar that shows through
-        // the gap between the IME-pushed-up composer and the keyboard's top
-        // edge — that's the grey band users have been seeing. Forcing both
-        // bars' auto() scrims to TRANSPARENT removes the scrim entirely so
-        // the chat canvas (or the keyboard, when up) claims the space.
+        // Keep edge-to-edge system-bar backgrounds transparent. This is a
+        // visual contract; the separate manifest `adjustResize` assertion owns
+        // keyboard geometry.
         val source = resolveMainActivitySource().readText()
         assertTrue(
             "MainActivity.kt must call `enableEdgeToEdge(...)` with explicit\n" +
                 "`statusBarStyle` and `navigationBarStyle` arguments. The\n" +
-                "no-argument default applies a default scrim under both bars,\n" +
-                "which draws the grey band when the IME is up.",
+                "no-argument default applies a platform scrim under both bars.",
             REGEX_ENABLE_EDGE_TO_EDGE_WITH_BOTH_STYLES.containsMatchIn(source),
         )
         // Both bars should be transparent for both light and dark variants.
@@ -139,8 +139,23 @@ class ChatScreenImeInsetsLayoutTest {
                 "navigation). Found $transparentCount. A half-fix leaves the " +
                 "scrim partially in place — use " +
                 "`SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)` " +
-                "for BOTH bars to kill the grey band.",
+                "for BOTH bars to preserve the continuous edge-to-edge canvas.",
             transparentCount == EXPECTED_TRANSPARENT_COUNT,
+        )
+    }
+
+    @Test
+    fun `MainActivity requests resize keyboard handling`() {
+        val manifest = resolveManifestSource().readText()
+        val mainActivity = Regex(
+            """<activity[\s\S]*?android:name="\.MainActivity"[\s\S]*?</activity>""",
+        ).find(manifest)?.value
+        assertNotNull("AndroidManifest.xml must declare the MainActivity block.", mainActivity)
+        assertTrue(
+            "MainActivity must declare android:windowSoftInputMode=\"adjustResize\". " +
+                "The device otherwise resolves the edge-to-edge window to ADJUST_PAN, " +
+                "which leaves Gboard's candidate area detached from the composer.",
+            mainActivity?.contains("android:windowSoftInputMode=\"adjustResize\"") == true,
         )
     }
 
@@ -223,6 +238,16 @@ class ChatScreenImeInsetsLayoutTest {
                     "never found a hit. Set HERMEX_MAINACTIVITY_SOURCE_PATH to the absolute " +
                     "file path to override.",
             )
+        }
+
+        fun resolveManifestSource(): File {
+            var dir: File? = File(".").absoluteFile
+            while (dir != null) {
+                val candidate = File(dir, "src/main/AndroidManifest.xml")
+                if (candidate.isFile) return candidate
+                dir = dir.parentFile
+            }
+            error("Could not locate src/main/AndroidManifest.xml from ${File(".").absolutePath}.")
         }
 
         // `Scaffold(...modifier = Modifier.fillMaxSize().imePadding(),` precedes

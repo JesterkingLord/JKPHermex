@@ -4,6 +4,7 @@ import com.hermexapp.android.auth.InMemorySecretStore
 import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.network.SessionCookieJar
+import com.hermexapp.android.persistence.CacheStore
 import com.hermexapp.android.persistence.InMemoryCacheStore
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -85,6 +86,30 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `a successful session response survives a cache write failure`() = runBlocking {
+        server.enqueue(json("""{"sessions": [{"session_id": "live-one"}]}"""))
+        val client = ApiClient(
+            baseUrl = server.url("/"),
+            httpClient = OkHttpClient.Builder()
+                .cookieJar(SessionCookieJar(InMemorySecretStore()))
+                .build(),
+        )
+        val failingCache = object : CacheStore {
+            override suspend fun save(key: String, json: String) {
+                throw IllegalStateException("cache unavailable")
+            }
+
+            override suspend fun load(key: String): String? = null
+            override suspend fun delete(key: String) = Unit
+        }
+
+        val result = SessionRepositoryImpl(client, failingCache).loadSessions()
+
+        assertFalse(result.fromCache)
+        assertEquals("live-one", result.sessions.single().sessionId)
+    }
+
+    @Test
     fun `a 401 surfaces even when a cache exists`(): Unit = runBlocking {
         server.enqueue(json("""{"sessions": [{"session_id": "cached-one"}]}"""))
         repository.loadSessions()
@@ -117,6 +142,30 @@ class SessionRepositoryTest {
         assertTrue(cachedFromCache)
         assertEquals("T", cached?.title)
         assertEquals(1, cached?.messages?.size)
+    }
+
+    @Test
+    fun `a successful transcript response survives a cache write failure`() = runBlocking {
+        server.enqueue(json("""{"session": {"session_id": "abc", "title": "Live transcript"}}"""))
+        val client = ApiClient(
+            baseUrl = server.url("/"),
+            httpClient = OkHttpClient.Builder()
+                .cookieJar(SessionCookieJar(InMemorySecretStore()))
+                .build(),
+        )
+        val failingCache = object : CacheStore {
+            override suspend fun save(key: String, json: String) {
+                throw IllegalStateException("cache unavailable")
+            }
+
+            override suspend fun load(key: String): String? = null
+            override suspend fun delete(key: String) = Unit
+        }
+
+        val (session, fromCache) = SessionRepositoryImpl(client, failingCache).loadSession("abc")
+
+        assertFalse(fromCache)
+        assertEquals("Live transcript", session?.title)
     }
 
     @Test

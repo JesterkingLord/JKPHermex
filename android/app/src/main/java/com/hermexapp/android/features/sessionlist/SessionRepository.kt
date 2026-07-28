@@ -22,6 +22,7 @@ import com.hermexapp.android.network.searchSessions
 import com.hermexapp.android.network.session
 import com.hermexapp.android.network.sessions
 import com.hermexapp.android.persistence.CacheStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 
 /**
@@ -119,7 +120,7 @@ class SessionRepositoryImpl(
             return com.hermexapp.android.features.sessionlist.SessionRepository.SessionsResult(sort(decoded.sessions.orEmpty()), fromCache = true)
         }
 
-        cache.save(CacheStore.sessionsKey(host), ApiJson.encodeToString(response))
+        saveToCacheBestEffort(CacheStore.sessionsKey(host), ApiJson.encodeToString(response))
         return com.hermexapp.android.features.sessionlist.SessionRepository.SessionsResult(sort(response.sessions.orEmpty()), fromCache = false)
     }
 
@@ -143,7 +144,7 @@ class SessionRepositoryImpl(
             return decoded.session to true
         }
 
-        cache.save(key, ApiJson.encodeToString(response))
+        saveToCacheBestEffort(key, ApiJson.encodeToString(response))
         return response.session to false
     }
 
@@ -200,4 +201,15 @@ class SessionRepositoryImpl(
             compareByDescending<SessionSummary> { it.pinned == true }
                 .thenByDescending { it.lastMessageAt ?: it.updatedAt ?: it.createdAt ?: 0.0 },
         )
+
+    private suspend fun saveToCacheBestEffort(key: String, json: String) {
+        try {
+            cache.save(key, json)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            // Offline caching is an optimization. A Room open/migration or
+            // disk-write failure must never discard a valid live response.
+        }
+    }
 }

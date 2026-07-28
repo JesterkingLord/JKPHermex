@@ -77,7 +77,12 @@ fun PanelScreen(kind: PanelKind, viewModel: PanelsViewModel, onClose: () -> Unit
                     if (state.openSkill != null) viewModel.closeSkill() else onClose()
                 },
                 actions = {
-                    CircleButton(onClick = { reload() }, icon = Icons.Filled.Refresh, size = 40)
+                    CircleButton(
+                        onClick = { reload() },
+                        contentDescription = "Refresh panel",
+                        icon = Icons.Filled.Refresh,
+                        size = 40,
+                    )
                 },
             )
         },

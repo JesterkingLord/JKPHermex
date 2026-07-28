@@ -85,20 +85,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // EXCELLENCE 0.6.1 — chat scaffold: force both system bars transparent to
-        // kill the gray scrim that `enableEdgeToEdge()`'s default
-        // navigationBarStyle draws under the keyboard when the IME is up.
-        //
-        // Without this, the area between the composer (which the Scaffold has
-        // pushed up by `.imePadding()`) and the keyboard's top edge is filled
-        // by the system window-background scrim as a visible dark band. The
-        // chat Scaffold's `containerColor = palette.canvas` doesn't reach that
-        // area because the keyboard's own window covers it — so the scrim wins.
-        //
-        // Setting BOTH bars to fully transparent (no light/dark scrim) tells
-        // the platform to leave the area the chat canvas, which makes the gap
-        // disappear. Status bar uses TRANSPARENT for both light and dark
-        // variants so the chat's dark canvas shows through the status bar.
+        // Keep the edge-to-edge canvas visually continuous under both system
+        // bars. Keyboard resizing is owned separately by MainActivity's
+        // manifest `adjustResize` contract; transparency alone is not an IME
+        // layout fix.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
                 lightScrim = android.graphics.Color.TRANSPARENT,
@@ -327,14 +317,14 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
     val railScreens = screen is Screen.Chat || screen is Screen.Files || screen is Screen.Git
 
 androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
-    // The right-pane screen content lives in renderScreen(); the
+    // The right-pane screen content lives in RenderScreen(); the
     // lambda closes over `screen`/`sharePrefill`/`shareFileUploads` so
     // state changes propagate. Each renderScreen invocation receives
     // the current target via Crossfade.
     val setScreen: (Screen) -> Unit = { screen = it }
-    val rightPane: @Composable () -> Unit = {
+    val rightPane: @Composable ((() -> Unit)?) -> Unit = { onOpenDrawer ->
         Crossfade(targetState = screen, label = "screens") { current ->
-            renderScreen(
+            RenderScreen(
                 current = current,
                 container = container,
                 server = server,
@@ -346,11 +336,12 @@ androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
                     val u = shareFileUploads; shareFileUploads = emptyList(); u
                 },
                 setScreen = setScreen,
+                onOpenDrawer = onOpenDrawer,
             )
         }
     }
-    if (railScreens) {
-        // Sidebar rail + right pane (chat/files/git).
+    if (onTablet && railScreens) {
+        // Tablet sidebar rail + right pane (chat/files/git).
         // Wave 6 Slice 6.1 — tablet gains a 300dp session list; phone gets an
         // 88dp Wordmark-only rail with a "Switch conversation" pill that pops
         // an overlay picker. Back from chat returns the user to the literal
@@ -361,47 +352,46 @@ androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
         // settings) and slides in over the chat from a ☰ button in the top-left
         // of the right pane. Tablet keeps the always-on rail verbatim — no
         // behaviour change for big screens.
-        if (onTablet) {
-            androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .width(sidebarWidth)
-                        .fillMaxSize(),
-                ) {
-                    SessionListScreen(
-                        viewModel = sessionListViewModel,
-                        onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
-                        onOpenPanel = { kind -> setScreen(Screen.Panel(PanelKind.valueOf(kind))) },
-                        onOpenSettings = { setScreen(Screen.Settings) },
-                        onOpenProjects = { setScreen(Screen.Projects) },
-                    )
-                }
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    rightPane()
-                }
+        androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .width(sidebarWidth)
+                    .fillMaxSize(),
+            ) {
+                SessionListScreen(
+                    viewModel = sessionListViewModel,
+                    onOpenSession = { sid -> setScreen(Screen.Chat(sid)) },
+                    onOpenPanel = { kind -> setScreen(Screen.Panel(PanelKind.valueOf(kind))) },
+                    onOpenSettings = { setScreen(Screen.Settings) },
+                    onOpenProjects = { setScreen(Screen.Projects) },
+                )
             }
-        } else {
-            PhoneDrawerScaffold(
-                selected = drawerSelectedFor(screen),
-                onSelect = { tab ->
-                    onDrawerSelect(tab, setScreen, sessionListViewModel, scope)
-                },
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                // ☰ button overlayed top-left → toggles drawer. Lives at
-                // compose-tree-top so it never lands inside a chat LazyColumn
-                // that could eat it.
-                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
-                    rightPane()
-                }
+                rightPane(null)
+            }
+        }
+    } else if (!onTablet) {
+        // Phone navigation is one consistent drawer on every top-level
+        // destination. Individual screens integrate the supplied menu action
+        // in their header when appropriate; edge-swipe remains available on
+        // nested screens that retain a Back control.
+        PhoneDrawerScaffold(
+            selected = drawerSelectedFor(screen),
+            onSelect = { tab ->
+                onDrawerSelect(tab, setScreen, sessionListViewModel, scope)
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) { openDrawer ->
+            androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
+                rightPane(openDrawer)
             }
         }
     } else {
         // Settings / Projects / Panels / SessionList itself: full-width rail.
         // (Wave 6.2's section headers will live inside this rail.)
-        rightPane()
+        rightPane(null)
     }
         // Auto-update Snackbar — overlaid on every screen so the user
         // sees the "new version" prompt regardless of which screen
@@ -425,7 +415,7 @@ androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
  * `screen` mutableState.
  */
 @Composable
-private fun renderScreen(
+private fun RenderScreen(
     current: Screen,
     container: com.hermexapp.android.AppContainer,
     server: HttpUrl,
@@ -435,6 +425,7 @@ private fun renderScreen(
     shareFileUploadsRef: () -> List<Pair<ByteArray, String>>,
     consumeShareFileUploads: () -> List<Pair<ByteArray, String>>,
     setScreen: (Screen) -> Unit,
+    onOpenDrawer: (() -> Unit)? = null,
 ) {
     val client = remember(server) { container.apiClient(server) }
     val repository = remember(server) { container.sessionRepository(server) }
@@ -446,6 +437,7 @@ private fun renderScreen(
             onOpenPanel = { kind -> setScreen(Screen.Panel(PanelKind.valueOf(kind))) },
             onOpenSettings = { setScreen(Screen.Settings) },
             onOpenProjects = { setScreen(Screen.Projects) },
+            onOpenMenu = onOpenDrawer,
         )
         Screen.Projects -> {
             BackHandler { setScreen(Screen.SessionList) }
@@ -508,6 +500,7 @@ private fun renderScreen(
             ChatScreen(
                 viewModel = chatViewModel,
                 onBack = { setScreen(Screen.SessionList) },
+                onOpenMenu = onOpenDrawer,
                 onOpenFiles = { setScreen(Screen.Files(current.sessionId)) },
                 onOpenGit = { setScreen(Screen.Git(current.sessionId)) },
                 onRunFinished = { title ->
@@ -664,11 +657,16 @@ private fun drawerSelectedFor(screen: Screen): MainScreenTab = when (screen) {
     is Screen.Chat -> MainScreenTab.Sessions
     is Screen.Files -> MainScreenTab.Sessions
     is Screen.Git -> MainScreenTab.Sessions
-    is Screen.Panel -> MainScreenTab.Sessions
+    is Screen.Panel -> when (screen.kind) {
+        PanelKind.TASKS -> MainScreenTab.Tasks
+        PanelKind.SKILLS -> MainScreenTab.Skills
+        PanelKind.MEMORY -> MainScreenTab.Memory
+        PanelKind.INSIGHTS -> MainScreenTab.Insights
+    }
     Screen.Settings -> MainScreenTab.Settings
     Screen.Notes -> MainScreenTab.Notes
     Screen.Prompts -> MainScreenTab.Prompts
-    Screen.Projects -> MainScreenTab.Sessions
+    Screen.Projects -> MainScreenTab.Projects
 }
 
 /**
@@ -691,6 +689,11 @@ private fun onDrawerSelect(
             }
         }
         MainScreenTab.Sessions -> setScreen(Screen.SessionList)
+        MainScreenTab.Projects -> setScreen(Screen.Projects)
+        MainScreenTab.Tasks -> setScreen(Screen.Panel(PanelKind.TASKS))
+        MainScreenTab.Skills -> setScreen(Screen.Panel(PanelKind.SKILLS))
+        MainScreenTab.Memory -> setScreen(Screen.Panel(PanelKind.MEMORY))
+        MainScreenTab.Insights -> setScreen(Screen.Panel(PanelKind.INSIGHTS))
         MainScreenTab.Notes -> setScreen(Screen.Notes)
         MainScreenTab.Prompts -> setScreen(Screen.Prompts)
         MainScreenTab.Settings -> setScreen(Screen.Settings)

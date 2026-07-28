@@ -26,24 +26,30 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,6 +79,12 @@ fun ToolsPane(
     avatarFallbackInitials: String,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val versionName = remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()
+    }
     Surface(
         modifier = modifier
             .width(280.dp)
@@ -132,6 +144,7 @@ fun ToolsPane(
 
             // Footer: app version + signature; cheap, no click target.
             DrawerFooter(
+                versionName = versionName,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 16.dp)
@@ -180,16 +193,16 @@ private fun DrawerHeader(
 }
 
 @Composable
-private fun DrawerFooter(modifier: Modifier = Modifier) {
+private fun DrawerFooter(versionName: String?, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(
-            "v0.8.3-rc1",
+            versionName?.let { "v$it" } ?: "JKPHermex",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            "Wave 8 — Tools Pane",
+            "Native JKP control surface",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -256,8 +269,13 @@ enum class MainScreenTab(
 ) {
     NewChat("new", "New chat", Icons.Filled.Add),
     Sessions("sessions", "Sessions", Icons.Filled.ChatBubbleOutline),
-    Notes("notes", "Notes", Icons.AutoMirrored.Filled.List),
-    Prompts("prompts", "Prompts", Icons.Filled.Build),
+    Projects("projects", "Projects", Icons.Filled.Folder),
+    Tasks("tasks", "Tasks", Icons.Filled.DateRange),
+    Skills("skills", "Skills", Icons.Filled.Build),
+    Memory("memory", "Memory", Icons.Filled.Face),
+    Insights("insights", "Insights", Icons.Filled.Info),
+    Notes("notes", "Notes", Icons.Filled.Description),
+    Prompts("prompts", "Prompts", Icons.Filled.AutoAwesome),
     Settings("settings", "Settings", Icons.Filled.Settings);
 
     companion object {
@@ -266,7 +284,16 @@ enum class MainScreenTab(
          * on Wave 6 expect "New chat → Sessions → Settings" at the top.
          */
         val visibleOrder: List<MainScreenTab> = listOf(
-            NewChat, Sessions, Notes, Prompts, Settings
+            NewChat,
+            Sessions,
+            Projects,
+            Tasks,
+            Skills,
+            Memory,
+            Insights,
+            Notes,
+            Prompts,
+            Settings,
         )
 
         /**
@@ -315,7 +342,7 @@ fun PhoneDrawerScaffold(
     selected: MainScreenTab,
     onSelect: (MainScreenTab) -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
+    content: @Composable (openDrawer: () -> Unit) -> Unit
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -330,7 +357,7 @@ fun PhoneDrawerScaffold(
 
     // Back-press handling: if drawer is open, swallowing back just closes it.
     // When closed, fall through to the per-screen BackHandler already wired
-    // up by renderScreen().
+    // up by RenderScreen().
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
@@ -346,38 +373,10 @@ fun PhoneDrawerScaffold(
             )
         },
     ) {
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight()
-        ) {
-            content()
-            // Floating ☰ affordance — top-left, 48dp minimum, semi-transparent
-            // surfaceContainer so it stays legible over any chat content.
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .testTag(Tags.DRAWER_TOGGLE),
-                contentAlignment = Alignment.Center,
-            ) {
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            if (drawerState.isOpen) drawerState.close()
-                            else drawerState.open()
-                        }
-                    },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Menu,
-                        contentDescription = if (drawerState.isOpen) "Close menu" else "Open menu",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+        content {
+            scope.launch {
+                if (drawerState.isOpen) drawerState.close() else drawerState.open()
             }
         }
     }
 }
-

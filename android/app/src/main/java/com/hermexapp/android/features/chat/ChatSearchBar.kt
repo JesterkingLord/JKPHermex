@@ -106,11 +106,13 @@ fun ChatSearchBar(
             )
             CircleButton(
                 onClick = onPrev,
+                contentDescription = "Previous search result",
                 glyph = "▲",
                 size = 36,
             )
             CircleButton(
                 onClick = onNext,
+                contentDescription = "Next search result",
                 glyph = "▼",
                 size = 36,
             )

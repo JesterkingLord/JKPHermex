@@ -14,21 +14,30 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 
 /** The circular gray icon buttons used across the iOS app's headers. */
+fun circleButtonTouchTargetDp(visualSizeDp: Int): Int = maxOf(48, visualSizeDp)
+
 @Composable
 fun CircleButton(
     onClick: () -> Unit,
+    contentDescription: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     glyph: String? = null,
@@ -37,14 +46,21 @@ fun CircleButton(
     val palette = LocalHermexPalette.current
     Box(
         modifier = modifier
-            .size(size.dp)
-            .background(palette.card, CircleShape)
-            .clickable(onClick = onClick),
+            .size(circleButtonTouchTargetDp(size).dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            icon != null -> Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-            glyph != null -> Text(glyph, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+        Box(
+            modifier = Modifier
+                .size(size.dp)
+                .background(palette.card, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                icon != null -> Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                glyph != null -> Text(glyph, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+            }
         }
     }
 }
@@ -56,6 +72,7 @@ fun HermexHeader(
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
     backIcon: ImageVector? = null,
+    backContentDescription: String = "Back",
     actions: @Composable () -> Unit = {},
 ) {
     val palette = LocalHermexPalette.current
@@ -71,7 +88,11 @@ fun HermexHeader(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (onBack != null) {
-            CircleButton(onClick = onBack, icon = backIcon, glyph = if (backIcon == null) "‹" else null)
+            CircleButton(
+                onClick = onBack,
+                contentDescription = backContentDescription,
+                icon = backIcon ?: Icons.AutoMirrored.Filled.ArrowBack,
+            )
         }
         androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -99,14 +120,14 @@ fun HermexHeader(
 
 /** The HERMEX wordmark — approximates the iOS pixel-art logo with heavy gold type. */
 @Composable
-fun HermexWordmark(modifier: Modifier = Modifier) {
+fun HermexWordmark(modifier: Modifier = Modifier, fontSize: TextUnit = 30.sp) {
     Text(
         "JKP MOBILE",
         modifier = modifier,
         color = LocalHermexPalette.current.accent,
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Black,
-        fontSize = 30.sp,
+        fontSize = fontSize,
         letterSpacing = 2.sp,
     )
 }

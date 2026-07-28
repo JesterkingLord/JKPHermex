@@ -347,6 +347,20 @@ class SessionListViewModelTest {
         assertEquals(0, viewModel.uiState.value.sessions.size)
     }
 
+    @Test
+    fun `unexpected refresh failure clears loading and remains retryable`() = runTest(dispatcher) {
+        repo.loadSessionsError = IllegalStateException("local cache unavailable")
+
+        viewModel.refreshNow()
+
+        assertFalse(
+            "an unexpected repository failure must not strand the refresh spinner",
+            viewModel.uiState.value.isLoading,
+        )
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        assertTrue(viewModel.uiState.value.errorMessage!!.isNotBlank())
+    }
+
     // ---------------- Wave 7 Slice 7.2 — filter pills ----------------
 
     /** Pure copy of a session with a chosen pinned / archived state. */
@@ -474,7 +488,7 @@ private class FakeSessionRepository(
     // the error is thrown instead of returning a successful result (lets
     // tests pin the errorMessage/clear-isLoading path).
     var loadSessionsGate: CompletableDeferred<Unit>? = null
-    var loadSessionsError: ApiError? = null
+    var loadSessionsError: Throwable? = null
 
     override suspend fun loadSessions(): SessionRepository.SessionsResult {
         loadSessionsGate?.await()

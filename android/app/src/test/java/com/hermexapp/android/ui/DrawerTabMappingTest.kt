@@ -36,8 +36,21 @@ class DrawerTabMappingTest {
 
     @Test fun `visibleOrder follows Wave 6 muscle memory - new and sessions first`() {
         val order = MainScreenTab.visibleOrder
-        assertEquals(MainScreenTab.NewChat, order[0])
-        assertEquals(MainScreenTab.Sessions, order[1])
+        assertEquals(
+            listOf(
+                MainScreenTab.NewChat,
+                MainScreenTab.Sessions,
+                MainScreenTab.Projects,
+                MainScreenTab.Tasks,
+                MainScreenTab.Skills,
+                MainScreenTab.Memory,
+                MainScreenTab.Insights,
+                MainScreenTab.Notes,
+                MainScreenTab.Prompts,
+                MainScreenTab.Settings,
+            ),
+            order,
+        )
     }
 
     @Test fun `fromKey round-trips each tab`() {

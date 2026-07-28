@@ -3,7 +3,6 @@ package com.hermexapp.android.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
@@ -123,32 +122,21 @@ class ApkUpdater(
 
     /**
      * Whether the app currently has permission to install APKs from unknown
-     * sources. On API 26+ this is a per-app toggle the user grants in
-     * Settings; on older versions it's a global toggle (effectively always
-     * grantable, so we return true).
+     * sources. The app's minSdk is 26, where this is a per-app toggle the user
+     * grants in Settings.
      */
     fun canInstallUnknownApps(context: Context): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.packageManager.canRequestPackageInstalls()
-        } else {
-            true
-        }
+        context.packageManager.canRequestPackageInstalls()
 
     /**
      * Open the system Settings screen where the user grants "install from
-     * this app" (API 26+). On pre-O devices, opens the generic security
-     * settings screen.
+     * this app".
      */
     fun openInstallPermissionSettings(context: Context) {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}"),
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            Intent(Settings.ACTION_SECURITY_SETTINGS)
-        }
+        val intent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:${context.packageName}"),
+        )
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }

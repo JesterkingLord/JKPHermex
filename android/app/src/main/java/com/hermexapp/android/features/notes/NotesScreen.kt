@@ -95,6 +95,7 @@ import java.util.Date
 fun NotesScreen(
     onClose: () -> Unit,
     viewModel: NotesViewModel,
+    modifier: Modifier = Modifier,
     /**
      * Wave 9 (AI Notes): when the user taps 🤖 Implement on a note,
      * this callback fires with the resolved NoteEntity. The caller
@@ -106,7 +107,6 @@ fun NotesScreen(
      * don't render a dead-button affordance.
      */
     onImplementNote: ((NoteEntity) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
     var editor by remember { mutableStateOf<EditorState>(EditorState.Closed) }
