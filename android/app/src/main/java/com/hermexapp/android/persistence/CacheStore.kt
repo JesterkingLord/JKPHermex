@@ -9,6 +9,17 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+const val NOTE_STATUS_MIGRATION_SQL =
+    "ALTER TABLE local_notes ADD COLUMN status TEXT NOT NULL DEFAULT 'idea'"
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(NOTE_STATUS_MIGRATION_SQL)
+    }
+}
 
 /**
  * Offline cache seam (Android port plan phase 3). Values are the raw response
@@ -120,18 +131,15 @@ interface CachedPayloadDao {
  *  - [NoteEntity] / [PromptEntity] are user-owned content; destructive
  *    migrations on a user-owned table would silently delete work.
  *
- * Therefore: cache-table v1 → v2 stays destructive, but notes-table
- * v1 creation in this migration adds the table without dropping any
- * data. If we ever need a v3 (renames, splits), write a real
- * Migration(1,2) object before bumping @Database.version.
+ * Therefore: cache-only v1 → v2 may stay destructive, because v1 had no
+ * user-authored tables. Every migration after v2 must preserve notes and
+ * prompts.
  *
  * Wave 9 (2026-07-28): v2 → v3 adds the `status` column to `local_notes`.
  * Notes carry an IDEA / PLAN / ACTION marker (defaults to IDEA for any
- * row from an older build, since SQLite will fill with the column
- * default). With `fallbackToDestructiveMigration` we don't need a
- * Migration object for now — if a future release wants to preserve
- * user notes across upgrades, add a Migration(2,3) object before
- * bumping @Database.version.
+ * row from an older build, since SQLite fills it with the column default).
+ * [MIGRATION_2_3] deliberately alters the table in place so upgrading never
+ * erases locally-authored notes or prompts.
  */
 @Database(
     entities = [CachedPayload::class, NoteEntity::class, PromptEntity::class],
@@ -144,11 +152,13 @@ abstract class HermexDatabase : RoomDatabase() {
     abstract fun promptsDao(): PromptsDao
 
     companion object {
-        fun build(context: Context): HermexDatabase =
-            Room.databaseBuilder(context, HermexDatabase::class.java, "hermex.db")
-                // The cache is disposable by design (raw JSON blobs): on any
-                // schema bump, dropping it just means one extra network fetch.
-                .fallbackToDestructiveMigration()
+        fun build(context: Context, databaseName: String = "hermex.db"): HermexDatabase =
+            Room.databaseBuilder(context, HermexDatabase::class.java, databaseName)
+                .addMigrations(MIGRATION_2_3)
+                // Only an install old enough to have the cache-only v1 schema
+                // can fall back destructively. v2+ owns user-authored content
+                // and must always receive explicit migrations.
+                .fallbackToDestructiveMigrationFrom(1)
                 .build()
     }
 }

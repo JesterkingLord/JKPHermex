@@ -82,6 +82,7 @@ android {
         targetSdk = 35
         versionCode = 37
         versionName = "0.8.14"
+        testInstrumentationRunner = "com.hermexapp.android.persistence.MigrationInstrumentation"
     }
 
     buildTypes {

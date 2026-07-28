@@ -16,7 +16,7 @@
 - Use an outer 48 dp native touch target; compact visuals may remain 32-40 dp.
 - Derive names, roles, values, disabled state, and selection state from real component behavior; inner icons are decorative.
 - Write and observe a failing test before every production behavior change. For Compose-only bounds that cannot be covered without a new dependency, a failing physical UIAutomator measurement is the RED test.
-- Keep phone data intact. Instrumentation creates its fixture in the test APK's sandbox, never `com.hermexapp.android`'s production database.
+- Keep phone data intact. Because Android instrumentation runs under the target UID, it uses the explicit fixture name `hermex-migration-v2-v3-test.db`, never opens `hermex.db`, and deletes only that fixture.
 - Keep UI dumps and screenshots under `screenshots/device-qa-2026-07-27/` and out of Git.
 - Commit locally after each independently verified task; do not push, tag, open a PR, merge, or distribute without new operator approval.
 
@@ -601,11 +601,12 @@ Do not stage either XML dump.
 
 **Files:**
 - Modify: `android/app/build.gradle.kts`
+- Modify: `android/app/src/main/java/com/hermexapp/android/persistence/CacheStore.kt`
 - Create: `android/app/src/androidTest/java/com/hermexapp/android/persistence/MigrationInstrumentation.kt`
 
 **Interfaces:**
-- Consumes: `HermexDatabase.build(Context)`, `NotesDao.get(String)`, and `PromptsDao.get(String)`.
-- Produces: an Android framework `Instrumentation` runner in test package `com.hermexapp.android.test`; it never opens the installed app's database directory.
+- Consumes: `HermexDatabase.build(Context, String)`, `NotesDao.get(String)`, and `PromptsDao.get(String)`.
+- Produces: an Android framework `Instrumentation` runner in test package `com.hermexapp.android.test`; it uses the target UID's database directory but never opens the production `hermex.db` name.
 
 - [ ] **Step 1: Configure the existing Android test APK without adding a dependency**
 
@@ -615,9 +616,16 @@ Add this existing-SDK runner setting inside `defaultConfig`:
 testInstrumentationRunner = "com.hermexapp.android.persistence.MigrationInstrumentation"
 ```
 
+Change the Room builder signature while preserving the production default:
+
+```kotlin
+fun build(context: Context, databaseName: String = "hermex.db"): HermexDatabase =
+    Room.databaseBuilder(context, HermexDatabase::class.java, databaseName)
+```
+
 - [ ] **Step 2: Implement the isolated migration fixture**
 
-Create a runner extending `android.app.Instrumentation`. In `onStart`, resolve `context.getDatabasePath("hermex.db")`, assert that its path contains `.test`, create the three exact v2 tables with `android.database.sqlite.SQLiteDatabase`, insert one note and one prompt, set `database.version = 2`, close SQLite, and open `HermexDatabase.build(context)`. With `runBlocking`, assert:
+Create a runner extending `android.app.Instrumentation`. Android runs it under the target app UID, so resolve `targetContext.getDatabasePath("hermex-migration-v2-v3-test.db")`, reject the production name explicitly, create the three exact v2 tables with `android.database.sqlite.SQLiteDatabase`, insert one note and one prompt, set `database.version = 2`, close SQLite, and open `HermexDatabase.build(targetContext, databaseName)`. With `runBlocking`, assert:
 
 ```kotlin
 package com.hermexapp.android.persistence
@@ -635,15 +643,17 @@ class MigrationInstrumentation : Instrumentation() {
     }
 
     override fun onStart() {
-        val testContext = context
-        val databaseName = "hermex.db"
+        val testContext = targetContext
+        val databaseName = "hermex-migration-v2-v3-test.db"
         val databaseFile = testContext.getDatabasePath(databaseName)
         var room: HermexDatabase? = null
         try {
-            check(testContext.packageName.endsWith(".test")) {
-                "Refusing to create migration fixture outside the test package"
+            check(databaseName != "hermex.db") {
+                "Refusing to use the production database name"
             }
-            check(databaseFile.absolutePath.contains(testContext.packageName)) {
+            check(databaseFile.absolutePath.contains(testContext.packageName) &&
+                databaseFile.name == databaseName
+            ) {
                 "Fixture path does not belong to ${testContext.packageName}"
             }
             testContext.deleteDatabase(databaseName)
@@ -677,7 +687,7 @@ class MigrationInstrumentation : Instrumentation() {
                 sqlite.version = 2
             }
 
-            room = HermexDatabase.build(testContext)
+            room = HermexDatabase.build(testContext, databaseName)
             runBlocking {
                 val note = room.notesDao().get("note-1")
                 check(note?.title == "Keep me")
@@ -716,12 +726,14 @@ class MigrationInstrumentation : Instrumentation() {
 .\gradlew.bat assembleDebug assembleDebugAndroidTest --console=plain
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
-$migrationOutput = adb shell am instrument -w com.hermexapp.android.test/com.hermexapp.android.persistence.MigrationInstrumentation
-$migrationOutput
-if ($migrationOutput -notmatch 'PASS: Room v2-to-v3 preserved note and prompt' -or $migrationOutput -notmatch 'INSTRUMENTATION_CODE: -1') { throw 'Room migration instrumentation failed' }
+$migrationOutput = adb shell am instrument -w -r com.hermexapp.android.test/com.hermexapp.android.persistence.MigrationInstrumentation
+$adbExit = $LASTEXITCODE
+$joinedOutput = $migrationOutput -join "`n"
+$joinedOutput
+if ($adbExit -ne 0 -or $joinedOutput -notmatch 'PASS: Room v2-to-v3 preserved note and prompt' -or $joinedOutput -notmatch 'INSTRUMENTATION_CODE: -1') { throw 'Room migration instrumentation failed' }
 ```
 
-Expected: PASS text and `INSTRUMENTATION_CODE: -1`. Confirm the installed app still shows the operator's original Notes and Prompts; the runner's fixture existed only in the `.test` package.
+Expected: PASS text, `INSTRUMENTATION_CODE: -1`, and ADB exit 0. Confirm `run-as com.hermexapp.android ls databases` contains `hermex.db` but no `hermex-migration-v2-v3-test.db`, and the installed app still shows the operator's original Notes and Prompts.
 
 - [ ] **Step 4: Replace the source-string migration unit test**
 
@@ -731,7 +743,7 @@ Delete `android/app/src/test/java/com/hermexapp/android/persistence/HermexDataba
 
 ```powershell
 git diff --check
-git add android/app/build.gradle.kts android/app/src/androidTest/java/com/hermexapp/android/persistence/MigrationInstrumentation.kt android/app/src/test/java/com/hermexapp/android/persistence/HermexDatabaseMigrationTest.kt
+git add android/app/build.gradle.kts android/app/src/main/java/com/hermexapp/android/persistence/CacheStore.kt android/app/src/androidTest/java/com/hermexapp/android/persistence/MigrationInstrumentation.kt android/app/src/test/java/com/hermexapp/android/persistence/HermexDatabaseMigrationTest.kt docs/superpowers/plans/2026-07-28-scroll-accessibility-polish.md
 git commit -m "test(android): verify Room migration on device"
 ```
 
