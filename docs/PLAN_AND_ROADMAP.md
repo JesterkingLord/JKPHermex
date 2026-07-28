@@ -2,9 +2,10 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android version:** **`0.7.2-stable`** (`versionCode` 18) — Wave 2 of Excellence v1: chat timeline FastScrollbar + JumpFab (jump-to-top/bottom) + scroll position memory per session 
+**Current Android development version:** **`0.8.14`** (`versionCode` 37) on `feat/wave-9-premium-polish`
+**Latest documented stable line:** **`0.7.2-stable`** (`versionCode` 18), tag `v0.7.2-stable`
 **Stable line:** tag `v0.7.2-stable`, branch `stable/v1.12.1-jkphermex-0.7.2` (coordinated with `JKP v1.12.1-stable`)
-**Last roadmap refresh:** `2026-07-27` (0.7.2-stable cut — Wave 2 of Excellence v1: chat scrollbar + JumpFab + position memory)
+**Last roadmap refresh:** `2026-07-28` (0.8.14 device-verified scrollbar, accessibility-target, migration, and IME stabilization)
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
@@ -22,12 +23,57 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 ---
 
-## 1. Current state (2026-07-21)
+## 1. Current state (2026-07-28)
+
+### Active 0.8.14 quality pass
+
+The source tree is substantially ahead of the latest documented stable tag. The
+0.8.14 development build includes the drawer/sidebar, grouped sessions,
+pull-to-refresh, Notes, Prompts, native markdown, voice dictation, workspace/Git
+tools, and the Wave 9 composer features. The current pass is hardening those
+features rather than adding unverified server contracts.
+
+Completed in source and JVM/build verified:
+
+- Pixel-based, draggable chat scrollbar with a measured-height cache, inverse
+  scroll targeting, edge snapping, multi-frame target refinement, locale-stable
+  accessibility progress, 48 dp hit area, and throttled debug-only logging.
+- Cold-start session reliability: valid network results survive Room/cache write
+  failures; unexpected refresh errors always clear loading and remain retryable;
+  the visible list now derives directly from observed Compose state.
+- Non-destructive Room v2→v3 migration preserving local Notes and Prompts.
+- One consistent phone drawer across primary screens; duplicate chat navigation
+  controls removed; Projects, Tasks, Skills, Memory, and Insights are first-class
+  drawer destinations.
+- Compact session header and composer controls with vector icons, 48 dp targets,
+  stable semantic labels, and no forced primary-row clipping.
+- Debug lint succeeds; the remaining lint warnings are dependency-update notices,
+  intentional cleartext opt-in for operator-selected self-hosted HTTP servers,
+  legacy launcher/widget compatibility, and non-blocking resource suggestions.
+
+The 2026-07-28 connected-phone pass completed the identified remediation:
+
+- One contextual 48 dp jump-to-latest control replaces the stacked arrows and
+  settles at the true end even when the final message is taller than the viewport.
+- The right-edge scrollbar exposes a named adjustable SeekBar node, a progress
+  range/action, and locale-stable percentage state while preserving direct tap
+  and drag behavior.
+- Shared accent swatches, bulk actions, project/session rows, attachments,
+  suggestions, workspace rows, and transcript actions maintain 48 dp targets.
+- A real isolated Room v2 database was opened and migrated on the OPPO without
+  touching `hermex.db`; the note and prompt survived and the note status defaulted
+  to `idea`.
+
+Remaining release operations are intentionally operator-gated: configure the
+release keystore, sign, update the final release version/notes as chosen, then
+approve push, tag, PR, and distribution. Manual TalkBack traversal was stopped at
+the operator's request; the service was restored to its original disabled state.
 
 ### Shipped
 
 | Version | Highlights |
 |---|---|
+| **0.8.14 (development)** | Drawer/navigation consolidation; Notes + Prompts; composer feature rail; pixel scrollbar rewrite; cold-start/cache reliability; data-preserving Room migration; accessibility and density pass |
 | **0.6.0-rc6** | Full auto-reconnect (7.4) + live camera QR scanner (6.6, commit `fd50355` — CameraX 1.4.1 + ZXing 3.5.3) + stream recovery offer UI (13.10) |
 | **0.6.0-rc5** | SSE error catalog honesty + free-text classify + streamDropRecovery pure helpers (13.9) |
 | **0.6.0-rc4** | Session model preference parity (7.3) — composer seeds from host `session.model`; `invalid_api_key` + required-code catalog lock (host excellence 13.8a/b) |
@@ -58,6 +104,21 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 ---
 
 ## 2. Roadmap by version
+
+### 0.8.14 — Active completion gate
+
+| Gate | Status |
+|---|---|
+| Unit tests + debug APK | **GREEN**: 547 debug + 547 release tests, zero failures/errors/skips; both APK variants assemble |
+| Android lint | **GREEN** (`lintDebug`; 0 errors, 42 reviewed warnings) |
+| Scrollbar math, dragging, semantics | **GREEN on device**: top `0.001`, midpoint `0.494`, bottom `1.000`, and continuous drag `0.665` verified on a 132-message chat; adjustable SeekBar semantics visible in the Android hierarchy |
+| Cold-start sessions | **GREEN**: three force-stop launches returned all 37 live conversations on OPPO CPH2343 |
+| Notes/Prompts upgrade safety | **GREEN on device**: isolated real Room v2→v3 open preserved note/prompt data; production DB untouched |
+| Navigation + composer density | **GREEN on OPPO**: 360 dp and prior 1.35x audit findings remediated; 48 dp controls/rows verified; Gboard meets the metadata rail with no gap |
+| Release signing / tag / publish | **Operator-blocked / approval-gated** |
+
+Do not implement any endpoint mentioned only in an old excellence plan. Verify
+new API work using the precedence in `AGENTS.md` and open an issue before coding.
 
 ### 0.5.x — Prior stable baseline
 
@@ -174,7 +235,7 @@ python -m jkp pair
 
 | Metric | Target |
 |---|---|
-| Unit tests | ≥ 519 green (0.6.0; was ≥ 255 at 0.5.0 baseline) |
+| Unit tests | ≥ 547 green for the current 0.8.14 quality pass (was ≥ 255 at 0.5.0 baseline) |
 | Install → first chat on physical phone | &lt; 10 minutes on known host |
 | Pairing secret leakage | Never in logs, UI state, backups, or non-fragment URLs |
 | False “agent crashed” while host waits on approval | 0 (honest status copy) |
@@ -201,6 +262,9 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-07-28 | Completed the connected-device accessibility/scroll pass: one true-end jump control, adjustable scrollbar semantics, shared 48 dp swatches/actions/rows, real isolated on-device Room v2→v3 migration, and final Gboard verification. Debug/release each run 547 tests with zero failures. |
+| 2026-07-27 | Replaced the stale USB-reconnect screenshot gate with physical dark/light and 1.35x font-scale evidence; recorded the remaining 48 dp, swatch-label, TalkBack-adjustment, and stacked-jump remediation instead of treating the accessibility pass as complete. |
+| 2026-07-27 | Reconciled roadmap with active 0.8.14 development state; recorded scrollbar/cold-start/navigation/composer/persistence hardening and the remaining physical-device/release gates. |
 | 2026-07-21 | **6.6 camera QR scanner SHIPPED (operator-approved).** Live CameraX scanner: `QrDecoder` (ZXing local-only decode, JVM-testable `decodeArgb` seam) + `CameraQrScannerView` (preview + `ImageAnalysis` frame decode + runtime permission + torch + reticle + paste fallback) wired into the Connect page. Deps added: CameraX 1.4.1 (core/camera2/lifecycle/view) + ZXing core 3.5.3; `CAMERA` permission + `camera.any` feature `required=false`. `QrDecoderTest` round-trips pairing URLs + rejects non-QR/noise. Paste/manual fallback preserved. |
 | 2026-07-21 | **6.6 status:** paste/manual fallback VERIFIED (PairingIntentParser 18 tests + PairUrlDialog + tested `pairFromText` seam); camera scanner BLOCKED pending operator approval to add CameraX + QR decoder (7.4 auto-reconnect shipped on this device — see HangHonesty.reconnectPolicy + ChatViewModel.maybeAttemptReconnectRecovery, 310 tests 0-fail) |
 | 2026-07-18 | **0.6.0-rc6**: stream recovery offer UI (host excellence 13.10) |

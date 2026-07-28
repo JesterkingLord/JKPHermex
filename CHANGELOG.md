@@ -5,6 +5,68 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [Unreleased]
+
+### Added
+- Consistent phone navigation drawer with direct Projects, Tasks, Skills,
+  Memory, Insights, Notes, Prompts, Sessions, and Settings destinations.
+- Data-preserving Room v2→v3 migration for the new Notes status field.
+- Locale-stable scrollbar progress semantics and regression coverage for
+  narrow composer/navigation behavior.
+
+### Changed
+- Reworked the chat fast scrollbar around measured pixel heights and inverse
+  drag targeting, with a 48 dp interaction area, quieter visuals, edge snapping,
+  and multi-frame target refinement for highly variable message heights.
+- Replaced the competing up/down jump stack with one contextual 48 dp
+  jump-to-latest control that settles at the true end of tall final messages.
+- Compacted the session header and composer; primary composer actions no longer
+  compete with reasoning/workspace/profile metadata on narrow phones.
+- Replaced header/composer emoji controls with semantic Material vector icons
+  and enforced minimum 48 dp touch targets for shared circular buttons.
+
+### Fixed
+- A Room/cache write failure can no longer discard a valid live sessions list
+  or transcript.
+- Unexpected session refresh failures now leave loading state and expose a
+  retryable error instead of showing an endless spinner.
+- Fixed a Compose state-observation bug that could leave the first session list
+  visually empty even after a successful network response and cache update.
+- Session timestamps and group counts now reserve the scrollbar interaction rail
+  instead of rendering beneath it on narrow phones.
+- Fixed the remaining ColorOS/Gboard composer gap: MainActivity now explicitly
+  requests `adjustResize` instead of allowing this edge-to-edge window to resolve
+  to `adjustPan`; the composer also uses the same sentence-capitalized multiline
+  keyboard contract as ChatGPT. Navigation-bar padding remains suppressed while
+  the IME is visible.
+- Removed the duplicate floating drawer/back controls that overlapped chat UI.
+- Upgrading from database v2 to v3 no longer erases locally-authored Notes or
+  Prompts.
+- Color swatches, transcript actions, project/session rows, and bulk controls
+  now expose semantic labels or state and maintain 48 dp interaction targets.
+
+### Verified
+- 2026-07-28: final unit/lint/assembly gates succeed. Both debug and
+  release variants run **547 tests with 0
+  failures, 0 errors, and 0 skipped**.
+- `lintDebug` completes with **0 errors**. The 42 warnings are reviewed:
+  dependency/toolchain update notices (updates require approval), legacy launcher
+  art guidance, and the intentional self-hosted HTTP opt-in.
+- Connected OPPO CPH2343 (Android 13) QA verified three clean force-stop cold
+  starts with all 37 live conversations, the v3 database schema, the consolidated
+  drawer, narrow composer layout, and the variable-height scrollbar on a
+  132-message chat at top (`0.001`), midpoint tap (`0.494`), exact bottom
+  (`1.000`), and continuous drag (`0.665`). The single jump control appears only
+  when newer content exists and now reaches a true `canScrollFwd=false` bottom.
+  The final `adjustResize` APK was physically verified with Gboard open: the
+  metadata rail meets the keyboard with no gray band.
+- A real Room open migrated an isolated v2 database on the phone, preserving a
+  note and prompt and adding the note status default. The fixture used a unique
+  database name and was removed; the user's `hermex.db` was never opened by the
+  test.
+- Debug APK and unsigned release APK assemble successfully; signed release remains
+  operator-keystore/approval gated.
+
 ## [v0.6.2-stable] - 2026-07-23
 
 ### Fixed
@@ -96,7 +158,7 @@ Operator-blocked items unchanged: Play Store upload (6.1, secrets in 1Password),
 
 Full release notes: [`RELEASE_NOTES_v0.6.0-stable.md`](RELEASE_NOTES_v0.6.0-stable.md).
 
-## [Unreleased]
+## [Unreleased baseline recorded 2026-07-22]
 
 ### Verified
 - 2026-07-22: 323 unit tests, 0 failures, 0 errors, 0 skipped (across 39 test suites; ./gradlew.bat testDebugUnitTest BUILD SUCCESSFUL in 14s; exceeds 255+ plan baseline). Includes `AuthManagerPairingTest`, `PairingIntentParserTest`, `HangHonestyTest`, `UpdateCheckerTest`, `AuthManagerTest` from the 7.4 / 6.6 / 7.3 ship slices.

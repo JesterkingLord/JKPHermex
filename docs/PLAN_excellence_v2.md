@@ -3,8 +3,40 @@
 **Date:** 2026-07-23
 **Author:** JKP Assistant (post v0.7.6-stable, post auto-restart setup)
 **Target:** `master` branch, shippable in **6 waves (~3 weeks), no backend changes**
-**Status:** 🆕 Plan written — awaiting operator review before code lands
+**Status:** Superseded as an execution checklist; retained as design/history. See the reality check below and `PLAN_AND_ROADMAP.md` for current gates.
 **Predecessor:** [`docs/PLAN_excellence_v1.md`](PLAN_excellence_v1.md) (Waves 0–5 ALL SHIPPED — `v0.7.0` → `v0.7.6`)
+
+---
+
+## 2026-07-28 reality check
+
+The app is now at development version **0.8.14** (`versionCode` 37), and many
+items below shipped in a different order than this proposal predicted. Drawer
+navigation, grouped sessions, pull-to-refresh, Notes, Prompts, voice dictation,
+native markdown, composer helpers, and scrollbar work exist in the source tree.
+The current quality pass focuses on reliability, information density,
+accessibility, and physical-device proof.
+
+This document is **not API authorization**. In particular, the historical
+drag-reorder, rating, cost, receipt, and regeneration ideas below must not be
+implemented from their sketched endpoint names or JSON assumptions. Any such
+work requires a selected GitHub issue and contract verification under
+`AGENTS.md` (live server first, official docs second, pinned upstream third).
+The old `compose-markdown` dependency suggestion is also obsolete: the project
+already has a native in-repo renderer, and new dependencies remain
+approval-gated.
+
+Completed quality gates:
+
+1. Pixel scrollbar, single true-end jump control, cold starts, narrow-phone
+   navigation/composer layout, and Gboard behavior were proved on the connected
+   OPPO.
+2. The audited target/semantic defects were remediated; Android exposes the
+   scrollbar as a named adjustable SeekBar. Manual TalkBack traversal was ended
+   at the operator's request and TalkBack was restored to off.
+3. A real isolated Room v2→v3 open on the phone preserved note and prompt data,
+   and the final debug/release unit, lint, and APK assembly gates are green.
+4. Signing, push, tag, PR, and distribution remain explicit operator actions.
 
 ---
 
