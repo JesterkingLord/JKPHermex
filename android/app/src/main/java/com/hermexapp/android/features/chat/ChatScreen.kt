@@ -28,12 +28,20 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,7 +59,7 @@ import com.hermexapp.android.features.chat.ChatViewModel.TimelineEntry
 import com.hermexapp.android.ui.CircleButton
 import com.hermexapp.android.ui.FastScrollbar
 import com.hermexapp.android.ui.HermexHeader
-import com.hermexapp.android.ui.ScrollIndicatorOnly
+import com.hermexapp.android.ui.JumpToLatestButton
 import com.hermexapp.android.ui.markdown.MarkdownText
 import com.hermexapp.android.ui.shareAsMarkdown
 import com.hermexapp.android.ui.theme.LocalHermexPalette
@@ -64,12 +72,18 @@ import kotlinx.coroutines.launch
  */
 data class ChatDisplayPrefs(val expandThinking: Boolean = false, val expandTools: Boolean = false)
 
+enum class ChatLeadingAction { MENU, BACK }
+
+fun chatLeadingAction(hasDrawer: Boolean): ChatLeadingAction =
+    if (hasDrawer) ChatLeadingAction.MENU else ChatLeadingAction.BACK
+
 val LocalChatDisplayPrefs = staticCompositionLocalOf { ChatDisplayPrefs() }
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     onBack: () -> Unit,
+    onOpenMenu: (() -> Unit)? = null,
     onOpenFiles: () -> Unit = {},
     onOpenGit: () -> Unit = {},
     onRunFinished: (String?) -> Unit = {},
@@ -94,6 +108,7 @@ fun ChatScreen(
     // call `LazyListState.animateScrollToItem(target)` from a regular
     // click handler (not a LaunchedEffect / coroutine context).
     val scope = rememberCoroutineScope()
+    val leadingAction = chatLeadingAction(hasDrawer = onOpenMenu != null)
 
     LaunchedEffect(Unit) { viewModel.load() }
     DisposableEffect(Unit) {
@@ -136,17 +151,19 @@ fun ChatScreen(
     // Wave 5 Slice 5.2 — smart auto-scroll. Track whether the user is
     // pinned to the bottom; if so, follow new entries, otherwise keep their
     // place and surface an unread pill.
-    val isAtBottom = remember(state.entries.size, listState.firstVisibleItemIndex) {
-        // True when the bottom entry is on screen. Tolerance of `1` so a
-        // mid-render scroll-up doesn't break the auto-follow.
-        state.entries.isEmpty() ||
-            listState.firstVisibleItemIndex >= state.entries.lastIndex - 1
+    val isAtBottom by remember(state.entries.size) {
+        derivedStateOf {
+            // True when the bottom entry is on screen. Tolerance of `1` so a
+            // mid-render scroll-up doesn't break the auto-follow.
+            state.entries.isEmpty() ||
+                listState.firstVisibleItemIndex >= state.entries.lastIndex - 1
+        }
     }
-    val previousSize = remember { mutableStateOf(0) }
+    val previousSize = remember { mutableIntStateOf(0) }
     LaunchedEffect(state.entries.size) {
         val current = state.entries.size
-        val grew = current > previousSize.value
-        previousSize.value = current
+        val grew = current > previousSize.intValue
+        previousSize.intValue = current
         if (grew && state.entries.isNotEmpty()) {
             if (isAtBottom) {
                 listState.animateScrollToItem(state.entries.lastIndex)
@@ -201,7 +218,10 @@ fun ChatScreen(
             HermexHeader(
                 title = state.title ?: "New chat",
                 subtitle = "JKP Mobile",
-                onBack = onBack,
+                onBack = if (leadingAction == ChatLeadingAction.MENU) onOpenMenu else onBack,
+                backIcon = if (leadingAction == ChatLeadingAction.MENU) Icons.Filled.Menu else null,
+                backContentDescription =
+                    if (leadingAction == ChatLeadingAction.MENU) "Open navigation menu" else "Back to sessions",
                 actions = {
                     CircleButton(
                         // Wave 4 Slice 4.2: in-chat find. Tapping opens the
@@ -213,11 +233,23 @@ fun ChatScreen(
                                 viewModel.openSearch()
                             }
                         },
-                        glyph = "🔍",
+                        contentDescription =
+                            if (state.searchActive) "Close conversation search" else "Search conversation",
+                        icon = Icons.Filled.Search,
                         size = 40,
                     )
-                    CircleButton(onClick = onOpenFiles, glyph = "📁", size = 40)
-                    CircleButton(onClick = onOpenGit, glyph = "⎇", size = 40)
+                    CircleButton(
+                        onClick = onOpenFiles,
+                        contentDescription = "Open session files",
+                        icon = Icons.Filled.Folder,
+                        size = 40,
+                    )
+                    CircleButton(
+                        onClick = onOpenGit,
+                        contentDescription = "Open Git workspace",
+                        icon = Icons.Filled.AccountTree,
+                        size = 40,
+                    )
                 },
             )
         },
@@ -366,74 +398,19 @@ fun ChatScreen(
                         listState = listState,
                         modifier = Modifier.align(Alignment.CenterEnd),
                     )
-                    // Wave 9.13 — Unread pill REMOVED.
-                    //
-                    // The earlier "↓ N new" pill overlapped the ↑ scroll-to-top
-                    // pill at the bottom-right column. With [ScrollIndicatorOnly]
-                    // now rendering BOTH the ↑ (when there's older content
-                    // above) and ↓ (when there's newer content below) pills, the
-                    // explicit unread pill is redundant. The ↓ pill already
-                    // appears the moment newer messages exist below the viewport,
-                    // which is exactly when the unread pill would have shown —
-                    // and tapping it scrolls to the latest AND clears the unread
-                    // count via the same `markSeen()` call the unread pill used.
-                    //
-                    // Reference: 2026-07-24 user screenshot showed the "1 new"
-                    // unread pill stacked on top of the ↑ pill at the same x ≈
-                    // 1020 — visually unreadable. Dropping the unread pill
-                    // resolves the overlap with zero functional loss.
-                    // Jump chip + scroll indicator (Wave 9.6 split).
-                    //
-                    // The component has two halves now:
-                    //   1. A pulsing scroll indicator that's visible
-                    //      while the user is scrolling AND for 1 second
-                    //      afterwards. This is what the user actually
-                    //      asked for ("show when scrolling, hide 1s
-                    //      after stop").
-                    //   2. A separate, smaller jump chip that points
-                    //      toward the nearest edge and lets the user
-                    //      tap to scroll past the entire chat. It
-                    //      only appears once the list has settled
-                    //      (not while scrolling), so the two halves
-                    //      don't fight over the same screen real
-                    //      estate.
-                    // Wave 9.8 — single yellow scroll indicator.
-                    //
-                    // Renamed from JumpFab: the prior "tap to jump"
-                    // affordance was removed entirely. The user
-                    // explicitly asked for the white button to be
-                    // deleted, not coexist with the scroll indicator.
-                    //
-                    // Visible while the user is scrolling, hidden 1s
-                    // after scrolling stops. No click handler, no
-                    // arrow direction. Just the small accent pill
-                    // that confirms "yes, you're scrolling."
-                    ScrollIndicatorOnly(
-                        // Wave 9.12 — Always-visible two-pill layout.
-                        // The ↑ appears only when canScrollBackward is
-                        // true (chat has older content above the
-                        // viewport); the ↓ only when canScrollForward
-                        // is true (chat has newer content below).
-                        // When the chat fits in the viewport neither
-                        // pill renders. See JumpFab.kt docstring.
+                    // One contextual action mirrors ChatGPT: it exists only
+                    // while newer content is below. The scrollbar owns top
+                    // and arbitrary positioning, so no second arrow competes
+                    // with transcript text or the right-edge gesture lane.
+                    JumpToLatestButton(
                         canScrollForward = listState.canScrollForward,
-                        canScrollBackward = listState.canScrollBackward,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 16.dp, bottom = 24.dp),
-                        onScrollUp = {
+                            .padding(end = 56.dp, bottom = 24.dp),
+                        onClick = {
                             scope.launch {
-                                if (listState.canScrollBackward) {
-                                    listState.animateScrollToItem(0)
-                                }
-                            }
-                        },
-                        onScrollDown = {
-                            scope.launch {
-                                if (listState.canScrollForward) {
-                                    listState.animateScrollToItem(
-                                        state.entries.lastIndex.coerceAtLeast(0),
-                                    )
+                                if (listState.canScrollForward && state.entries.isNotEmpty()) {
+                                    listState.animateScrollToItem(state.entries.lastIndex)
                                     viewModel.markSeen()
                                 }
                             }
@@ -474,15 +451,17 @@ fun ChatScreen(
             // remember so we don't need to poll the VM.
             val emptySentAt = state.lastEmptySendAtMs
             if (emptySentAt != null) {
-                val now = remember { mutableStateOf(System.currentTimeMillis()) }
+                val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
                 LaunchedEffect(emptySentAt) {
                     while (true) {
-                        now.value = System.currentTimeMillis()
-                        if (now.value - emptySentAt > 2_000L) break
+                        now.longValue = System.currentTimeMillis()
+                        if (now.longValue - emptySentAt > 2_000L) {
+                            break
+                        }
                         kotlinx.coroutines.delay(200L)
                     }
                 }
-                if (now.value - emptySentAt <= 2_000L) {
+                if (now.longValue - emptySentAt <= 2_000L) {
                     Text(
                         "Type something first.",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
@@ -547,7 +526,7 @@ private fun TimelineEntryView(
                     modifier = Modifier
                         .widthIn(max = 320.dp)
                         .combinedClickable(
-                            onClick = {},
+                            onClick = { showEdit = true },
                             onLongClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 showEdit = true
@@ -588,7 +567,7 @@ private fun TimelineEntryView(
             var showActions by remember(entry.id) { mutableStateOf(false) }
             Column(
                 modifier = Modifier.combinedClickable(
-                    onClick = {},
+                    onClick = { showActions = true },
                     onLongClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         showActions = true
