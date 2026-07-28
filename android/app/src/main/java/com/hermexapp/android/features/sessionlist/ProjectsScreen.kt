@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.hermexapp.android.config.AccentPreset
 import com.hermexapp.android.model.Project
 import com.hermexapp.android.model.SessionSummary
+import com.hermexapp.android.ui.AccentSwatch
 import com.hermexapp.android.ui.HermexHeader
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import com.hermexapp.android.ui.theme.accentColorFromHex
@@ -246,12 +247,10 @@ private fun ProjectEditDialog(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AccentPreset.entries.forEach { preset ->
-                        val selected = color == preset.hex
-                        Box(
-                            modifier = Modifier
-                                .size(if (selected) 30.dp else 24.dp)
-                                .background(accentColorFromHex(preset.hex), CircleShape)
-                                .clickable { color = preset.hex },
+                        AccentSwatch(
+                            preset = preset,
+                            selected = color.equals(preset.hex, ignoreCase = true),
+                            onClick = { color = preset.hex },
                         )
                     }
                 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermexapp.android.config.AccentPreset
 import com.hermexapp.android.config.AppPrefs
+import com.hermexapp.android.ui.AccentSwatch
 import com.hermexapp.android.ui.HermexHeader
 import com.hermexapp.android.ui.HermexPickerSheet
 import com.hermexapp.android.ui.PickerRow
@@ -243,20 +244,20 @@ fun SettingsScreen(
                         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(if (selected) 34.dp else 28.dp)
-                                .clip(CircleShape)
-                                .background(accentColorFromHex(preset.hex))
-                                .clickable { prefs.setAccent(preset) },
+                        AccentSwatch(
+                            preset = preset,
+                            selected = selected,
+                            onClick = { prefs.setAccent(preset) },
                         )
-                        if (selected) {
-                            Text(
-                                preset.displayName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
+                        Text(
+                            preset.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalHermexPalette.current.textSecondary
+                            },
+                        )
                     }
                 }
             }
