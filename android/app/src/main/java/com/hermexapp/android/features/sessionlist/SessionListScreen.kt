@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -46,9 +47,6 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -56,7 +54,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,9 +63,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hermexapp.android.model.Project
 import com.hermexapp.android.model.SessionSummary
 import com.hermexapp.android.ui.CircleButton
@@ -93,12 +92,14 @@ fun SessionListScreen(
     onOpenPanel: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProjects: () -> Unit = {},
+    onOpenMenu: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val isPhone = LocalConfiguration.current.screenWidthDp < 600
     // Excellence v1 Wave 1: LazyListState for the FastScrollbar drag
     // gestures. The session list is the scrollbar's first consumer;
     // Wave 2 reuses the same state pattern for the chat timeline.
@@ -107,7 +108,11 @@ fun SessionListScreen(
     // Wave 7 Slice 7.2 — display list obeys the current filter pill; the
     // bulk-action toolbar keeps using the full set so cross-filter
     // selection isn't lost when the user toggles the pill mid-selection.
-    val visibleSessions = viewModel.filteredSessions
+    // Derive from the Compose-collected snapshot. Reading
+    // `viewModel.uiState.value` here left this top-level calculation outside
+    // Compose observation, so a cold-start result could reach the ViewModel
+    // while the UI remained frozen on its initial empty list.
+    val visibleSessions = filterSessions(state.sessions, state.filterMode)
 
     // session list itself changes (cheap; O(N) on list mutation but the
     // list rarely exceeds ~100 rows in practice).
@@ -246,53 +251,48 @@ fun SessionListScreen(
                 }
             } else {
                 item(key = "wordmark-row") {
-                    // Wave 6 Slice 6.6 — small session-count header so the
-                    // user can see at-a-glance how busy their chat history
-                    // is. Single line above the wordmark row.
-                    if (visibleSessions.isNotEmpty()) {
-                        Text(
-                            text = "${visibleSessions.size} conversation" +
-                                if (visibleSessions.size == 1) "" else "s",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.textSecondary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 24.dp, top = 14.dp, bottom = 2.dp),
-                        )
-                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                            .padding(start = 16.dp, end = 56.dp, top = 12.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        HermexWordmark()
-                        // Wave 6 Slice 6.4 — small "HH:mm" clock beside the
-                        // wordmark; ticks once per minute.
-                        Spacer(Modifier.size(12.dp))
-                        LiveClock()
-                        Spacer(Modifier.weight(1f))
+                        if (onOpenMenu != null) {
+                            CircleButton(
+                                onClick = onOpenMenu,
+                                contentDescription = "Open navigation menu",
+                                icon = Icons.Filled.Menu,
+                                size = 40,
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            HermexWordmark(fontSize = 22.sp)
+                            if (visibleSessions.isNotEmpty()) {
+                                Text(
+                                    text = "${visibleSessions.size} conversation" +
+                                        if (visibleSessions.size == 1) "" else "s",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textSecondary,
+                                )
+                            }
+                        }
                         CircleButton(
                             onClick = {
                                 searchVisible = !searchVisible
                                 if (!searchVisible) viewModel.updateSearchQuery("")
                             },
+                            contentDescription =
+                                if (searchVisible) "Close session search" else "Search sessions",
                             icon = Icons.Filled.Search,
                             size = 40,
                         )
-                        Spacer(Modifier.size(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(palette.accent, CircleShape)
-                                .clickable(onClick = onOpenSettings),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = "Settings",
-                                tint = palette.canvas,
-                                modifier = Modifier.size(20.dp),
+                        if (onOpenMenu == null) {
+                            CircleButton(
+                                onClick = onOpenSettings,
+                                contentDescription = "Open settings",
+                                icon = Icons.Filled.Settings,
+                                size = 40,
                             )
                         }
                     }
@@ -336,12 +336,14 @@ fun SessionListScreen(
             }
 
             item {
-                Column(modifier = Modifier.padding(horizontal = 8.dp)) {
-                    MenuRow(Icons.AutoMirrored.Filled.List, "Projects") { onOpenProjects() }
-                    MenuRow(Icons.Filled.DateRange, "Tasks") { onOpenPanel("TASKS") }
-                    MenuRow(Icons.Filled.Build, "Skills") { onOpenPanel("SKILLS") }
-                    MenuRow(Icons.Filled.Face, "Memory") { onOpenPanel("MEMORY") }
-                    MenuRow(Icons.Filled.Info, "Insights") { onOpenPanel("INSIGHTS") }
+                if (!isPhone) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+                        MenuRow(Icons.AutoMirrored.Filled.List, "Projects") { onOpenProjects() }
+                        MenuRow(Icons.Filled.DateRange, "Tasks") { onOpenPanel("TASKS") }
+                        MenuRow(Icons.Filled.Build, "Skills") { onOpenPanel("SKILLS") }
+                        MenuRow(Icons.Filled.Face, "Memory") { onOpenPanel("MEMORY") }
+                        MenuRow(Icons.Filled.Info, "Insights") { onOpenPanel("INSIGHTS") }
+                    }
                 }
             }
 
@@ -702,7 +704,7 @@ private fun SectionHeader(title: String, count: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+            .padding(start = 16.dp, end = 56.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -720,39 +722,6 @@ private fun SectionHeader(title: String, count: Int) {
         }
     }
 }
-
-/**
- * Wave 6 Slice 6.4 — small live "HH:mm" clock that ticks every minute.
- *
- * Re-composes only when the rounded minute changes (not every second).
- * Format uses [Locale.getDefault] so the user's regional preferences
- * (12-hour vs 24-hour) are honored — Material-style.
- */
-@Composable
-private fun LiveClock() {
-    val palette = LocalHermexPalette.current
-    var minuteEpoch by remember { mutableIntStateOf(minuteBucket(nowMillis())) }
-    LaunchedEffect(Unit) {
-        // First tick happens on the next minute boundary. We poll every
-        // 10 seconds, which is cheap (no recomposition) and tolerant to
-        // device wake/sleep + system clock changes.
-        while (true) {
-            kotlinx.coroutines.delay(10_000)
-            val current = minuteBucket(nowMillis())
-            if (current != minuteEpoch) minuteEpoch = current
-        }
-    }
-    val formatted = remember(minuteEpoch) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowMillis()))
-    }
-    Text(
-        text = formatted,
-        style = MaterialTheme.typography.labelMedium,
-        color = palette.textSecondary,
-    )
-}
-
-internal fun minuteBucket(epochMs: Long): Int = (epochMs / 60_000L).toInt()
 
 private fun nowMillis(): Long = java.lang.System.currentTimeMillis()
 
@@ -963,7 +932,7 @@ private fun SessionRow(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(start = 20.dp, end = 56.dp, top = 10.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {

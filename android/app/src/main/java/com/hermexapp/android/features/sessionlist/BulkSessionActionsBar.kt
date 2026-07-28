@@ -24,10 +24,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.hermexapp.android.ui.circleButtonTouchTargetDp
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+
+internal fun bulkMutationEnabled(selectedCount: Int): Boolean = selectedCount > 0
 
 /**
  * Contextual top bar shown above the session list while the user is in bulk-
@@ -105,45 +114,60 @@ fun BulkSessionActionsBar(
                 icon = Icons.Filled.PushPin,
                 contentDescription = "Pin selected",
                 tint = if (selectedCount > 0) palette.textSecondary else palette.textSecondary.copy(alpha = 0.35f),
-                onClick = { if (selectedCount > 0) onPin() },
+                enabled = bulkMutationEnabled(selectedCount),
+                onClick = onPin,
             )
             ActionIcon(
                 icon = Icons.Filled.Archive,
                 contentDescription = "Archive selected",
                 tint = if (selectedCount > 0) palette.warning else palette.textSecondary.copy(alpha = 0.35f),
-                onClick = { if (selectedCount > 0) onArchive() },
+                enabled = bulkMutationEnabled(selectedCount),
+                onClick = onArchive,
             )
             ActionIcon(
                 icon = Icons.Filled.Delete,
                 contentDescription = "Delete selected",
                 tint = if (selectedCount > 0) palette.destructive else palette.textSecondary.copy(alpha = 0.35f),
-                onClick = { if (selectedCount > 0) onDelete() },
+                enabled = bulkMutationEnabled(selectedCount),
+                onClick = onDelete,
             )
             Spacer(Modifier.width(4.dp))
         }
     }
 }
 
-/** 40dp circular touch target consistent with `CircleButton` in `HermexComponents.kt`. */
+/** A compact 40 dp visual inside the shared 48 dp native touch target. */
 @Composable
 private fun ActionIcon(
     icon: ImageVector,
-    contentDescription: String?,
-    tint: androidx.compose.ui.graphics.Color,
+    contentDescription: String,
+    tint: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .size(40.dp)
-            .background(LocalHermexPalette.current.bubble, CircleShape)
-            .clickable(onClick = onClick),
+            .size(circleButtonTouchTargetDp(40).dp)
+            .semantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+                if (!enabled) disabled()
+            }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(LocalHermexPalette.current.bubble, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
