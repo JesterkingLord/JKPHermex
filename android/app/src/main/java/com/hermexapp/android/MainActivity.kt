@@ -136,6 +136,19 @@ class MainActivity : ComponentActivity() {
         intent ?: return
         val container = (application as HermexApp).container
         when {
+            // Pattern A deep link from the Farouk Fusion super-app.
+            // The super-app fires ACTION_VIEW with the URI
+            //   faroukfusion://open-jkp
+            // to land the user in the chat surface. The strings are
+            // pinned in FaroukFusionDeepLinkTest; the AndroidManifest
+            // filter matches on scheme + host.
+            intent.action == Intent.ACTION_VIEW && intent.data?.let { uri ->
+                uri.scheme == FaroukFusionDeepLink.SCHEME &&
+                    uri.host == FaroukFusionDeepLink.HOST_JKP
+            } == true -> {
+                container.sharedDraftStore.offer(intent.data?.toString())
+                pendingFaroukFusionDeepLink = true
+            }
             intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true ->
                 container.sharedDraftStore.offer(intent.getStringExtra(Intent.EXTRA_TEXT))
             intent.action == Intent.ACTION_SEND -> {
@@ -168,11 +181,31 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /**
+         * Pattern A contract (master plan §3.8, P5.6). The strings
+         * here MUST match the super-app's DeepLinkScheme and the
+         * AndroidManifest intent-filter. FaroukFusionDeepLinkTest
+         * pins the same strings at the unit-test level so a typo on
+         * either side is caught at build time.
+         */
+        object FaroukFusionDeepLink {
+            const val SCHEME = "faroukfusion"
+            const val HOST_JKP = "open-jkp"
+        }
+
         /** Session to open when launched from a run-complete notification. */
         var pendingSessionFromNotification: String? = null
 
         /** Set when launched from the home-screen widget's "New chat" button. */
         var pendingNewChatFromWidget: Boolean = false
+
+        /**
+         * Set when launched via the faroukfusion://open-jkp deep link
+         * from the Farouk Fusion super-app (Pattern A). The UI reads
+         * this on first composition and routes the user straight to
+         * the chat surface.
+         */
+        var pendingFaroukFusionDeepLink: Boolean = false
     }
 }
 
@@ -252,6 +285,15 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
         // The widget's "New chat" button opens a fresh session on launch.
         if (MainActivity.pendingNewChatFromWidget) {
             MainActivity.pendingNewChatFromWidget = false
+            sessionListViewModel.createSessionNow()?.let { screen = Screen.Chat(it) }
+        }
+        // Pattern A deep link from the Farouk Fusion super-app lands
+        // the user directly in the chat surface (master plan §3.8).
+        // The faroukfusion://open-jkp intent is intercepted by the
+        // AndroidManifest filter; handleIncomingIntent sets this flag
+        // and seeds the draft store with the deep link URI.
+        if (MainActivity.pendingFaroukFusionDeepLink) {
+            MainActivity.pendingFaroukFusionDeepLink = false
             sessionListViewModel.createSessionNow()?.let { screen = Screen.Chat(it) }
         }
     }

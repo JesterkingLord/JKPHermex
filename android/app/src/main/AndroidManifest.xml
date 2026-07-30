@@ -125,6 +125,24 @@
                 <data android:mimeType="image/*" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
+            <!--
+                Pattern A deep link (master plan §3.8, P5.6): the Farouk
+                Fusion super-app fires ACTION_VIEW with the URI
+                "faroukfusion://open-jkp" and a target package of
+                "com.hermexapp.android" to launch us. If we are not
+                installed, the super-app falls back to the Play Store.
+
+                This filter is the matching half of the contract:
+                scheme "faroukfusion" + host "open-jkp". The strings
+                are also pinned in FaroukFusionDeepLinkTest so a
+                rename is caught at build time on both sides.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="faroukfusion" android:host="open-jkp" />
+            </intent-filter>
         </activity>
     </application>
 
