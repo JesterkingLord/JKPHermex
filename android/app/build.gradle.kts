@@ -152,6 +152,7 @@ dependencies {
     implementation(project(":lib:jkp-core"))
     implementation(project(":lib:jkp-auth"))
     implementation(project(":lib:jkp-composer"))
+    implementation(project(":lib:jkp-sessions"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
