@@ -54,8 +54,8 @@ Pattern A (the deep-link) is the v1.0 cross-app launch story. Pattern B (embedde
 
 | Module | Path | What | Why |
 |---|---|---|---|
-| **`:jkp-core`** | `android/lib/jkp-core/` | `model/`, `network/`, `persistence/`, `platform/`, `ui/theme/`, `ui/markdown/`, `ui/AccentSwatch.kt`, `ui/DrawerPane.kt`, `ui/FastScrollbar.kt`, `ui/HermexComponents.kt`, `ui/JumpFab.kt`, `ui/MarkdownShare.kt`, `ui/PickerSheet.kt`, `config/` | Cross-cutting foundation. Imported by everything. |
-| **`:jkp-auth`** | `android/lib/jkp-auth/` | `auth/` | The smallest leaf. Used by onboarding, HermexApp, MainActivity, SessionCookieJar. |
+| **`:jkp-core`** | `android/lib/jkp-core/` | `model/`, `network/`, `persistence/`, `platform/` (minus widget), `ui/theme/`, `ui/markdown/`, `ui/AccentSwatch.kt`, `ui/DrawerPane.kt`, `ui/FastScrollbar.kt`, `ui/HermexComponents.kt`, `ui/JumpFab.kt`, `ui/MarkdownShare.kt`, `ui/PickerSheet.kt`, `config/`, **+ `auth/SecretStore.kt` + `auth/KeystoreSecretStore.kt`** (the secrets interface that `network` needs — cycle-break) | Cross-cutting foundation. Imported by everything. **Sinks all jkp-* deps** (no other jkp-* deps). |
+| **`:jkp-auth`** | `android/lib/jkp-auth/` | `auth/AuthManager.kt`, `auth/PairingIntent.kt`, `auth/ServerUrlNormalizer.kt` (3 files) | The phone-auth features (pairing, token, server URL). Uses `:lib:jkp-core` for the network calls and model. |
 | **`:jkp-chat`** | `android/lib/jkp-chat/` | `features/chat/` | The biggest feature (10 files). The one the super-app most needs. |
 | **`:jkp-composer`** | `android/lib/jkp-composer/` | `features/composer/` | The input area (4 files). |
 | **`:jkp-sessions`** | `android/lib/jkp-sessions/` | `features/sessionlist/` | Session list management (8 files). |
@@ -73,46 +73,41 @@ Pattern A (the deep-link) is the v1.0 cross-app launch story. Pattern B (embedde
 
 ---
 
-## 4. Dependency graph (no cycles)
+## 4. Dependency graph (no cycles, after cycle-break)
+
+**Real-world cycles that surface on audit:**
+- `network/SessionCookieJar.kt` → `auth.SecretStore`
+- `auth/AuthManager.kt` → `network.ApiClient`, `network.completePairing`, `network.SessionCookieJar`
+
+A pure 1:1 module split isn't possible without breaking one of these. **Cycle-break chosen:** move `SecretStore` and `KeystoreSecretStore` (the 2 auth files network actually needs) into `:jkp-core`. They are a small interface + Android impl that the network layer needs; they don't belong in a "phone-auth" feature module anyway. The remaining 3 auth files (`AuthManager`, `PairingIntent`, `ServerUrlNormalizer`) stay in `:jkp-auth` and depend on `:jkp-core`. No cycle.
+
+After the cycle-break:
 
 ```
 :app
+ ├── :jkp-auth          (AuthManager, PairingIntent, ServerUrlNormalizer)
  ├── :jkp-chat          (for Home destination)
- ├── :jkp-sessions      (for nav graph)
- ├── :jkp-panels        (for side panels)
+ ├── :jkp-composer
+ ├── :jkp-sessions
+ ├── :jkp-panels
  ├── :jkp-settings      (for Settings destination)
- ├── :jkp-workspace     (for Workspace destination)
- ├── :jkp-composer      (for the input area)
- ├── :jkp-auth          (for pairing screen)
- └── :jkp-core          (transitively, for theme + network + persistence)
+ ├── :jkp-workspace
+ └── :lib:jkp-core      (foundation: model, network, persistence, platform,
+                         ui, config, AND the 2 secrets interfaces)
 
-:jkp-chat
- ├── :jkp-composer      (chat uses composer)
- ├── :jkp-sessions      (chat references session)
- ├── :jkp-panels        (chat opens panels)
- └── :jkp-core
+:lib:jkp-core
+ (no jkp-* deps — only platform / AndroidX / Kotlin first-party)
 
-:jkp-sessions
- └── :jkp-core
-
-:jkp-panels
- └── :jkp-core
-
-:jkp-settings
- ├── :jkp-auth          (settings → pairing reset)
- └── :jkp-core
-
-:jkp-workspace
- └── :jkp-core
-
-:jkp-composer
- └── :jkp-core
-
-:jkp-auth
- └── :jkp-core
+:jkp-auth           → :lib:jkp-core
+:jkp-composer       → :lib:jkp-core
+:jkp-sessions       → :lib:jkp-core
+:jkp-panels         → :lib:jkp-core
+:jkp-workspace      → :lib:jkp-core
+:jkp-settings       → :lib:jkp-auth, :lib:jkp-core
+:jkp-chat           → :jkp-composer, :jkp-sessions, :jkp-panels, :lib:jkp-core
 ```
 
-**No cycles. `:jkp-core` is a sink.**
+**No cycles. `:lib:jkp-core` is a sink.**
 
 ---
 
