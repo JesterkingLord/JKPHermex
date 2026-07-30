@@ -453,7 +453,7 @@ class ChatViewModel(
             }
             val attachment = PendingAttachment(
                 name = response.filename ?: filename,
-                path = response.path,
+                path = response.path!!,
                 mime = response.mime ?: "application/octet-stream",
                 size = response.size ?: data.size,
                 isImage = response.isImage == true,
@@ -761,8 +761,9 @@ class ChatViewModel(
     private fun applyInterim(event: SseEvent.InterimAssistant) {
         _uiState.update { state ->
             var entries = finalizeDrafts(state.entries)
-            if (event.alreadyStreamed != true && !event.text.isNullOrBlank()) {
-                entries = entries + TimelineEntry.AssistantMessage(nextId("assistant"), event.text)
+            val streamedText = event.text
+            if (event.alreadyStreamed != true && !streamedText.isNullOrBlank()) {
+                entries = entries + TimelineEntry.AssistantMessage(nextId("assistant"), streamedText)
             }
             state.copy(entries = entries)
         }
@@ -1211,10 +1212,13 @@ class ChatViewModel(
             "assistant" ->
                 if (!text.isNullOrBlank()) {
                     TimelineEntry.AssistantMessage("history-$index-${message.stableId}", text)
-                } else if (!message.reasoning.isNullOrBlank()) {
-                    TimelineEntry.Reasoning("history-$index-${message.stableId}", message.reasoning)
                 } else {
-                    null
+                    val reasoningText = message.reasoning
+                    if (!reasoningText.isNullOrBlank()) {
+                        TimelineEntry.Reasoning("history-$index-${message.stableId}", reasoningText)
+                    } else {
+                        null
+                    }
                 }
             else -> null
         }

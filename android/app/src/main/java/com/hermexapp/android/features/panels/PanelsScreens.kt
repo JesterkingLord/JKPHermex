@@ -479,7 +479,7 @@ private fun InsightsPanel(state: PanelsViewModel.UiState) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    insights.models.forEach { model ->
+                    insights.models?.forEach { model ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,

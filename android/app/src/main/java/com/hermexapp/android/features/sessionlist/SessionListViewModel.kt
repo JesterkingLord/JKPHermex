@@ -308,9 +308,10 @@ class SessionListViewModel(
     /** Forks a session from the full history; returns the fork's id. */
     suspend fun branchSessionNow(id: String): String? = try {
         val response = repository.branchSession(id)
-        if (response.error != null) {
-            _uiState.update { it.copy(errorMessage = response.error) }
-            _events.tryEmit(SessionListEvent.ActionError(message = response.error))
+        val errorMessage = response.error
+        if (errorMessage != null) {
+            _uiState.update { it.copy(errorMessage = errorMessage) }
+            _events.tryEmit(SessionListEvent.ActionError(message = errorMessage))
         } else {
             val originalTitle = _uiState.value.sessions.firstOrNull { it.sessionId == id }?.title
             _events.tryEmit(SessionListEvent.Forked(originalTitle = originalTitle))

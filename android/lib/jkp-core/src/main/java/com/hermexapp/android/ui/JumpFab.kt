@@ -30,7 +30,7 @@ internal fun shouldShowJumpToLatest(canScrollForward: Boolean): Boolean = canScr
  * Targets the absolute end of the final item, not merely its leading edge.
  * A zero offset can leave the lower half of a viewport-tall message hidden.
  */
-internal fun jumpToLatestTarget(itemCount: Int): ScrollTarget? =
+fun jumpToLatestTarget(itemCount: Int): ScrollTarget? =
     if (itemCount > 0) ScrollTarget(itemCount - 1, Int.MAX_VALUE) else null
 
 /** A compact 40 dp visual inside a native-sized 48 dp button shell. */
