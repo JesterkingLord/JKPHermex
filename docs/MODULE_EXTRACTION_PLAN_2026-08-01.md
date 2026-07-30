@@ -116,21 +116,23 @@ Pattern A (the deep-link) is the v1.0 cross-app launch story. Pattern B (embedde
 
 ---
 
-## 5. Execution order (10 steps)
+## 5. Execution order (10 steps, dependency-corrected)
+
+**Correction from the original draft:** `:jkp-auth` depends on `:jkp-core` (`auth.AuthManager` imports `network.ApiClient`, `model.AuthStatusResponse`, etc.), so `:jkp-core` must come first. The original "start with :jkp-auth" plan was wrong.
 
 | # | Step | Files moved | Tests affected | Risk | Time |
 |---|---|---|---|---|---|
-| 1 | **Create `:jkp-core`** | ~60 files (model, network, persistence, platform, ui/, config) | All 547 tests | **HIGH** — touches everything | 1 day |
-| 2 | Verify `:app` builds against `:jkp-core` | 0 moved | 547 | regression check | 30 min |
-| 3 | **Create `:jkp-auth`** | 5 files (auth/) | ~10 | LOW | 1 hour |
-| 4 | Verify | 0 moved | ~10 auth + 547 transitive | regression check | 30 min |
-| 5 | **Create `:jkp-chat`** | 10 files (features/chat/) | ~30 | MEDIUM | 1 day |
-| 6 | **Create `:jkp-composer`** | 4 files (features/composer/) | ~10 | LOW | 2 hours |
-| 7 | **Create `:jkp-sessions`** | 8 files (features/sessionlist/) | ~15 | MEDIUM | 3 hours |
-| 8 | **Create `:jkp-panels`** | 2 files (features/panels/) | ~5 | LOW | 1 hour |
-| 9 | **Create `:jkp-settings`** | 2 files (features/settings/) | ~5 | LOW | 1 hour |
-| 10 | **Create `:jkp-workspace`** | 2 files (features/workspace/) | ~5 | LOW | 1 hour |
-| 11 | **Verify `:app` is < 20 files** | 0 moved | 547 | regression check | 30 min |
+| 1 | **Create `:jkp-core`** | ~60 files (model, network, persistence, platform, ui/, config) | All 1109 tests | **HIGH** — touches everything | 1.5 days |
+| 2 | Verify `:app` builds against `:jkp-core` | 0 moved | 1109 | regression check | 30 min |
+| 3 | **Create `:jkp-auth`** | 5 files (auth/) | 98 auth + 4 importers | LOW | 2 hours |
+| 4 | Verify | 0 moved | 1109 | regression check | 30 min |
+| 5 | **Create `:jkp-composer`** | 4 files (features/composer/) | ~16 | LOW | 2 hours |
+| 6 | **Create `:jkp-sessions`** | 8 files (features/sessionlist/) | ~130 | MEDIUM | 4 hours |
+| 7 | **Create `:jkp-panels`** | 2 files (features/panels/) | ~5 | LOW | 1 hour |
+| 8 | **Create `:jkp-workspace`** | 2 files (features/workspace/) | ~5 | LOW | 1 hour |
+| 9 | **Create `:jkp-chat`** | 10 files (features/chat/) | ~172 | MEDIUM (depends on composer + sessions + panels) | 4 hours |
+| 10 | **Create `:jkp-settings`** | 2 files (features/settings/) | ~5 | LOW | 1 hour |
+| 11 | **Verify `:app` is < 20 files** | 0 moved | 1109 | regression check | 30 min |
 | 12 | **Bump version 0.8.14 → 0.9.0** | CHANGELOG.md | n/a | n/a | 15 min |
 | 13 | **Tag and release** | git tag | n/a | n/a | 15 min |
 
@@ -195,7 +197,7 @@ This is the "Pattern B (embedded mini-app)" story. It's not v1.0; it's a future 
 ## 9. Acceptance criteria
 
 P5 is done when:
-- All 547 tests still pass
+- All 1109 tests still pass (1 pre-existing failure documented; P5 must add zero new failures)
 - `:app` has < 20 files (the thin glue)
 - All 7 `:jkp-*` modules build independently
 - `super-app/build.gradle.kts` can declare `implementation(project(":jkp-chat"))` and the import resolves
