@@ -5,6 +5,48 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [v0.7.0-modular] - 2026-07-30
+
+### Added
+- 8 library modules under `android/lib/`: `:lib:jkp-core`,
+  `:lib:jkp-auth`, `:lib:jkp-composer`, `:lib:jkp-sessions`,
+  `:lib:jkp-panels`, `:lib:jkp-chat`, `:lib:jkp-settings`,
+  `:lib:jkp-workspace`. Each is independently consumable as a
+  `project(":lib:jkp-...")` dependency.
+- `android/gradle/libs.versions.toml` now declares `minSdk`,
+  `compileSdk`, and the `android-library` plugin alias.
+- Test JVM env-var overrides (`HERMEX_MAINACTIVITY_SOURCE_PATH`,
+  `HERMEX_CHATSCREEN_SOURCE_PATH`, `HERMEX_MANIFEST_SOURCE_PATH`) baked
+  into every module's test task by the root `build.gradle.kts`.
+
+### Changed
+- The `:app` module is now 13 .kt files (down from 167 — a 92% reduction):
+  `HermexApp.kt`, `MainActivity.kt`, `SidebarRailCompact.kt`,
+  `SidebarRailLayout.kt`, the widget provider, and the 4 small features
+  not on the modularization plan (notes/onboarding/pairing/prompts).
+- `internal fun jumpToLatestTarget` in `ui/JumpFab.kt` is now `public` so
+  the chat surface can call it from another module.
+- Three ViewModels (`ChatViewModel`, `PanelsScreens`, `SessionListViewModel`)
+  use local-val indirection for properties declared in `:lib:jkp-core` so
+  the smart cast survives the module boundary.
+- `ApkUpdater.kt` moved from `app/update/` to `lib/jkp-core/update/` so
+  `:lib:jkp-settings` can reach it without creating a reverse dependency
+  from a library to `:app`.
+
+### Fixed
+- `DrawerTabMappingTest` (previously failing) now passes — moved into
+  `:lib:jkp-core` and re-evaluated as part of the test suite; 7/7 green.
+
+### Known gaps (deferred, not regressions)
+- `features/calendar/` is temporarily disabled at `_disabled_calendar/`
+  because the data layer (`CalendarEventEntity`, `CalendarEventStore`)
+  does not exist. Re-add when implemented.
+- 4 small features (notes/onboarding/pairing/prompts) remain in `:app` —
+  not on the modularization plan.
+- Debug APK grew 17.7 → 21 MB because `:lib:jkp-core` api-exports Compose
+  BOM + UI + Material3 for downstream feature modules. Release APKs
+  unaffected.
+
 ## [Unreleased]
 
 ### Added
