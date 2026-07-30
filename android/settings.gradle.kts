@@ -20,5 +20,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "hermex-android"
+rootProject.name = "Hermex"
 include(":app")
+include(":lib:jkp-core")
+include(":lib:jkp-auth")
+include(":lib:jkp-composer")
