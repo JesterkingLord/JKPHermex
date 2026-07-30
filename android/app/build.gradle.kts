@@ -154,6 +154,7 @@ dependencies {
     implementation(project(":lib:jkp-composer"))
     implementation(project(":lib:jkp-sessions"))
     implementation(project(":lib:jkp-panels"))
+    implementation(project(":lib:jkp-chat"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

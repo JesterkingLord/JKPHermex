@@ -241,6 +241,12 @@ class ChatScreenImeInsetsLayoutTest {
         }
 
         fun resolveManifestSource(): File {
+            val override = System.getenv("HERMEX_MANIFEST_SOURCE_PATH")
+            if (override != null) {
+                val f = File(override)
+                require(f.isFile) { "HERMEX_MANIFEST_SOURCE_PATH=$override does not exist." }
+                return f
+            }
             var dir: File? = File(".").absoluteFile
             while (dir != null) {
                 val candidate = File(dir, "src/main/AndroidManifest.xml")
