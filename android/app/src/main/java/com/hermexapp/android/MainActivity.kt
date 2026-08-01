@@ -265,10 +265,10 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
             shareFileUploads = content.fileUris.mapNotNull { uriString ->
                 runCatching {
                     val uri = android.net.Uri.parse(uriString)
-                    val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    val (bytes, name) = withContext(Dispatchers.IO) {
+                        val data = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        data to resolveDisplayName(context, uri)
                     }
-                    val name = resolveDisplayName(context, uri)
                     bytes?.let { it to name }
                 }.getOrNull()
             }
