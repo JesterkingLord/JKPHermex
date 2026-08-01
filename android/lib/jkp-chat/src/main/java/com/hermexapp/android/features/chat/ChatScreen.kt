@@ -53,6 +53,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +76,9 @@ import kotlinx.coroutines.launch
  * cards start expanded when their flag is on unless the user toggles them.
  */
 data class ChatDisplayPrefs(val expandThinking: Boolean = false, val expandTools: Boolean = false)
+
+internal fun expandableStateDescription(expanded: Boolean): String =
+    if (expanded) "Expanded" else "Collapsed"
 
 enum class ChatLeadingAction { MENU, BACK }
 
@@ -536,6 +542,7 @@ private fun TimelineEntryView(
                         .widthIn(max = 320.dp)
                         .heightIn(min = 48.dp)
                         .combinedClickable(
+                            role = Role.Button,
                             onClick = { showEdit = true },
                             onLongClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -580,6 +587,7 @@ private fun TimelineEntryView(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .combinedClickable(
+                        role = Role.Button,
                         onClick = { showActions = true },
                         onLongClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -621,7 +629,12 @@ private fun TimelineEntryView(
                         .fillMaxWidth()
                         .let {
                             if (hasPreview) {
-                                it.heightIn(min = 48.dp).clickable { userToggled = !expanded }
+                                it
+                                    .heightIn(min = 48.dp)
+                                    .clickable(role = Role.Button) { userToggled = !expanded }
+                                    .semantics {
+                                        stateDescription = expandableStateDescription(expanded)
+                                    }
                             } else {
                                 it
                             }
@@ -709,7 +722,10 @@ private fun ThinkingCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .clickable(onClick = { userToggled = !(expanded) })
+                .clickable(role = Role.Button, onClick = { userToggled = !expanded })
+                .semantics {
+                    stateDescription = expandableStateDescription(expanded)
+                }
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
