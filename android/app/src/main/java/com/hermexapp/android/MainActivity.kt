@@ -258,11 +258,13 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
     val pendingShare by container.sharedDraftStore.pending.collectAsState()
     val context = LocalContext.current
     LaunchedEffect(pendingShare) {
-        if (pendingShare != null) {
-            val content = container.sharedDraftStore.consume() ?: return@LaunchedEffect
+        pendingShare?.let { content ->
+            // Keep the handoff pending until the server accepts a new session,
+            // so a transient failure cannot silently discard the user's draft.
             val sessionId = sessionListViewModel.createSessionNow() ?: return@LaunchedEffect
-            sharePrefill = content.text
-            shareFileUploads = content.fileUris.mapNotNull { uriString ->
+            val consumed = container.sharedDraftStore.consume(content) ?: return@LaunchedEffect
+            sharePrefill = consumed.text
+            shareFileUploads = consumed.fileUris.mapNotNull { uriString ->
                 runCatching {
                     val uri = android.net.Uri.parse(uriString)
                     val (bytes, name) = withContext(Dispatchers.IO) {
@@ -650,24 +652,13 @@ private fun RenderScreen(
             com.hermexapp.android.features.notes.NotesScreen(
                 viewModel = notesVm,
                 onClose = { setScreen(Screen.SessionList) },
-                // Wave 9 (AI Notes): tapping 🤖 Implement on a note drops
-                // the user into a brand-new chat with the composer
-                // pre-filled with the implementation prompt. We use the
-                // existing `sharePrefill` channel so the chat screen
-                // adopts it on next mount, then navigate to a chat on
-                // the (about-to-be-created) session. Note this currently
-                // sends the *existing* new-chat session id; if a
-                // session is needed, the sessionList VM still has to
-                // allocate a new id — for now we re-use the empty
-                // "new chat" path the SessionList already exposes.
+                // Wave 9 (AI Notes): tapping 🤖 Implement starts a chat with
+                // the generated prompt. The shared-draft handoff owns session
+                // creation, retry, and navigation; no persistent widget flag
+                // is left behind to open a second chat after recreation.
                 onImplementNote = { note ->
                     val prompt = notesVm.buildImplementationPrompt(note)
-                    sharePrefill = prompt
-                    // Re-use the "next chat" navigation by routing through
-                    // SessionList's "new chat" entry point.
-                    MainActivity.pendingNewChatFromWidget = true
                     container.sharedDraftStore.offer(prompt)
-                    setScreen(Screen.SessionList)
                 },
             )
         }

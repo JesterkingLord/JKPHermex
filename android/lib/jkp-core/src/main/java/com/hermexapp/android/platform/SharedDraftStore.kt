@@ -25,5 +25,17 @@ class SharedDraftStore {
     }
 
     /** Returns and clears the pending share. */
+    @Synchronized
     fun consume(): SharedContent? = _pending.value.also { _pending.value = null }
+
+    /**
+     * Clears only the content the caller previously observed. This prevents a
+     * slower session-creation handoff from consuming a newer incoming share.
+     */
+    @Synchronized
+    fun consume(expected: SharedContent): SharedContent? {
+        if (_pending.value != expected) return null
+        _pending.value = null
+        return expected
+    }
 }

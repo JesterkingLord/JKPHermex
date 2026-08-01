@@ -35,4 +35,26 @@ class SharedDraftStoreTest {
         assertEquals(listOf("content://x"), consumed?.fileUris)
         assertNull(store.pending.value)
     }
+
+    @Test
+    fun `conditional consume never clears a newer pending share`() {
+        val store = SharedDraftStore()
+        store.offer("first")
+        val first = requireNotNull(store.pending.value)
+
+        store.offer("second")
+
+        assertNull(store.consume(first))
+        assertEquals("second", store.pending.value?.text)
+    }
+
+    @Test
+    fun `conditional consume clears the matching pending share`() {
+        val store = SharedDraftStore()
+        store.offer("retry-safe")
+        val expected = requireNotNull(store.pending.value)
+
+        assertEquals(expected, store.consume(expected))
+        assertNull(store.pending.value)
+    }
 }
