@@ -227,6 +227,7 @@ private fun DrawerItem(
     else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
             .background(bg)
             .clickable(role = Role.Button, onClick = onClick)
@@ -235,7 +236,9 @@ private fun DrawerItem(
     ) {
         Icon(
             imageVector = tab.icon,
-            contentDescription = tab.label,
+            // The adjacent Text is the control's label; repeating it on the
+            // icon makes accessibility services announce the tab twice.
+            contentDescription = null,
             tint = fg,
             modifier = Modifier.size(24.dp)
         )
