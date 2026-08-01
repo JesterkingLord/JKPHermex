@@ -1,10 +1,12 @@
 package com.hermexapp.android.features.chat
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.content.Intent
+import android.os.Build
+import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -14,12 +16,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 
 /**
- * On-device dictation via Android's [SpeechRecognizer] — the voice-input slice.
- * Populates the composer only (server chat behavior is unchanged), mirroring the
- * iOS voice-input contract. Returns a controller the composer's mic button
- * drives; requests RECORD_AUDIO on first use.
+ * Dictation through Android's [SpeechRecognizer]. API 31+ prefers the dedicated
+ * on-device recognizer when available; otherwise Android's default recognition
+ * provider is used and may process audio over a network. Hermex retains no
+ * microphone recording and inserts results into the composer without sending.
  */
 class VoiceInputController(
     val isListening: Boolean,
@@ -32,11 +35,37 @@ class VoiceInputController(
 fun rememberVoiceInputController(onText: (String) -> Unit): VoiceInputController {
     val context = LocalContext.current
     var listening by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(false) }
-    val available = remember { SpeechRecognizer.isRecognitionAvailable(context) }
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val recognitionMode = remember(context) {
+        selectVoiceRecognitionMode(
+            sdkInt = Build.VERSION.SDK_INT,
+            onDeviceAvailable = Build.VERSION.SDK_INT >= 31 &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context),
+            systemAvailable = SpeechRecognizer.isRecognitionAvailable(context),
+        )
+    }
 
-    val recognizer = remember {
-        if (available) SpeechRecognizer.createSpeechRecognizer(context) else null
+    val recognizer = remember(context, recognitionMode) {
+        runCatching {
+            when (recognitionMode) {
+                VoiceRecognitionMode.ON_DEVICE ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                    } else {
+                        null
+                    }
+                VoiceRecognitionMode.SYSTEM_DEFAULT ->
+                    SpeechRecognizer.createSpeechRecognizer(context)
+                VoiceRecognitionMode.UNAVAILABLE -> null
+            }
+        }.getOrNull()
     }
 
     DisposableEffect(recognizer) {
@@ -47,7 +76,9 @@ fun rememberVoiceInputController(onText: (String) -> Unit): VoiceInputController
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         hasPermission = granted
-        if (granted) listening = true
+        if (decideVoiceStart(recognizer != null, granted) == VoiceStartDecision.START) {
+            listening = true
+        }
     }
 
     fun beginListening() {
@@ -88,10 +119,14 @@ fun rememberVoiceInputController(onText: (String) -> Unit): VoiceInputController
 
     return VoiceInputController(
         isListening = listening,
-        isAvailable = available,
+        isAvailable = recognizer != null,
         start = {
-            if (hasPermission) listening = true
-            else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            when (decideVoiceStart(recognizer != null, hasPermission)) {
+                VoiceStartDecision.START -> listening = true
+                VoiceStartDecision.REQUEST_PERMISSION ->
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                VoiceStartDecision.UNAVAILABLE -> Unit
+            }
         },
         stop = {
             listening = false
