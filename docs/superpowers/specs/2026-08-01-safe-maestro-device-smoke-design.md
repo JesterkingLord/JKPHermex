@@ -1,8 +1,8 @@
 # Safe Maestro Device Smoke Design
 
-**Date:** 2026-08-01  
+**Date:** 2026-08-01
 **Status:** Approved for implementation by the operator's standing "continue and
-approve, do what is best" direction  
+approve, do what is best" direction
 **Scope:** Android physical-device smoke automation for the existing installed
 JKPHermex app
 
