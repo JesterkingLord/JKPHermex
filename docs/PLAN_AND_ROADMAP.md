@@ -2,10 +2,10 @@
 
 **Product:** Native **Android** control surface for a self-hosted **JKP / Hermes** agent  
 **Repo:** `E:\JKPHermex` · GitHub: `JesterkingLord/JKPHermex`  
-**Current Android development version:** **`0.8.14`** (`versionCode` 37) on `feat/wave-9-premium-polish`
+**Current Android development version:** **`0.8.14`** (`versionCode` 37) on `feat/jkp-modular-extraction`
 **Latest documented stable line:** **`0.7.2-stable`** (`versionCode` 18), tag `v0.7.2-stable`
 **Stable line:** tag `v0.7.2-stable`, branch `stable/v1.12.1-jkphermex-0.7.2` (coordinated with `JKP v1.12.1-stable`)
-**Last roadmap refresh:** `2026-07-28` (0.8.14 device-verified scrollbar, accessibility-target, migration, and IME stabilization)
+**Last roadmap refresh:** `2026-08-01` (privacy/backup hardening, safe Maestro smoke, scrollbar and lifecycle reliability pass)
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
@@ -23,7 +23,7 @@ The phone **does not** run the agent. It authenticates, lists/opens sessions, st
 
 ---
 
-## 1. Current state (2026-07-28)
+## 1. Current state (2026-08-01)
 
 ### Active 0.8.14 quality pass
 
@@ -50,6 +50,16 @@ Completed in source and JVM/build verified:
 - Debug lint succeeds; the remaining lint warnings are dependency-update notices,
   intentional cleartext opt-in for operator-selected self-hosted HTTP servers,
   legacy launcher/widget compatibility, and non-blocking resource suggestions.
+- Android backup/device transfer is disabled and regression-tested; saved custom
+  header values are never rendered, and dictation prefers the on-device provider
+  where Android supports it.
+- Safe, read-only Maestro flows cover connected-state navigation and existing-chat
+  scrolling without `launchApp`, permission changes, state clearing, or server
+  mutations. Static safety verification is green; device execution still requires
+  a connected ADB phone and a local Maestro CLI.
+- The latest reliability audit consumes scrollbar drags before the transcript,
+  moves shared-file metadata work off the UI thread, makes draft handoff retry-safe,
+  and cancels every manually owned screen ViewModel/SSE recovery scope on exit.
 
 The 2026-07-28 connected-phone pass completed the identified remediation:
 
@@ -68,6 +78,8 @@ Remaining release operations are intentionally operator-gated: configure the
 release keystore, sign, update the final release version/notes as chosen, then
 approve push, tag, PR, and distribution. Manual TalkBack traversal was stopped at
 the operator's request; the service was restored to its original disabled state.
+The current post-audit APK still needs a non-destructive connected-phone smoke run;
+no phone is visible to ADB at this refresh.
 
 ### Shipped
 
@@ -109,12 +121,13 @@ the operator's request; the service was restored to its original disabled state.
 
 | Gate | Status |
 |---|---|
-| Unit tests + debug APK | **GREEN**: 547 debug + 547 release tests, zero failures/errors/skips; both APK variants assemble |
-| Android lint | **GREEN** (`lintDebug`; 0 errors, 42 reviewed warnings) |
-| Scrollbar math, dragging, semantics | **GREEN on device**: top `0.001`, midpoint `0.494`, bottom `1.000`, and continuous drag `0.665` verified on a 132-message chat; adjustable SeekBar semantics visible in the Android hierarchy |
+| Unit tests + debug APK | **GREEN locally**: 581 debug + 581 release tests, zero failures/errors/skips; final APK assembly gate follows the current audit |
+| Android lint | **GREEN analysis** (0 errors; 45 reviewed non-blocking warnings in the latest report) |
+| Scrollbar math, dragging, semantics | **GREEN in tests; device rerun pending**: prior top `0.001`, midpoint `0.494`, bottom `1.000`, and continuous drag `0.665` proof remains valid; the new drag-consumption refinement awaits the connected-phone smoke |
 | Cold-start sessions | **GREEN**: three force-stop launches returned all 37 live conversations on OPPO CPH2343 |
 | Notes/Prompts upgrade safety | **GREEN on device**: isolated real Room v2→v3 open preserved note/prompt data; production DB untouched |
 | Navigation + composer density | **GREEN on OPPO**: 360 dp and prior 1.35x audit findings remediated; 48 dp controls/rows verified; Gboard meets the metadata rail with no gap |
+| Safe Maestro smoke | **GREEN statically**; connected-device execution blocked by absent ADB phone / Maestro CLI |
 | Release signing / tag / publish | **Operator-blocked / approval-gated** |
 
 Do not implement any endpoint mentioned only in an old excellence plan. Verify
@@ -235,7 +248,7 @@ python -m jkp pair
 
 | Metric | Target |
 |---|---|
-| Unit tests | ≥ 547 green for the current 0.8.14 quality pass (was ≥ 255 at 0.5.0 baseline) |
+| Unit tests | ≥ 581 green for the current 0.8.14 quality pass (was ≥ 255 at 0.5.0 baseline) |
 | Install → first chat on physical phone | &lt; 10 minutes on known host |
 | Pairing secret leakage | Never in logs, UI state, backups, or non-fragment URLs |
 | False “agent crashed” while host waits on approval | 0 (honest status copy) |
@@ -262,6 +275,7 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-08-01 | Hardened backup/privacy and on-device dictation; added safe read-only Maestro flows; refined scrollbar drag ownership; masked gateway headers; fixed shared-file UI-thread I/O, retry-safe share/Notes handoff, screen ViewModel leaks, and navigation semantics/48 dp targets. Debug/release each run 581 tests with zero failures. Physical rerun remains pending because ADB sees no phone. |
 | 2026-07-28 | Completed the connected-device accessibility/scroll pass: one true-end jump control, adjustable scrollbar semantics, shared 48 dp swatches/actions/rows, real isolated on-device Room v2→v3 migration, and final Gboard verification. Debug/release each run 547 tests with zero failures. |
 | 2026-07-27 | Replaced the stale USB-reconnect screenshot gate with physical dark/light and 1.35x font-scale evidence; recorded the remaining 48 dp, swatch-label, TalkBack-adjustment, and stacked-jump remediation instead of treating the accessibility pass as complete. |
 | 2026-07-27 | Reconciled roadmap with active 0.8.14 development state; recorded scrollbar/cold-start/navigation/composer/persistence hardening and the remaining physical-device/release gates. |

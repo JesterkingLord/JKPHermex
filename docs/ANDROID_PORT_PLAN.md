@@ -1,10 +1,10 @@
 # Android Port Plan — Hermex for Android
 
 Status: **historical + phase ledger**.  
-**What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-07-16).  
+**What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-08-01).  
 This file remains the architecture and phases 0–11 delivery ledger.
 
-**Current ship baseline:** Android **`0.6.0`** (`versionCode` 13) — 0.6.0 final cut 2026-07-21; Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 auto-reconnect + 6.6 camera QR scanner + 13.10 stream recovery; 519 unit tests. Prior baseline `0.5.0` (versionCode 6, 2026-07-15). Physical phone chat against live JKP first proven at **0.3.0** (2026-07-14).
+**Current development baseline:** Android **`0.8.14`** (`versionCode` 37); 581 debug + 581 release unit tests on 2026-08-01. Latest documented stable line is `0.7.2-stable`; the historical `0.6.0` final cut shipped 2026-07-21. Physical phone chat against live JKP was first proven at **0.3.0** (2026-07-14).
 
 ## 0. Current verified state (2026-07-14 device + 2026-07-16 roadmap)
 
@@ -241,7 +241,7 @@ development at the same cadence as the iOS build). Check phases off as they land
   - [x] Room cache for offline reads (raw-JSON payload cache per host) with an
         offline banner; refresh action (pull-to-refresh gesture deferred to
         polish)
-- [ ] **Phase 4 — Chat + SSE streaming** *(the hardest slice, same as iOS)* (6–8 days)
+- [x] **Phase 4 — Chat + SSE streaming** *(the hardest slice, same as iOS)* (6–8 days)
   - [x] SSE client (okhttp-sse): token / reasoning / interim_assistant / tool /
         tool_complete / title / done / cancel / stream_end / error events,
         unknown types ignored
@@ -296,8 +296,9 @@ development at the same cadence as the iOS build). Check phases off as they land
   - [x] Call `/v1/pair/complete`, store the scoped grant/device ID, and clean up on sign-out
   - [x] Paste-first pairing UI and Android `0.3.0` build
   - [x] Physical Android phone connected to JKP; sessions and live model turn verified
-  - [ ] Use the stored grant as Bearer auth with password/cookie compatibility fallback
-  - [ ] Camera scanner, revoke/expiry recovery UX, and real-device security matrix
+  - [x] Use the stored grant as Bearer auth with password/cookie compatibility fallback
+  - [x] Camera scanner plus local forget / expired-grant recovery UX
+  - [ ] Complete the remaining real-device security matrix
 
 **Total: roughly 6–8 working weeks to feature parity.** A useful v1 cut (phases 0–5
 plus settings basics) ships in about half that; everything after phase 5 is additive.
