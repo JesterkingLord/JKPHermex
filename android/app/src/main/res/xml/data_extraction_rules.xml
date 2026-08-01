@@ -1,24 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Hermex data extraction rules — Android 12+ (cloud backup + device
-  transfer). Mirrors backup_rules.xml: the secret store, prefs, and
-  the pairing-grant database are EXCLUDED from any cloud backup or
-  D2D device-transfer flow.
+  Hermex data extraction rules — Android 12+.
 
-  Backup flows excluded: cloud, device-to-device.
-  Backup flows included (and what they include): nothing.
+  App-private data is intentionally excluded from both cloud backup and
+  device-to-device transfer. The complete domain set is denied so the policy
+  does not depend on current filenames or storage implementation details.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="sharedpref" path="hermex_secrets.xml" />
-        <exclude domain="sharedpref" path="hermex_prefs.xml" />
-        <exclude domain="sharedpref" path="hermex_servers.xml" />
-        <exclude domain="file" path="databases/hermex.db" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="hermex_secrets.xml" />
-        <exclude domain="sharedpref" path="hermex_prefs.xml" />
-        <exclude domain="sharedpref" path="hermex_servers.xml" />
-        <exclude domain="file" path="databases/hermex.db" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
     </device-transfer>
 </data-extraction-rules>
