@@ -32,4 +32,6 @@ android {
 dependencies {
     implementation(project(":lib:jkp-core"))
     implementation(libs.okhttp)
+
+    testImplementation(libs.junit)
 }

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -126,6 +127,12 @@ data class ThumbGeometry(val position: Float, val size: Float)
 /** Rejects invalid accessibility values and clamps finite requests to the track. */
 internal fun normalizeRequestedScrollFraction(requested: Float): Float? =
     requested.takeIf(Float::isFinite)?.coerceIn(0f, 1f)
+
+/** Maps a pointer's vertical track coordinate to a safe normalized fraction. */
+internal fun trackFractionAt(positionYPx: Float, trackHeightPx: Int): Float? {
+    if (!positionYPx.isFinite() || trackHeightPx <= 0) return null
+    return (positionYPx / trackHeightPx.toFloat()).coerceIn(0f, 1f)
+}
 
 /** Human-readable value announced by TalkBack. */
 internal fun buildScrollStateDescription(position: Float): String =
@@ -581,43 +588,32 @@ fun FastScrollbar(
             // mid-content even with wildly variable message heights.
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
-                    val h = size.height.toFloat().coerceAtLeast(1f)
-                    val frac = (offset.y / h).coerceIn(0f, 1f)
+                    val frac = trackFractionAt(offset.y, size.height)
+                        ?: return@detectTapGestures
                     scope.launch {
                         settleAtFraction(frac, animateFirstPass = true)
                     }
                 }
             }
             .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitPointerEvent()
-                        val pos = down.changes.firstOrNull()?.position
-                            ?: continue
-                        val h = size.height.toFloat().coerceAtLeast(1f)
-                        val frac = (pos.y / h).coerceIn(0f, 1f)
-                        dragFraction = frac
-                        val touchSlop = viewConfiguration.touchSlop
-                        var moved = false
-                        while (true) {
-                            val ev = awaitPointerEvent()
-                            val change = ev.changes.firstOrNull() ?: break
-                            if (!change.pressed) break
-                            if (kotlin.math.abs(change.position.y - pos.y) > touchSlop) {
-                                moved = true
-                                dragging = true
-                            }
-                            val ny = (change.position.y /
-                                size.height.toFloat().coerceAtLeast(1f))
-                                .coerceIn(0f, 1f)
-                            dragFraction = ny
-                        }
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        trackFractionAt(offset.y, size.height)?.let { dragFraction = it }
+                        dragging = true
+                    },
+                    onDragCancel = { dragging = false },
+                    onDragEnd = {
                         dragging = false
-                        if (moved) {
-                            scope.launch {
-                                settleAtFraction(dragFraction, animateFirstPass = false)
-                            }
+                        scope.launch {
+                            settleAtFraction(dragFraction, animateFirstPass = false)
                         }
+                    },
+                ) { change, _ ->
+                    // Claim the scrollbar gesture once touch slop is crossed so
+                    // the parent LazyColumn cannot scroll at the same time.
+                    change.consume()
+                    trackFractionAt(change.position.y, size.height)?.let {
+                        dragFraction = it
                     }
                 }
             },

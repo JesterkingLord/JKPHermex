@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hermexapp.android.config.AccentPreset
@@ -54,6 +56,12 @@ import com.hermexapp.android.network.models
 import com.hermexapp.android.network.saveDefaultModel
 import com.hermexapp.android.network.serverSettings
 import kotlinx.coroutines.launch
+
+private const val SENSITIVE_HEADER_MASK = "••••••••"
+
+/** Saved custom-header values can contain gateway credentials; never render them. */
+@Suppress("UNUSED_PARAMETER")
+internal fun maskedHeaderValue(value: String): String = SENSITIVE_HEADER_MASK
 
 /** Phase 8 settings: servers, custom headers, default model, theme, sign out. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -187,11 +195,15 @@ fun SettingsScreen(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                     ) {
                         Text(
-                            "$name: $value",
+                            "$name: ${maskedHeaderValue(value)}",
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clearAndSetSemantics {
+                                    contentDescription = "$name: saved value hidden"
+                                },
                         )
                         TextButton(onClick = {
                             registry.setHeaders(serverUrl, activeHeaders - name)
