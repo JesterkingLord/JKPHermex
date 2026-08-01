@@ -49,6 +49,14 @@ Security sections per release.
 
 ## [Unreleased]
 
+### Security
+- Disabled Android cloud backup and device-transfer restore for all
+  app-private data domains.
+- Voice dictation now prefers Android's on-device recognizer when available
+  and accurately documents the system-provider fallback.
+- Corrected public privacy/storage disclosures for credentials, cached chats,
+  Notes, Prompts, camera QR scanning, updates, and sign-out retention.
+
 ### Added
 - Consistent phone navigation drawer with direct Projects, Tasks, Skills,
   Memory, Insights, Notes, Prompts, Sessions, and Settings destinations.

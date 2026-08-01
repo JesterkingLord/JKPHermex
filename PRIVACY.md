@@ -1,134 +1,161 @@
 # Privacy Policy — JKP Mobile
 
-**Last updated:** 2026-07-15
-**Effective for:** JKP Mobile Android app, v0.4.0 and later (Hermex repo)
+**Last updated:** 2026-08-01
 
-This is the privacy policy for **JKP Mobile**, the native Android client
-in the [`JesterkingLord/JKPHermex`](https://github.com/JesterkingLord/JKPHermex)
-repository. The short version is at the top; the long version follows.
+**Effective for:** JKP Mobile Android app, v0.8.14 and later (Hermex repo)
 
----
+This policy describes the native Android client in the
+[`JesterkingLord/JKPHermex`](https://github.com/JesterkingLord/JKPHermex)
+repository.
 
-## TL;DR
+## Summary
 
-**JKP Mobile collects nothing.** The app does not have a backend service
-operated by us. It does not include analytics SDKs, crash reporters,
-advertising networks, or any third-party telemetry. The app only talks to
-**the JKP / Hermes gateway you configure it to talk to** — typically a
-self-hosted `hermes-webui` instance on your own machine or a server you
-control.
+The publisher does not operate a JKP Mobile account service, chat backend,
+analytics service, advertising network, or crash-reporting service. The app is
+a client for a JKP / Hermes gateway chosen by the operator.
 
-If you find evidence to the contrary, please open a private security
-advisory per [`SECURITY.md`](./SECURITY.md).
+The app does handle private information on the phone and sends information to
+services needed for features the operator uses:
 
----
+- submitted chats and attachments go to the configured gateway;
+- update checks can contact the configured gateway and GitHub;
+- optional dictation uses Android speech recognition and can involve the
+  device's default system provider when on-device recognition is unavailable.
 
-## 1. What the app stores on your device
+Hermex does not add telemetry SDKs or send this information to a
+publisher-operated analytics backend.
 
-| Data | Where it lives | Can be backed up? |
+## 1. Data stored on the device
+
+| Data | Storage | Android backup/device transfer |
 |---|---|---|
-| **Pairing grant** (bearer token + device ID) | Android Keystore-wrapped EncryptedSharedPreferences (`hermex_secrets`) | **No** — explicitly excluded from cloud backup and device-transfer |
-| **Server registry** (URL + nickname for each paired gateway) | SharedPreferences (`hermex_servers`) | **No** |
-| **Preferences** (current model, reasoning effort, last-used session, theme) | SharedPreferences (`hermex_prefs`) | **No** |
-| **Cached chat payloads** (text the assistant has produced, for offline review) | Room database (`hermex.db`) | **No** |
-| **In-memory draft text** (the half-typed message in the composer) | Process memory | n/a — dies with the app process |
+| Pairing grants, device IDs, and session cookies | AES/GCM ciphertext in private SharedPreferences; the non-exportable key lives in Android Keystore | Disabled |
+| Server registry and preferences | Private SharedPreferences | Disabled |
+| Cached chat payloads | Room `hermex.db` | Disabled |
+| Local Notes and Prompts | Room `hermex.db` | Disabled |
+| Composer draft | Process memory | Not persisted |
 
-All of the above lives **on your device only.** None of it is sent to us
-because we have nowhere to send it.
+Hermex explicitly disables Android backup in its application manifest and
+excludes every supported app-data domain from both cloud-backup and
+device-transfer rules. This includes database sidecars and future private
+files, not only the filenames listed above.
 
-## 2. What the app sends over the network
+The credential store does not use Jetpack Security's deprecated preferences
+wrapper. Hermex owns a small AES/GCM wrapper: encryption keys are generated and
+retained by Android Keystore, while only the IV and encrypted payload are
+written to the private `hermex_secrets` SharedPreferences file.
 
-The app makes HTTPS requests **only** to a host you selected during the
-onboarding flow. That host is your self-hosted JKP / Hermes gateway.
+## 2. Data sent to the configured gateway
 
-The requests carry:
+When the operator uses the corresponding feature, the app can send the
+following to the self-hosted JKP / Hermes gateway they selected:
 
-- **The pairing grant** as a `Bearer` token in the `Authorization`
-  header. This is the same token your gateway issued via
-  `python -m jkp pair` (or the QR code you scanned).
-- **Your chat messages**, exactly as you typed them.
-- **The model ID, reasoning effort, and any other parameters you picked
-  in the composer**, exactly as you picked them.
-- **Standard HTTP telemetry** (TLS handshake, IP of the destination you
-  configured, request/response sizes). This is observable to your
-  network operator and to whoever runs the gateway host — not to us.
+- pairing or login credentials in the appropriate authenticated request;
+- chat messages and attachments the operator submits;
+- model, reasoning-effort, and composer options selected for a request;
+- session, workspace, Git, project, task, skill, memory, and insight requests
+  exposed by the configured gateway;
+- normal network metadata such as source IP, destination, timing, and transfer
+  size.
 
-The app does **not** include:
+Shared text, images, and PDFs remain in the composer until the operator sends
+them. A local Prompt can be inserted into the composer; it reaches the gateway
+only if the resulting message is submitted.
 
-- Crash reporting SDKs (no Firebase Crashlytics, no Sentry, no Bugsnag).
-- Analytics SDKs (no Google Analytics, no Amplitude, no Mixpanel).
-- Advertising SDKs (no Google AdMob, no Facebook Audience).
-- Push-notification services (no FCM, no OneSignal).
-- Remote-config services (no Firebase Remote Config, no LaunchDarkly).
-- Social-login SDKs (no Google Sign-In, no Facebook Login).
-- Any other network endpoint not listed above.
+The gateway operator controls that server and is responsible for its models,
+tools, logs, retention, and downstream providers. HTTPS is recommended. If the
+operator deliberately configures an HTTP endpoint, transport is not encrypted.
 
-## 3. What the app does NOT do
+## 3. Voice input and camera
 
-- We do not have a server. The publisher of this app does not see your
-  chats, your pairing grant, your server URL, or any other app-level
-  telemetry. If we wanted to, we couldn't.
-- We do not log, monitor, or analyze how you use the app.
-- We do not display advertising.
-- We do not make in-app purchases.
-- We do not collect location, contacts, microphone audio, photos, or any
-  other sensor data on the phone. (A `RECORD_AUDIO` permission is
-  declared for **future** voice input; it is **not** exercised by the
-  current release.)
+### Microphone
 
-## 4. Third-party services
+Voice input requests `RECORD_AUDIO` only when the operator taps the microphone
+control. On Android 12/API 31 and later, Hermex prefers Android's dedicated
+on-device recognizer when the device reports it available. Otherwise it can
+use Android's default speech-recognition provider, which may process audio over
+a network according to the provider and device settings.
 
-The app links to **GitHub** for the in-app update check (when a new
-release is published, the app shows a banner with a link to the
-release page on `github.com/JesterkingLord/JKPHermex`). This is a
-read-only HTTP GET to `api.github.com`. The request includes the
-current `versionName` as a query parameter so the API can return the
-latest version. **No user-identifying information is sent** — no auth
-token, no device ID, no IP that's not already in the TLS handshake.
+Hermex does not retain microphone recordings. Recognized text is inserted into
+the composer and is not sent until the operator submits it.
 
-The app does not embed any other third-party SDK, library, or service.
+### Camera
 
-## 5. Children's privacy
+Camera access is optional and used only for QR pairing. Camera frames are
+decoded locally with ZXing, discarded immediately, and are not recorded or
+uploaded as frames. The decoded pairing text is handled by the same local
+pairing parser as pasted input.
 
-JKP Mobile is a developer tool. It is not directed at children under
-the age of 13, and we do not knowingly collect any information from
-children. (See TL;DR: we do not collect information from anyone.)
+## 4. Update services and other network destinations
 
-## 6. Data retention
+The update checker first asks the configured gateway for release information
+when that route is available. If needed, it falls back to GitHub's API and Git
+HTTP endpoints for the JKPHermex repository. These requests carry ordinary
+network metadata and a JKPHermex user-agent, but no pairing grant or chat
+content is sent to GitHub.
 
-We have no data to retain. All data the app handles lives on your
-device. Uninstalling the app deletes all of it.
+If the operator accepts an update, the APK is downloaded from the published
+GitHub release asset into private cache and handed to Android's package
+installer. Android always presents its normal installation controls.
 
-## 7. Your rights
+Opening the privacy, source, or release links launches the device browser and
+is then subject to the browser's and destination site's policies.
 
-Because we have no server, the rights that typically apply (access,
-deletion, portability) reduce to a single action: **uninstall the
-app**. The app also provides an in-app **Sign out** action that
-clears the pairing grant, server registry, and cached payloads from
-your device without uninstalling.
+The app contains no Firebase Cloud Messaging, advertising, social-login,
+remote-config, analytics, or third-party crash-reporting SDK.
+
+## 5. Permissions
+
+| Permission | Purpose |
+|---|---|
+| `INTERNET` | Connect to the chosen gateway and check/download GitHub updates |
+| `POST_NOTIFICATIONS` | Optionally report completion of a background response |
+| `RECORD_AUDIO` | Optional dictation through Android speech recognition |
+| `CAMERA` | Optional local-only QR pairing scan |
+| `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` | Keep an active response stream alive while backgrounded |
+| `REQUEST_INSTALL_PACKAGES` | Hand an accepted update APK to Android's package installer |
+
+The app does not request location, contacts, phone, SMS, call-log, or
+advertising-ID permissions.
+
+## 6. Retention and deletion
+
+The publisher has no JKP Mobile chat database to retain or erase. On-device
+retention is controlled locally:
+
+- **Sign out** makes a best-effort logout request, clears the active host's
+  pairing grant, device ID, and session cookies, removes the active server
+  selection, and returns the app to its unconfigured state. It retains the
+  server registry, preferences, Room cache, local Notes, and local Prompts.
+- **Forget server** removes that server's registry entry and host-scoped
+  authorization. It does not erase unrelated local content or the Room
+  database.
+- Individual Notes, Prompts, and supported server content can be removed with
+  their existing in-app actions.
+- **Uninstalling the app** is the current complete local-data deletion path.
+  Because Android backup and device-transfer restore are disabled, Hermex does
+  not intentionally restore that private app data after reinstallation.
+
+Deletion or retention on the configured gateway must be managed with that
+gateway and its operator.
+
+## 7. Children's privacy
+
+JKP Mobile is a developer/operator tool and is not directed at children under
+13. The publisher does not knowingly collect children's information through a
+publisher-operated JKP Mobile service.
 
 ## 8. Changes to this policy
 
-If this policy changes, the change will be:
-
-1. Committed to this repository with a new commit.
-2. Listed in [`CHANGELOG.md`](./CHANGELOG.md) under the version that
-   introduces the change.
-3. Reflected in the in-app "About" screen with a notice on first
-   launch after the update.
+Policy changes are committed to this repository and recorded in
+[`CHANGELOG.md`](./CHANGELOG.md). The repository version is the canonical
+auditable policy used by the app and store listing.
 
 ## 9. Contact
 
 | Field | Value |
 |---|---|
 | Repository | https://github.com/JesterkingLord/JKPHermex |
-| Security issues | Per [`SECURITY.md`](./SECURITY.md) — private disclosure |
+| Security issues | Follow [`SECURITY.md`](./SECURITY.md) for private disclosure |
 | Publisher | Farouk Saleh (GitHub: `JesterkingLord`) |
-| Email | (see Play Console listing for the public-support address) |
-
----
-
-**This document is the canonical privacy policy for JKP Mobile.** It
-is published in the source repository so the version in the Play
-Console listing is always the same as the version in the code that
-the user can audit.
+| Email | See the Play Console listing for the public support address |

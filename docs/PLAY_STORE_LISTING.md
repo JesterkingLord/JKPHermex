@@ -1,124 +1,111 @@
 # Google Play Store Listing — JKPHermex
 
-> **Copy-paste-ready text for the Play Console submission form.**
-> All fields are sized to the Play Console's limits (short description: 80
-> chars, full description: 4000 chars). Test for length before submitting —
-> characters, not bytes.
-
----
+Copy-ready text for the Play Console. Recheck field lengths in the console
+before submission.
 
 ## App name
-```
+
+```text
 JKP Mobile
 ```
 
-## Short description (≤80 chars)
+## Short description (80 characters maximum)
+
+```text
+The native mobile client for your self-hosted JKP or Hermes agent.
 ```
-The JKP / Hermes agent, on your phone. Talk to your self-hosted LLM gateway.
-```
-*(68 chars)*
 
-## Full description (≤4000 chars)
+## Full description (4,000 characters maximum)
 
-```
-JKP Mobile is the native Android client for a self-hosted JKP / Hermes
-agent. The agent does not run on the phone — your laptop does. The phone
-is a fast, native control plane: send chat messages, pick a reasoning
-effort, watch the streaming response, share text or images from any app
-straight into a new chat.
+```text
+JKP Mobile is a fast native Android client for a self-hosted JKP or Hermes
+agent. Your laptop or server runs the agent; the phone provides a focused
+control surface for conversations, sessions, and workspace tools.
 
-Designed for one thing: getting out of the way. No accounts, no telemetry,
-no ads, no in-app purchases. Pair your phone to your gateway with a
-single QR scan or a paste of the pairing URL, and every chat thereafter
-is end-to-end encrypted (HTTPS) between this device and your server.
+Built for daily use:
+ • Stream responses in a native chat interface
+ • Navigate grouped sessions, Projects, Tasks, Skills, Memory, and Insights
+ • Review cached conversations when the gateway is temporarily unavailable
+ • Write local Notes and save reusable Prompts
+ • Render Markdown, code blocks, lightweight math, tools, and reasoning clearly
+ • Share text, images, and PDFs from other Android apps into the composer
+ • Dictate with Android speech recognition
+ • Browse workspace files and inspect Git status and diffs
+ • Follow long chats with precise fast scrolling and jump-to-latest
+ • Keep an active response stream alive while the app is backgrounded
 
-Why a native app instead of a website?
- • Background notifications when a long-running response finishes
- • Share-target: text, images, and PDFs from any app land in the composer
- • One-tap reasoning-effort selector that mirrors the desktop CLI's
-   `/reasoning` command
- • Persistent, hardware-backed pairing grant stored in EncryptedShared
-   Preferences with the Android Keystore
- • Homescreen widget for a glanceable "is the agent busy?" pulse
+Pair with a QR code or paste a gateway URL. JKP Mobile supports operator-run
+gateways reachable over Wi-Fi, Tailscale, or another network route configured
+by the operator. HTTPS is recommended; transport security depends on the URL
+the operator chooses.
 
-What it talks to:
- • A self-hosted hermes-webui / JKP gateway on your own machine
- • Reachable over Wi-Fi, Tailscale, or any network the phone can route to
- • The phone never talks to anyone except the gateway YOU paired it with
+Privacy by construction:
+ • No publisher-operated chat backend or JKP Mobile account service
+ • No analytics, advertising, social-login, or crash-reporting SDK
+ • Android cloud backup and device-transfer restore are disabled
+ • Pairing secrets are encrypted with an Android Keystore key
+ • QR camera frames are decoded locally and discarded
+ • Voice input prefers Android's on-device recognizer when available; the
+   system provider fallback may process audio over a network
+ • Shared content is not sent until the operator submits it
 
-What's not in the box (by design):
- • No built-in LLM. The phone is a client; the model lives on your
-   laptop / server.
- • No cloud sync, no analytics, no crash reporting. If you want to file
-   a bug, file it on GitHub.
- • No subscriptions, no paywall, no premium tier. This is a tool.
-
-The full source is at https://github.com/JesterkingLord/JKPHermex under
-the MIT license. Read it, fork it, build it yourself, audit it.
+Update checks can use the configured gateway and GitHub. Accepted update APKs
+are handed to Android's standard package installer; JKP Mobile never silently
+installs an update.
 
 Permissions explained:
- • INTERNET — talk to your gateway
- • POST_NOTIFICATIONS — tell you when a long response finishes
- • RECORD_AUDIO — future voice input (not yet wired)
- • FOREGROUND_SERVICE — keep the active response stream open if the app
-   is backgrounded
+ • INTERNET — connect to your chosen gateway and check/download GitHub updates
+ • POST_NOTIFICATIONS — report completion of a background response when enabled
+ • RECORD_AUDIO — optional dictation through Android speech recognition
+ • CAMERA — optional, local-only QR pairing scan
+ • FOREGROUND_SERVICE / DATA_SYNC — keep an active response stream alive in background
+ • REQUEST_INSTALL_PACKAGES — hand an accepted update APK to Android's installer
 
-Privacy: see the privacy policy at the URL listed below. The short
-version: we collect nothing. Your chats never leave your gateway.
-```
-*(~1,650 chars — well under the 4,000 limit; room for a future "What's
-new in this release" block.)*
-
----
-
-## What's new in this release (Release notes, ≤500 chars)
-
-```
-v0.5.0 — Reasoning controls + Play Store prep
- • Reasoning-effort selector in the chat composer — pick none, minimal,
-   low, medium, high, or xhigh for the next message.
- • Reasoning on/off pill to show or hide the assistant's thinking block.
- • Server-clamp banner: if the gateway downgrades your requested
-   effort, you'll see a notice.
- • 230/230 unit tests green, 1.7 MB signed release APK.
- • Background-update check — the app now checks GitHub for new
-   releases and prompts you to install.
+The full source and privacy policy are available at
+https://github.com/JesterkingLord/JKPHermex. Read it, audit it, fork it, or
+build it yourself under the MIT license.
 ```
 
----
+## What's new in this release (500 characters maximum)
 
-## App icon
+```text
+v0.8.14 — Mobile quality and reliability
+ • One consistent navigation drawer across the app
+ • Local Notes and reusable Prompts
+ • Denser, clearer composer controls and native Markdown rendering
+ • More reliable session loading, offline cache, and streaming recovery
+ • Precise draggable fast scrolling plus jump-to-latest
+ • Improved keyboard layout, touch targets, themes, and narrow-phone support
+ • Hardened backup policy and more accurate voice/privacy behavior
+```
 
-| Asset | Required? | Where it lives |
-|---|---|---|
-| App icon (512×512) | Yes | `android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png` — **NOT YET GENERATED** |
-| Feature graphic (1024×500) | Yes | **NOT YET GENERATED** — needed for the Play listing |
-| Phone screenshots (min 2, max 8) | Yes | **NOT YET CAPTURED** |
+## Store assets
 
-The mipmap launchers don't exist in the repo today. We rely on the
-default Android Studio icon, which is not a "JKP Mobile" branded asset.
-**This is the operator-side blocker for the actual Play Console upload.**
+| Asset | State |
+|---|---|
+| Launcher mipmaps | Present for mdpi through xxxhdpi |
+| Standalone Play icon (512x512) | Still required |
+| Feature graphic (1024x500) | Still required |
+| Final phone screenshots | Still required |
 
----
+The mipmaps are installable launcher resources, not a substitute for the
+standalone 512x512 Play Console icon.
 
 ## Categorization
 
 | Field | Value |
 |---|---|
 | Category | Productivity |
-| Content rating | Everyone (no user-generated content, no ads, no in-app purchases) |
-| Target audience | 18+ (developer tool, the gateway operator is assumed to be a developer) |
+| Target audience | Adults; this is a developer/operator tool |
 | Contains ads | No |
 | In-app purchases | No |
-| Data safety | See https://github.com/JesterkingLord/JKPHermex/blob/master/SECURITY.md |
 | Privacy policy URL | https://raw.githubusercontent.com/JesterkingLord/JKPHermex/master/PRIVACY.md |
-
----
+| Source | https://github.com/JesterkingLord/JKPHermex |
 
 ## Contact
 
 | Field | Value |
 |---|---|
 | Developer name | Farouk Saleh (JesterkingLord) |
-| Email | (set in Play Console — not committed to git) |
+| Email | Set in Play Console; not committed to Git |
 | Website | https://github.com/JesterkingLord/JKPHermex |
