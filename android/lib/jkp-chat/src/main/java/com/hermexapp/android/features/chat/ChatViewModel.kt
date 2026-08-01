@@ -221,6 +221,10 @@ class ChatViewModel(
      */
     private val reconnectScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Visible to JVM lifecycle tests; both scopes must be dead after teardown. */
+    internal val hasActiveBackgroundWork: Boolean
+        get() = hangScope.isActive || reconnectScope.isActive
+
     /** Reconnect attempts used for the current run (reset in [sendNow]). */
     private var reconnectAttemptCount: Int = 0
 
@@ -265,7 +269,7 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
-        hangScope.cancel()
+        teardown()
         super.onCleared()
     }
 
@@ -648,6 +652,8 @@ class ChatViewModel(
     fun teardown() {
         stopStallWatch()
         sse.stop()
+        hangScope.cancel()
+        reconnectScope.cancel()
     }
 
     /**

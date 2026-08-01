@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,9 +31,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import com.hermexapp.android.auth.AuthManager
 import com.hermexapp.android.config.AccentPreset
@@ -252,6 +255,7 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
             currentBaseUrlProvider = { container.currentBaseUrl()?.toString() },
         ).also { it.refresh() }
     }
+    DisposeViewModelOnExit(sessionListViewModel)
 
     // A shared text or image (ACTION_SEND) becomes a fresh chat with the
     // composer prefilled (and the image uploaded + attached).
@@ -511,6 +515,7 @@ private fun RenderScreen(
                     }
                 }
             }
+            DisposeViewModelOnExit(chatViewModel, chatViewModel::teardown)
             val chatState by chatViewModel.uiState.collectAsState()
             // Ongoing-run foreground service: alive only while streaming.
             LaunchedEffect(chatState.isStreaming) {
@@ -533,6 +538,7 @@ private fun RenderScreen(
                     promptStore = container.promptStore,
                 ).create(com.hermexapp.android.features.composer.InsertPaletteViewModel::class.java)
             }
+            DisposeViewModelOnExit(paletteVm)
             // Single back-gesture handler closes whichever chip-opened
             // sheet is up. Falls through to chat back when none are open.
             val anySheetOpen = insertSheetOpen || templatesSheetOpen
@@ -603,6 +609,7 @@ private fun RenderScreen(
             val workspaceViewModel = remember(server, current.sessionId, "files") {
                 WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
             }
+            DisposeViewModelOnExit(workspaceViewModel)
             FileBrowserScreen(
                 viewModel = workspaceViewModel,
                 onClose = { setScreen(Screen.Chat(current.sessionId)) },
@@ -612,6 +619,7 @@ private fun RenderScreen(
             val workspaceViewModel = remember(server, current.sessionId, "git") {
                 WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
             }
+            DisposeViewModelOnExit(workspaceViewModel)
             GitScreen(
                 viewModel = workspaceViewModel,
                 onClose = { setScreen(Screen.Chat(current.sessionId)) },
@@ -621,6 +629,7 @@ private fun RenderScreen(
             val panelsViewModel = remember(server, current.kind) {
                 PanelsViewModel(client, container.authManager::handleApiError)
             }
+            DisposeViewModelOnExit(panelsViewModel)
             BackHandler { setScreen(Screen.SessionList) }
             PanelScreen(
                 kind = current.kind,
@@ -649,6 +658,7 @@ private fun RenderScreen(
                 com.hermexapp.android.features.notes.NotesViewModel.Factory(container.noteStore)
                     .create(com.hermexapp.android.features.notes.NotesViewModel::class.java)
             }
+            DisposeViewModelOnExit(notesVm)
             com.hermexapp.android.features.notes.NotesScreen(
                 viewModel = notesVm,
                 onClose = { setScreen(Screen.SessionList) },
@@ -668,6 +678,7 @@ private fun RenderScreen(
                 com.hermexapp.android.features.prompts.PromptsViewModel.Factory(container.promptStore)
                     .create(com.hermexapp.android.features.prompts.PromptsViewModel::class.java)
             }
+            DisposeViewModelOnExit(promptsVm)
             com.hermexapp.android.features.prompts.PromptsScreen(
                 viewModel = promptsVm,
                 onClose = { setScreen(Screen.SessionList) },
@@ -730,6 +741,24 @@ private fun onDrawerSelect(
         MainScreenTab.Notes -> setScreen(Screen.Notes)
         MainScreenTab.Prompts -> setScreen(Screen.Prompts)
         MainScreenTab.Settings -> setScreen(Screen.Settings)
+    }
+}
+
+/**
+ * ViewModels in [RenderScreen] are scoped to one composed screen instead of
+ * the Activity. Because they are constructed with [remember], no
+ * ViewModelStore clears them automatically; cancel their work on disposal.
+ */
+@Composable
+private fun DisposeViewModelOnExit(
+    viewModel: ViewModel,
+    beforeCancel: () -> Unit = {},
+) {
+    DisposableEffect(viewModel) {
+        onDispose {
+            beforeCancel()
+            viewModel.viewModelScope.cancel()
+        }
     }
 }
 

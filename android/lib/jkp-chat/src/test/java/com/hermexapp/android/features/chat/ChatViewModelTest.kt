@@ -69,7 +69,18 @@ class ChatViewModelTest {
 
     @After
     fun tearDown() {
+        viewModel.teardown()
         server.shutdown()
+    }
+
+    @Test
+    fun `teardown stops streaming and cancels all owned background scopes`() {
+        assertTrue(viewModel.hasActiveBackgroundWork)
+
+        viewModel.teardown()
+
+        assertTrue(sse.stopped)
+        assertFalse(viewModel.hasActiveBackgroundWork)
     }
 
     @Test
