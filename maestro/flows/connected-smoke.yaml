@@ -1,0 +1,10 @@
+appId: com.hermexapp.android
+name: connected-smoke
+tags:
+  - smoke
+  - physical-device
+  - read-only
+---
+- runFlow: ../subflows/require-connected-sessions.yaml
+- runFlow: ../subflows/primary-navigation.yaml
+- runFlow: ../subflows/existing-chat-scroll.yaml

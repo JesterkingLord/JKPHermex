@@ -1,0 +1,7 @@
+appId: com.hermexapp.android
+flows:
+  - "flows/*.yaml"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - connected-smoke

@@ -1,0 +1,73 @@
+appId: com.hermexapp.android
+---
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Projects$"
+- assertVisible:
+    text: "^Projects$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Tasks$"
+- assertVisible:
+    text: "^Tasks$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Skills$"
+- assertVisible:
+    text: "^Skills$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Memory$"
+- assertVisible:
+    text: "^Memory$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Insights$"
+- assertVisible:
+    text: "^Insights$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Notes$"
+- assertVisible:
+    text: "^Notes$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Prompts$"
+- assertVisible:
+    text: "^Prompts$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"
+
+- tapOn: "Open navigation menu"
+- tapOn:
+    text: "^Settings$"
+- assertVisible:
+    text: "^Settings$"
+- tapOn: "Back"
+- assertVisible:
+    text: "^Sessions$"

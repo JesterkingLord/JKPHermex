@@ -1,0 +1,26 @@
+appId: com.hermexapp.android
+---
+- tapOn:
+    text: ".* messages.*"
+    index: 0
+- assertVisible: "Attach image"
+- swipe:
+    start: 50%, 35%
+    end: 50%, 70%
+    duration: 550
+- swipe:
+    start: 50%, 35%
+    end: 50%, 70%
+    duration: 550
+- runFlow:
+    when:
+      visible: "Scroll to latest"
+    commands:
+      - tapOn: "Scroll to latest"
+- assertVisible: "Attach image"
+- tapOn: "Back to sessions"
+- assertVisible:
+    text: "^Sessions$"
+- assertVisible: "All"
+- assertVisible: "Pinned"
+- assertVisible: "Archived"

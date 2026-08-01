@@ -1,0 +1,54 @@
+appId: com.hermexapp.android
+---
+- runFlow:
+    when:
+      visible: "Get started"
+    commands:
+      - assertTrue:
+          condition: ${false}
+          label: "Connected smoke requires an already-paired app; welcome onboarding is visible"
+- runFlow:
+    when:
+      visible:
+        text: "^Connect$"
+    commands:
+      - assertTrue:
+          condition: ${false}
+          label: "Connected smoke requires an already-paired app; the connection form is visible"
+- repeat:
+    times: 2
+    while:
+      visible:
+        text: "^Back$"
+    commands:
+      - tapOn:
+          text: "^Back$"
+- runFlow:
+    when:
+      visible: "Back to sessions"
+    commands:
+      - tapOn: "Back to sessions"
+- runFlow:
+    when:
+      visible: "Open navigation menu"
+    commands:
+      - tapOn: "Open navigation menu"
+      - tapOn:
+          text: "^Sessions$"
+- assertVisible:
+    text: "^Sessions$"
+- assertVisible: "All"
+- assertVisible: "Pinned"
+- assertVisible: "Archived"
+- runFlow:
+    when:
+      visible: "No sessions yet"
+    commands:
+      - assertTrue:
+          condition: ${false}
+          label: "Connected smoke requires at least one existing session; no fixture will be created"
+- assertVisible:
+    text: "^[0-9]+ conversations?$"
+- assertVisible:
+    text: ".* messages.*"
+    index: 0
