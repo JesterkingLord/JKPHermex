@@ -121,7 +121,7 @@ no phone is visible to ADB at this refresh.
 
 | Gate | Status |
 |---|---|
-| Unit tests + debug APK | **GREEN locally**: 581 debug + 581 release tests, zero failures/errors/skips; final APK assembly gate follows the current audit |
+| Unit tests + APKs | **GREEN locally**: 581 debug + 581 release tests, zero failures/errors/skips; debug, unsigned release, and instrumentation APKs assemble |
 | Android lint | **GREEN analysis** (0 errors; 45 reviewed non-blocking warnings in the latest report) |
 | Scrollbar math, dragging, semantics | **GREEN in tests; device rerun pending**: prior top `0.001`, midpoint `0.494`, bottom `1.000`, and continuous drag `0.665` proof remains valid; the new drag-consumption refinement awaits the connected-phone smoke |
 | Cold-start sessions | **GREEN**: three force-stop launches returned all 37 live conversations on OPPO CPH2343 |

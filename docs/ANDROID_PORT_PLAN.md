@@ -1,7 +1,7 @@
 # Android Port Plan — Hermex for Android
 
 Status: **historical + phase ledger**.  
-**What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-08-01).  
+**What’s next (versions 0.6+):** use [`PLAN_AND_ROADMAP.md`](PLAN_AND_ROADMAP.md) as the authoritative forward plan (refreshed 2026-08-01).
 This file remains the architecture and phases 0–11 delivery ledger.
 
 **Current development baseline:** Android **`0.8.14`** (`versionCode` 37); 581 debug + 581 release unit tests on 2026-08-01. Latest documented stable line is `0.7.2-stable`; the historical `0.6.0` final cut shipped 2026-07-21. Physical phone chat against live JKP was first proven at **0.3.0** (2026-07-14).
