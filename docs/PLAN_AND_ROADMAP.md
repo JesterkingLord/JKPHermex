@@ -162,7 +162,7 @@ new API work using the precedence in `AGENTS.md` and open an issue before coding
 | 7.2 | Categorized errors aligned with JKP gateway categories (auth, quota, rate-limit, offline) | **SHIPPED in 0.6.0-rc2** (`ClientErrorCatalog` + ApiError routing) |
 | 7.3 | Model preference parity with host session model | **SHIPPED in 0.6.0-rc4** (`resolveSessionModelSelection` + ChatViewModel seed) |
 | 7.4 | Streaming resilience (reconnect, partial render) | **SHIPPED** — full auto-reconnect (`ConnectionSupervisor` + `ReconnectController`, v0.5.0) + transport honesty (rc3) + SSE error catalog (rc5) + `streamDropRecovery` pure helpers (host 13.9) + recovery offer UI (13.10) |
-| 7.5 | Optional: share sheet / deep link polish | P2 |
+| 7.5 | Optional: share sheet / deep link polish | **SHIPPED in 0.8.14** (2026-08-03 source evidence): `MarkdownShare` share-sheet (ACTION_SEND text/plain + chooser, JVM-tested in `MarkdownShareTest`), incoming share handling (ACTION_SEND text/other + ACTION_SEND_MULTIPLE → retry-safe `SharedDraftStore` handoff into a fresh chat, tested in `SharedDraftStoreTest` / `SharedContractWiringTest` / `SharedDraftHandoffContractTest`), and the `faroukfusion://open-jkp` receive filter pinned by `FaroukFusionDeepLinkTest` |
 
 ### Later / explicit non-goals
 
@@ -275,6 +275,7 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-08-03 | Reconciled 7.5 (share sheet / deep link polish) to SHIPPED with source evidence; fixed the Maestro device-smoke runner's adb banner-line parsing (commit `3d90cb2`); re-verified 581 unit tests green across the 7 modules (88 app + 493 lib). Remaining gates stay operator-blocked: keystore/signing, Play assets, connected-phone smoke. |
 | 2026-08-01 | Hardened backup/privacy and on-device dictation; added safe read-only Maestro flows; refined scrollbar drag ownership; masked gateway headers; fixed shared-file UI-thread I/O, retry-safe share/Notes handoff, screen ViewModel leaks, and navigation semantics/48 dp targets. Debug/release each run 581 tests with zero failures. Physical rerun remains pending because ADB sees no phone. |
 | 2026-07-28 | Completed the connected-device accessibility/scroll pass: one true-end jump control, adjustable scrollbar semantics, shared 48 dp swatches/actions/rows, real isolated on-device Room v2→v3 migration, and final Gboard verification. Debug/release each run 547 tests with zero failures. |
 | 2026-07-27 | Replaced the stale USB-reconnect screenshot gate with physical dark/light and 1.35x font-scale evidence; recorded the remaining 48 dp, swatch-label, TalkBack-adjustment, and stacked-jump remediation instead of treating the accessibility pass as complete. |
