@@ -29,6 +29,12 @@ $deviceOutput = @(& $adbCommand.Source devices -l)
 if ($LASTEXITCODE -ne 0) {
     throw "adb devices -l failed with exit code $LASTEXITCODE."
 }
+# `adb devices -l` prints a "List of devices attached" banner first. It matches
+# the two-token device pattern below, so without this filter the banner is read
+# as a device whose state is not "device" and the script always aborts with
+# "ADB has a device that is not authorized/online". The static safety check
+# never caught it because it only runs with no phone attached.
+$deviceOutput = @($deviceOutput | Where-Object { $_ -notmatch '^\s*List of devices attached' })
 $deviceLines = @($deviceOutput | Where-Object { $_ -match '^\S+\s+\S+' })
 $unauthorizedLines = @($deviceLines | Where-Object { $_ -notmatch '^\S+\s+device(?:\s|$)' })
 if ($unauthorizedLines.Count -gt 0) {
