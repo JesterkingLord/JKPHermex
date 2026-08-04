@@ -68,6 +68,13 @@ Completed in source and JVM/build verified:
   floating button. Regression coverage added for the scroll restore and
   approval paths. Full fresh unit suite is green at **584 tests, 0 failures /
   0 errors / 0 skipped**.
+- Chat composer offline feedback (2026-08-04 second pass, delegation spec
+  `e9edf01`): when the transport reports the host offline/failed, the send
+  affordance stays visible but inert with "The connection is offline; your
+  message will send when the host is back." beneath the composer; the
+  v0.8.14 device smoke checklist (`docs/V0814_DEVICE_SMOKE_CHECKLIST.md`)
+  documents the five connected-phone checks with expected evidence. No new
+  dependencies; JVM coverage added via `ChatComposerOfflineTest`.
 
 The 2026-07-28 connected-phone pass completed the identified remediation:
 
@@ -297,6 +304,7 @@ python -m jkp pair
 
 | Date | Change |
 |---|---|
+| 2026-08-04 | Chat composer offline feedback shipped in source: connection-state field on the composer ViewModel (`JkpConnectionState`, no new deps), send affordance visible-but-inert while the host is offline/failed, spec copy line beneath the composer, and the v0.8.14 device smoke checklist (`docs/V0814_DEVICE_SMOKE_CHECKLIST.md`). JVM coverage in `ChatComposerOfflineTest`; suite stays green at 584 → 592 tests. |
 | 2026-08-03 | Reconciled 7.5 (share sheet / deep link polish) to SHIPPED with source evidence; fixed the Maestro device-smoke runner's adb banner-line parsing (commit `3d90cb2`); re-verified 581 unit tests green across the 7 modules (88 app + 493 lib). Remaining gates stay operator-blocked: keystore/signing, Play assets, connected-phone smoke. |
 | 2026-08-01 | Hardened backup/privacy and on-device dictation; added safe read-only Maestro flows; refined scrollbar drag ownership; masked gateway headers; fixed shared-file UI-thread I/O, retry-safe share/Notes handoff, screen ViewModel leaks, and navigation semantics/48 dp targets. Debug/release each run 581 tests with zero failures. Physical rerun remains pending because ADB sees no phone. |
 | 2026-07-28 | Completed the connected-device accessibility/scroll pass: one true-end jump control, adjustable scrollbar semantics, shared 48 dp swatches/actions/rows, real isolated on-device Room v2→v3 migration, and final Gboard verification. Debug/release each run 547 tests with zero failures. |

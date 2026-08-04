@@ -68,11 +68,25 @@ import kotlinx.coroutines.withContext
 
 enum class ComposerPrimaryAction { SEND, STOP, DISABLED_SEND }
 
-fun composerPrimaryAction(isStreaming: Boolean, hasDraft: Boolean): ComposerPrimaryAction = when {
+/**
+ * v0.8.14 — the send affordance is visible but inert while the transport is
+ * not [JkpConnectionState.CONNECTED]: an offline/failed host must not queue a
+ * message the user believes went out. STOP still wins while a run is in
+ * flight (a dead stream can always be stopped).
+ */
+fun composerPrimaryAction(
+    isStreaming: Boolean,
+    hasDraft: Boolean,
+    connectionState: JkpConnectionState = JkpConnectionState.CONNECTED,
+): ComposerPrimaryAction = when {
     isStreaming && !hasDraft -> ComposerPrimaryAction.STOP
-    hasDraft -> ComposerPrimaryAction.SEND
+    hasDraft && connectionState == JkpConnectionState.CONNECTED -> ComposerPrimaryAction.SEND
     else -> ComposerPrimaryAction.DISABLED_SEND
 }
+
+/** v0.8.14 — the honest copy line beneath the composer while the host is away. */
+const val COMPOSER_OFFLINE_COPY =
+    "The connection is offline; your message will send when the host is back."
 
 /** Keep system-button clearance only while the software keyboard is absent. */
 fun shouldApplyComposerNavigationBarPadding(imeVisible: Boolean): Boolean = !imeVisible
@@ -258,7 +272,11 @@ fun ComposerBar(
 
                     // Send when there's a draft; stop when idle-handed mid-run.
                     val hasDraft = state.composerText.isNotBlank() || state.attachments.isNotEmpty()
-                    val primaryAction = composerPrimaryAction(state.isStreaming, hasDraft)
+                    val primaryAction = composerPrimaryAction(
+                        isStreaming = state.isStreaming,
+                        hasDraft = hasDraft,
+                        connectionState = state.connectionState,
+                    )
                     val showStop = primaryAction == ComposerPrimaryAction.STOP
                     val canSend = primaryAction == ComposerPrimaryAction.SEND
                     // Long-press to open the insert palette. We map this to the
@@ -329,6 +347,17 @@ fun ComposerBar(
                     }
                 }
             }
+        }
+
+        // v0.8.14 — while the transport reports the host offline/failed, the
+        // send affordance above stays visible but inert; this copy explains why.
+        if (state.connectionState != JkpConnectionState.CONNECTED) {
+            Text(
+                COMPOSER_OFFLINE_COPY,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.warning,
+            )
         }
 
         // Workspace + profile pills under the composer, like iOS.

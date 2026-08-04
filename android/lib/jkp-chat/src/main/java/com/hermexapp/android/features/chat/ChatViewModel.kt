@@ -173,6 +173,14 @@ class ChatViewModel(
          * first" caption for ~2 seconds. `null` means no recent attempt.
          */
         val lastEmptySendAtMs: Long? = null,
+        /**
+         * v0.8.14 — transport reachability for the composer. Defaults to
+         * [JkpConnectionState.CONNECTED] so existing behavior (send enabled
+         * once a session is selected) is preserved until a load/send/stream
+         * signal says otherwise. Read-only for the UI; mutated by the tiny
+         * [setConnectionState] wrapper and the transport-failure wiring.
+         */
+        val connectionState: JkpConnectionState = JkpConnectionState.CONNECTED,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
@@ -278,6 +286,22 @@ class ChatViewModel(
     }
 
     fun updateComposerText(value: String) = _uiState.update { it.copy(composerText = value) }
+
+    /**
+     * v0.8.14 — tiny wrapper for the composer's transport reachability.
+     * Read-only on the UI side; callers (tests today, a heartbeat later)
+     * surface the host connection state here.
+     */
+    fun setConnectionState(state: JkpConnectionState) {
+        _uiState.update { it.copy(connectionState = state) }
+    }
+
+    /** v0.8.14 — transport failures (host unreachable) mark the connection failed. */
+    private fun markConnectionFailedIfTransport(e: ApiError) {
+        if (e is ApiError.Network) {
+            _uiState.update { it.copy(connectionState = JkpConnectionState.FAILED) }
+        }
+    }
 
     /** Appends dictated text (from on-device speech recognition) into the composer. */
     fun appendDictatedText(text: String) {
@@ -505,6 +529,10 @@ class ChatViewModel(
                     entries = entriesFromDetail(detail),
                     isFromCache = fromCache,
                     isLoading = false,
+                    // v0.8.14: a cache-served transcript means the host was
+                    // unreachable — the composer reports OFFLINE.
+                    connectionState =
+                        if (fromCache) JkpConnectionState.OFFLINE else JkpConnectionState.CONNECTED,
                     composerConfig = state.composerConfig.copy(
                         selectedModelId = resolved.modelId,
                         selectedProviderId = resolved.providerId,
@@ -513,6 +541,7 @@ class ChatViewModel(
             }
         } catch (e: ApiError) {
             onAuthError(e)
+            markConnectionFailedIfTransport(e)
             _uiState.update { it.copy(errorMessage = e.userMessage, isLoading = false) }
         }
     }
@@ -581,11 +610,13 @@ class ChatViewModel(
                 return
             }
             activeStreamId = streamId
-            _uiState.update { it.copy(isStreaming = true, hangTip = null) }
+            // v0.8.14: a successful start means the host just answered.
+            _uiState.update { it.copy(isStreaming = true, hangTip = null, connectionState = JkpConnectionState.CONNECTED) }
             startStallWatch()
             sse.start(client.chatStreamUrl(streamId), ::onSseEvent)
         } catch (e: ApiError) {
             onAuthError(e)
+            markConnectionFailedIfTransport(e)
             _uiState.update {
                 it.copy(
                     errorMessage = e.userMessage,
@@ -724,6 +755,9 @@ class ChatViewModel(
                         HangHonesty.transportFailureMessage(event.message),
                         isTransportDrop = true,
                     )
+                    // v0.8.14: the drop is a transport failure — the composer
+                    // stays visible but inert until the host answers again.
+                    _uiState.update { it.copy(connectionState = JkpConnectionState.FAILED) }
                     reconnectScope.launch {
                         maybeAttemptReconnectRecovery(reconnectAttemptCount++)
                     }
@@ -1153,11 +1187,20 @@ class ChatViewModel(
         // Re-fetch the session (network; falls back to cache offline). Best-effort:
         // if the host is still unreachable this throws and we keep the banner.
         val recovered = try {
-            repository.loadSession(sessionId).first
+            repository.loadSession(sessionId)
         } catch (_: Exception) {
             null
         } ?: return
-        val full = entriesFromDetail(recovered)
+        val (recoveredDetail, fromCache) = recovered
+        // v0.8.14: the re-fetch resolved the transport state — a network hit
+        // means the host answered again, a cache fallback means it is still
+        // unreachable.
+        _uiState.update {
+            it.copy(
+                connectionState = if (fromCache) JkpConnectionState.OFFLINE else JkpConnectionState.CONNECTED,
+            )
+        }
+        val full = entriesFromDetail(recoveredDetail)
             .filterIsInstance<TimelineEntry.AssistantMessage>()
             .lastOrNull()
             ?.text

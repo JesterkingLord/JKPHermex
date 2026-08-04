@@ -8,6 +8,15 @@ Security sections per release.
 ## [v0.8.14] - 2026-08-04
 
 ### Added
+- **Chat composer offline feedback + v0.8.14 device smoke checklist** (2026-08-04 second pass):
+  - **The composer knows when the connection is offline.** When the host is
+    unreachable, the send button stays visible but does nothing, and "The
+    connection is offline; your message will send when the host is back."
+    appears beneath the composer until the host answers again.
+  - **v0.8.14 device smoke checklist.** `docs/V0814_DEVICE_SMOKE_CHECKLIST.md`
+    lists the five manual, evidence-based checks for the connected-phone pass
+    (scrollbar drag, composer toggle/focus, airplane-mode copy, scroll
+    retention, deep-link round trip).
 - **Hide the composer for a full-screen reading view.** A keyboard button on
   the composer collapses the message box (and keyboard) so a long reply can be
   read without distraction; a floating button brings it back.
