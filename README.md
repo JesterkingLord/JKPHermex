@@ -14,13 +14,21 @@ The agent does **not** run on the phone. The phone is a client. See:
 
 | Doc | Role |
 |---|---|
-| **[`docs/PLAN_AND_ROADMAP.md`](docs/PLAN_AND_ROADMAP.md)** | **What’s next** (0.6.0 shipped → Play upload + device QA, operator-blocked) |
+| **[`docs/PLAN_AND_ROADMAP.md`](docs/PLAN_AND_ROADMAP.md)** | **What’s next** (0.8.14 development line; release signing / Play upload / connected-phone smoke remain operator-gated) |
 | [`docs/ANDROID_PORT_PLAN.md`](docs/ANDROID_PORT_PLAN.md) | Port phases 0–11 + architecture ledger |
 | Upstream [`PROJECT_SPEC.md`](https://github.com/super3/hermex/blob/master/PROJECT_SPEC.md) | Product/API source of truth |
 | JKP host roadmap | `E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md` |
 
-**Current Android version:** `0.6.0-stable` (`versionCode` 13) — Bearer pairing + hang honesty + client-error catalog + 7.3 model parity + 7.4 full auto-reconnect + 6.6 live camera QR scanner + 13.10 stream recovery. Debug-signed sideload APK published via GitHub Releases (Play Store upload operator-blocked).  
-**Stable line:** tag `v0.6.0-stable`, branch `stable/v1.12.1-jkphermex-0.6.0` (coordinated with JKP `v1.12.1-stable`). Release notes: [`RELEASE_NOTES_v0.6.0-stable.md`](RELEASE_NOTES_v0.6.0-stable.md).
+**Current Android version:** `0.8.14` (`versionCode` 37) on `feat/jkp-modular-extraction` — chat reliability pass (auto-resolved session approvals, one-time scroll restore, composer show/hide, offline composer honesty) over the drawer/navigation consolidation, Notes + Prompts, pixel scrollbar rewrite, cold-start/cache reliability, and data-preserving Room v2→v3 migration. 584+ unit tests green; debug APK sideloads from GitHub Releases (release signing + Play Store upload operator-gated).  
+**Latest documented stable line:** tag `v0.7.2-stable`, branch `stable/v1.12.1-jkphermex-0.7.2` (coordinated with JKP `v1.12.1-stable`). Release notes: [`CHANGELOG.md`](CHANGELOG.md).
+
+## Latest evidence
+
+Canonical gate artifacts for the current 0.8.14 development line:
+
+- [`docs/PLAN_AND_ROADMAP.md`](docs/PLAN_AND_ROADMAP.md) — "0.8.14 release gate evidence" bullet: 584 unit tests / 0 failures, lint 0 errors / 45 known-acceptable warnings, debug + unsigned release APKs assemble, release signing residual (owner-gated).
+- [`docs/V0814_DEVICE_SMOKE_CHECKLIST.md`](docs/V0814_DEVICE_SMOKE_CHECKLIST.md) — the five manual, evidence-based connected-phone checks for the 0.8.14 pass.
+- [`CHANGELOG.md`](CHANGELOG.md) — v0.8.14 (2026-08-04) release notes.
 
 ---
 
@@ -47,7 +55,7 @@ cd android
 ./gradlew assembleDebug
 ```
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk` (~10-20 MB).
+Output: `android/app/build/outputs/apk/debug/app-debug.apk` (~10-20 MB). For the full CI check (unit tests + lint + assembly) run `./gradlew build` instead — the debug APK alone is produced by `assembleDebug`.
 
 ### 3. Install on your phone
 
@@ -83,6 +91,7 @@ HTTP URL — the app already permits cleartext to private LAN/VPN ranges
 JKPHermex/
 ├── android/                    # Self-contained Gradle project (the buildable app)
 │   ├── app/                    # :app module (Kotlin sources, manifest, resources)
+│   ├── lib/                    # 8 jkp-* library modules (core, auth, composer, sessions, panels, chat, settings, workspace)
 │   ├── gradle/
 │   │   └── libs.versions.toml  # Locked dependency list — do not edit without approval
 │   ├── build.gradle.kts
@@ -131,7 +140,7 @@ JKPHermex/
 | Phase 11: limited usage analytics | `claude/android-port-plan-lt7p00` | ⏳ planned |
 | Phase 12: polish (icons, haptics, voice, notifications) | `claude/android-port-plan-lt7p00` | ⏳ planned |
 | Phase 13: Play Store / sideload release | this fork | 🟡 physical-phone sideload works; Play Console/listing remains |
-| JKP native pairing | this fork (`0.3.0`) | 🟡 URL pairing + secret storage shipped; Bearer auto-auth and camera scan next |
+| JKP native pairing | this fork | ✅ URL pairing + secret storage (0.3.0) + Bearer auto-auth (0.6.0-rc1) + live camera QR scanner (6.6, operator-approved 2026-07-21) shipped |
 
 ### Real-device status (2026-07-14)
 

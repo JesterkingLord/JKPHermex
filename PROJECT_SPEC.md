@@ -1,6 +1,6 @@
 # Hermex — iOS App Project Specification
 
-**Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction
+**Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction (contract body unchanged; last refreshed 2026-08-04 to note the Android fork's shipped state — current dev line `0.8.14`, tracked in `docs/PLAN_AND_ROADMAP.md`)
 **Author:** Project owner + planning assistant
 **Target:** Native iOS client for the [`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui) Python server
 **Audience:** A coding agent tasked with building the app, plus the human owner reviewing it
@@ -745,10 +745,10 @@ Document it as the recommended path.
 This is the long-term maintenance plan. Implement the basics in v1.
 
 ### 11.1 In-app
-- [ ] On launch, GET `/api/settings` and read `webui_version`.
+- [x] On launch, GET `/api/settings` and read `webui_version`. (Android: `GET /api/settings` is decoded and surfaced in Settings → server version row; the launch-level fetch remains open.)
 - [x] Compare against a hard-coded tested WebUI version constant in the app. Implemented in Settings via `AppConfig.testedAgainstWebUIVersion`; the launch-level banner remains open.
 - [ ] If different, show a non-blocking banner: "Your server is on v0.50.X. This app was tested with v0.50.Y. Some features may misbehave."
-- [ ] Never crash on unknown JSON fields.
+- [x] Never crash on unknown JSON fields. (Shipped: tolerant decoding with `Json { ignoreUnknownKeys = true }` is the locked decoding contract, pinned by `TolerantDecodingTest`.)
 
 ### 11.2 In the iOS repo
 - [ ] Add a GitHub Action (`.github/workflows/upstream-watch.yml`) that runs daily:
