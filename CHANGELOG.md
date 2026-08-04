@@ -5,6 +5,22 @@ unreleased changes accumulate at the top. Format follows
 [Keep a Changelog](https://keepachangelog.com/) with Added / Changed / Fixed /
 Security sections per release.
 
+## [v0.8.14] - 2026-08-04
+
+### Added
+- **Hide the composer for a full-screen reading view.** A keyboard button on
+  the composer collapses the message box (and keyboard) so a long reply can be
+  read without distraction; a floating button brings it back.
+
+### Fixed
+- **Dangerous-command approvals no longer stall a reply.** When the host asks
+  to approve a risky command mid-conversation, JKP Mobile now answers the
+  approval for the current conversation automatically, so the run keeps flowing
+  instead of hanging behind a prompt the phone can't present.
+- **Chat reopens where you left off.** Returning to a conversation restores
+  your previous reading position exactly once, after the conversation loads —
+  no more jumping to the top or snapping to a stale spot while you type.
+
 ## [v0.7.0-modular] - 2026-07-30
 
 ### Added
