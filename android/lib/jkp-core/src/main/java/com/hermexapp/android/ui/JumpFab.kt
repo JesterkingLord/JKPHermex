@@ -24,7 +24,10 @@ import com.hermexapp.android.ui.theme.LocalHermexPalette
  * viewport. Arbitrary positioning, including the exact top, belongs to the
  * fast scrollbar so the two controls never duplicate or obscure each other.
  */
-internal fun shouldShowJumpToLatest(canScrollForward: Boolean): Boolean = canScrollForward
+internal fun shouldShowJumpToLatest(
+    canScrollForward: Boolean,
+    isStreaming: Boolean,
+): Boolean = canScrollForward && isStreaming
 
 /**
  * Targets the absolute end of the final item, not merely its leading edge.
@@ -37,10 +40,11 @@ fun jumpToLatestTarget(itemCount: Int): ScrollTarget? =
 @Composable
 fun JumpToLatestButton(
     canScrollForward: Boolean,
+    isStreaming: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (!shouldShowJumpToLatest(canScrollForward)) return
+    if (!shouldShowJumpToLatest(canScrollForward, isStreaming)) return
 
     val palette = LocalHermexPalette.current
     Box(

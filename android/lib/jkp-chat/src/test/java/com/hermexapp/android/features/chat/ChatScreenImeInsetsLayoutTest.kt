@@ -114,6 +114,25 @@ class ChatScreenImeInsetsLayoutTest {
     }
 
     @Test
+    fun `chat restores scroll once and exposes a reachable composer visibility toggle`() {
+        val source = resolveChatScreenSource().readText()
+        val composerSource = File(
+            resolveChatScreenSource().parentFile ?: error("Chat source has no parent directory."),
+            "ComposerControls.kt",
+        ).readText()
+
+        assertTrue(
+            "Scroll restoration must not be keyed to every message-count change; " +
+                "that replays an old offset while the assistant streams.",
+            !source.contains("remember(state.entries.size)"),
+        )
+        assertTrue(source.contains("LaunchedEffect(viewModel, state.entries.isNotEmpty())"))
+        assertTrue(source.contains("onHideComposer"))
+        assertTrue(composerSource.contains("Hide message composer"))
+        assertTrue(source.contains("Show message composer"))
+    }
+
+    @Test
     fun `MainActivity enables edge-to-edge with both system bars fully transparent`() {
         // Keep edge-to-edge system-bar backgrounds transparent. This is a
         // visual contract; the separate manifest `adjustResize` assertion owns

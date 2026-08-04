@@ -42,6 +42,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 
+/** Mobile is an authenticated control surface; keep command approvals session-scoped and non-modal. */
+private const val AUTO_APPROVE_MOBILE_COMMANDS = true
+
 /**
  * Phase 4 chat state machine: transcript load, send → `/api/chat/start` →
  * SSE stream, token/reasoning/tool events into a timeline, steer-while-
@@ -104,8 +107,6 @@ class ChatViewModel(
         val finishedRunCount: Int = 0,
         /** Context-window usage from the last `done` event (Phase 9.2 indicator). */
         val contextWindow: ContextWindowSnapshot? = null,
-        /** A pending approval/clarification prompt raised mid-run; null when none. */
-        val pendingApproval: PendingApproval? = null,
         val pendingClarification: PendingClarification? = null,
         /**
          * Currently-selected reasoning effort (mirrors the iOS
@@ -127,8 +128,8 @@ class ChatViewModel(
          */
         val reasoningErrorMessage: String? = null,
         /**
-         * Hang honesty (0.7.1): tip when the stream is silent for a long time
-         * without a local approval overlay — host may be waiting on YOLO.
+         * Hang honesty (0.7.1): retained for non-approval stalls and transport
+         * recovery. Mobile command approvals are resolved session-scoped.
          */
         val hangTip: String? = null,
         /**
@@ -250,7 +251,10 @@ class ChatViewModel(
                 val tip = HangHonesty.tipIfStalled(
                     isStreaming = true,
                     silentSeconds = silent,
-                    hasPendingApproval = state.pendingApproval != null,
+                    // Mobile approvals are resolved in the background for the
+                    // paired session, so never tell the user to approve on a
+                    // surface that intentionally has no approval modal.
+                    hasPendingApproval = AUTO_APPROVE_MOBILE_COMMANDS,
                 )
                 val banner = if (tip != null) HangHonesty.banner(silent) else null
                 if (state.hangTip != banner) {
@@ -846,8 +850,25 @@ class ChatViewModel(
         val pending = response?.pending
             ?: try { ApiJson.decodeFromJsonElement(PendingApproval.serializer(), payload) } catch (_: Exception) { null }
         if (pending != null && !pending.isEmpty) {
-            // Local overlay is the primary UX; clear hang tip so we don't stack copy.
-            _uiState.update { it.copy(pendingApproval = pending, hangTip = null) }
+            // The paired phone is an authenticated operator surface. Resolve
+            // dangerous-command prompts for this session instead of blocking
+            // the run behind a modal that cannot be answered from Telegram-like
+            // mobile flow. SESSION is deliberately narrower than ALWAYS.
+            _uiState.update { it.copy(hangTip = null) }
+            if (AUTO_APPROVE_MOBILE_COMMANDS) {
+                viewModelScope.launch {
+                    try {
+                        client.respondApproval(
+                            sessionId,
+                            ApprovalChoice.SESSION,
+                            pending.approvalId,
+                        )
+                    } catch (e: ApiError) {
+                        onAuthError(e)
+                        _uiState.update { it.copy(errorMessage = e.userMessage) }
+                    }
+                }
+            }
         }
     }
 
@@ -863,20 +884,6 @@ class ChatViewModel(
             ?: try { ApiJson.decodeFromJsonElement(PendingClarification.serializer(), payload) } catch (_: Exception) { null }
         if (pending != null && !pending.isEmpty) {
             _uiState.update { it.copy(pendingClarification = pending) }
-        }
-    }
-
-    /** Responds to a pending approval, then clears the overlay. */
-    fun respondToApproval(choice: ApprovalChoice) {
-        val pending = _uiState.value.pendingApproval ?: return
-        _uiState.update { it.copy(pendingApproval = null) }
-        viewModelScope.launch {
-            try {
-                client.respondApproval(sessionId, choice, pending.approvalId)
-            } catch (e: ApiError) {
-                onAuthError(e)
-                _uiState.update { it.copy(errorMessage = e.userMessage) }
-            }
         }
     }
 

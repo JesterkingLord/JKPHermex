@@ -9,13 +9,18 @@ import org.junit.Test
 class ScrollIndicatorOnlyTest {
 
     @Test
-    fun `jump to latest is visible when content exists below`() {
-        assertTrue(shouldShowJumpToLatest(canScrollForward = true))
+    fun `jump to latest is visible while a run is streaming and content exists below`() {
+        assertTrue(shouldShowJumpToLatest(canScrollForward = true, isStreaming = true))
+    }
+
+    @Test
+    fun `jump to latest is hidden when the run is idle`() {
+        assertFalse(shouldShowJumpToLatest(canScrollForward = true, isStreaming = false))
     }
 
     @Test
     fun `jump to latest is hidden at the bottom or when content fits`() {
-        assertFalse(shouldShowJumpToLatest(canScrollForward = false))
+        assertFalse(shouldShowJumpToLatest(canScrollForward = false, isStreaming = true))
     }
 
     @Test

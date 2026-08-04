@@ -5,9 +5,9 @@ import com.hermexapp.android.network.ClientErrorCatalog
 /**
  * Hang honesty for long silent streams (JKPHermex 0.7.1 / host v1.13 slice 13.5b).
  *
- * When the host is waiting on a command approval, the phone must not look like
- * a crashed agent — show the same tip as Hermex PWA / desktop stall copy.
- * Pure helpers for unit tests; [ChatViewModel] drives the timer.
+ * When a client can be blocked on a command approval, it must not look like a
+ * crashed agent. The Android chat currently auto-resolves session approvals,
+ * but the helpers remain shared with the catalog and transport recovery tests.
  */
 object HangHonesty {
 
@@ -26,7 +26,7 @@ object HangHonesty {
     /**
      * @param isStreaming run is open
      * @param silentSeconds seconds since last meaningful SSE activity
-     * @param hasPendingApproval local approval overlay already up — skip tip
+     * @param hasPendingApproval approval UI is already visible — skip the tip
      */
     fun tipIfStalled(
         isStreaming: Boolean,

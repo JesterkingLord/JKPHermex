@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
@@ -53,6 +54,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -110,8 +112,10 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
     val palette = LocalHermexPalette.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val speech = rememberSpeechController()
     val context = LocalContext.current
+    var composerVisible by remember(viewModel) { mutableStateOf(true) }
     // Wave 2: needed for the FastScrollbar + JumpFab callbacks, which
     // call `LazyListState.animateScrollToItem(target)` from a regular
     // click handler (not a LaunchedEffect / coroutine context).
@@ -134,18 +138,15 @@ fun ChatScreen(
     // Wave 2: after the initial load hydrates `state.entries`, jump back
     // to the stored scroll position (if any). Guarded by `entries.isNotEmpty`
     // so we don't scrollToItem(-1) on a still-loading chat.
-    val restoredScrollPosition = remember(state.entries.size) {
-        // snapshot-once: we want to restore exactly once per chat visit;
-        // `remember(state.entries.size)` re-evaluates if the entry count
-        // changes, but the VM only ever returns one scrollPosition per
-        // session so this is idempotent in practice.
-        if (state.entries.isNotEmpty()) viewModel.loadScrollPosition() else null
-    }
-    LaunchedEffect(restoredScrollPosition, state.entries.size) {
-        val pos = restoredScrollPosition ?: return@LaunchedEffect
-        if (state.entries.isNotEmpty() && pos.first < state.entries.size) {
-            listState.scrollToItem(pos.first, pos.second)
-        }
+    // Restore only once after the initial transcript arrives. Re-reading the
+    // saved offset whenever the entry count changes sends a live stream back to
+    // the old position, which is the mobile "jump up while typing" bug.
+    var restoredScrollPosition by remember(viewModel) { mutableStateOf(false) }
+    LaunchedEffect(viewModel, state.entries.isNotEmpty()) {
+        if (restoredScrollPosition || state.entries.isEmpty()) return@LaunchedEffect
+        restoredScrollPosition = true
+        val pos = viewModel.loadScrollPosition() ?: return@LaunchedEffect
+        if (pos.first < state.entries.size) listState.scrollToItem(pos.first, pos.second)
     }
 
     // Completion signal: haptic + notification hook, once per finished run.
@@ -159,12 +160,12 @@ fun ChatScreen(
     // Wave 5 Slice 5.2 — smart auto-scroll. Track whether the user is
     // pinned to the bottom; if so, follow new entries, otherwise keep their
     // place and surface an unread pill.
-    val isAtBottom by remember(state.entries.size) {
+    val isAtBottom by remember {
         derivedStateOf {
-            // True when the bottom entry is on screen. Tolerance of `1` so a
-            // mid-render scroll-up doesn't break the auto-follow.
-            state.entries.isEmpty() ||
-                listState.firstVisibleItemIndex >= state.entries.lastIndex - 1
+            // Use the list's actual scroll range instead of an item-index
+            // heuristic. A single tall message can span several screens, so
+            // being near its index does not mean the viewport is at the end.
+            listState.layoutInfo.totalItemsCount == 0 || !listState.canScrollForward
         }
     }
     val previousSize = remember { mutableIntStateOf(0) }
@@ -233,6 +234,14 @@ fun ChatScreen(
                 backContentDescription =
                     if (leadingAction == ChatLeadingAction.MENU) "Open navigation menu" else "Back to sessions",
                 actions = {
+                    if (!composerVisible) {
+                        CircleButton(
+                            onClick = { composerVisible = true },
+                            contentDescription = "Show message composer",
+                            icon = Icons.Filled.Keyboard,
+                            size = 40,
+                        )
+                    }
                     CircleButton(
                         // Wave 4 Slice 4.2: in-chat find. Tapping opens the
                         // ChatSearchBar overlay (toggled by VM state).
@@ -414,6 +423,7 @@ fun ChatScreen(
                     // with transcript text or the right-edge gesture lane.
                     JumpToLatestButton(
                         canScrollForward = listState.canScrollForward,
+                        isStreaming = state.isStreaming,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 56.dp, bottom = 24.dp),
@@ -434,64 +444,69 @@ fun ChatScreen(
                 }
             }
 
-            // Context-window indicator, just above the composer (Phase 9.2).
-            state.contextWindow?.compactIndicator?.let { indicator ->
-                Text(
-                    indicator,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.textSecondary,
-                )
-            }
-
-            SlashSuggestionList(
-                suggestions = state.slashSuggestions,
-                onPick = viewModel::applySlashCommand,
-            )
-            AttachmentStrip(state, viewModel)
-            ComposerBar(
-                viewModel = viewModel,
-                state = state,
-                onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
-                onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                onLongPressSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                onLongPressSend = onLongPressSend,
-                onImproveDraft = onImproveDraft,
-                onOpenTemplates = onOpenTemplates,
-                onInsertFromNotes = onInsertFromNotes,
-                onInsertFromPrompts = onInsertFromPrompts,
-            )
-            // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after
-            // the most recent empty send. Computed via a local ticking
-            // remember so we don't need to poll the VM.
-            val emptySentAt = state.lastEmptySendAtMs
-            if (emptySentAt != null) {
-                val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
-                LaunchedEffect(emptySentAt) {
-                    while (true) {
-                        now.longValue = System.currentTimeMillis()
-                        if (now.longValue - emptySentAt > 2_000L) {
-                            break
-                        }
-                        kotlinx.coroutines.delay(200L)
-                    }
-                }
-                if (now.longValue - emptySentAt <= 2_000L) {
+            AnimatedVisibility(visible = composerVisible) {
+                // Context-window indicator, just above the composer (Phase 9.2).
+                state.contextWindow?.compactIndicator?.let { indicator ->
                     Text(
-                        "Type something first.",
+                        indicator,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.warning,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
                     )
+                }
+
+                SlashSuggestionList(
+                    suggestions = state.slashSuggestions,
+                    onPick = viewModel::applySlashCommand,
+                )
+                AttachmentStrip(state, viewModel)
+                ComposerBar(
+                    viewModel = viewModel,
+                    state = state,
+                    onHideComposer = {
+                        keyboard?.hide()
+                        composerVisible = false
+                    },
+                    onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
+                    onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                    onLongPressSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                    onLongPressSend = onLongPressSend,
+                    onImproveDraft = onImproveDraft,
+                    onOpenTemplates = onOpenTemplates,
+                    onInsertFromNotes = onInsertFromNotes,
+                    onInsertFromPrompts = onInsertFromPrompts,
+                )
+                // Wave 5 Slice 5.1 — empty-send warning. Auto-hides ~2s after
+                // the most recent empty send. Computed via a local ticking
+                // remember so we don't need to poll the VM.
+                val emptySentAt = state.lastEmptySendAtMs
+                if (emptySentAt != null) {
+                    val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(emptySentAt) {
+                        while (true) {
+                            now.longValue = System.currentTimeMillis()
+                            if (now.longValue - emptySentAt > 2_000L) {
+                                break
+                            }
+                            kotlinx.coroutines.delay(200L)
+                        }
+                    }
+                    if (now.longValue - emptySentAt <= 2_000L) {
+                        Text(
+                            "Type something first.",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.warning,
+                        )
+                    }
                 }
             }
         }
     }
 
-    // Mid-run interaction overlays (Phase 4 deferred items).
-    state.pendingApproval?.let { approval ->
-        ApprovalOverlay(approval = approval, onRespond = viewModel::respondToApproval)
-    }
+    // Clarification remains interactive; command approvals are auto-resolved by
+    // the authenticated mobile client in ChatViewModel instead of blocking the
+    // phone behind a modal.
     state.pendingClarification?.let { clarification ->
         ClarificationOverlay(clarification = clarification, onRespond = viewModel::respondToClarification)
     }

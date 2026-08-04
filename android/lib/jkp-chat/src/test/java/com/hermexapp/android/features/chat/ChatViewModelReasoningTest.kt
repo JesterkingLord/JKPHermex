@@ -6,6 +6,8 @@ import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.model.ReasoningEffort
 import com.hermexapp.android.network.ApiClient
+import com.hermexapp.android.network.ApiJson
+import com.hermexapp.android.network.SseEvent
 import com.hermexapp.android.network.SseStreaming
 import com.hermexapp.android.persistence.InMemoryCacheStore
 import kotlinx.coroutines.Dispatchers
@@ -224,6 +226,26 @@ class ChatViewModelReasoningTest {
         val req = server.takeRequest()
         val body = req.body.readUtf8()
         assertFalse("AUTO should not send reasoning_effort: $body", body.contains("reasoning_effort"))
+    }
+
+    @Test
+    fun `approval events are resolved for the session without opening a modal`() = runTest {
+        server.enqueue(json("""{"ok":true,"choice":"session"}"""))
+
+        viewModel.onSseEvent(
+            SseEvent.ApprovalPending(
+                ApiJson.parseToJsonElement(
+                    """{"pending":{"approval_id":"ap1","command":"rm -rf build"}}""",
+                ),
+            ),
+        )
+        testScheduler.advanceUntilIdle()
+
+        val request = server.takeRequest()
+        val body = request.body.readUtf8()
+        assertEquals("/api/approval/respond", request.path)
+        assertTrue(body.contains("\"choice\":\"session\""))
+        assertTrue(body.contains("\"approval_id\":\"ap1\""))
     }
 
     // ── helpers ──────────────────────────────────────────────────────────

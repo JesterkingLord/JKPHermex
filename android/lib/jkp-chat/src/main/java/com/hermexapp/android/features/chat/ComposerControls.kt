@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
@@ -98,6 +99,7 @@ fun ComposerBar(
     onStopHaptic: () -> Unit = {},
     onLongPressSendHaptic: () -> Unit = {},
     onLongPressSend: (() -> Unit)? = null,
+    onHideComposer: () -> Unit = {},
     // Wave 9: feature rail callbacks. The rail only renders when the
     // composer is empty — once the user starts typing, the typed text
     // owns the available vertical space. Every callback is optional,
@@ -223,6 +225,16 @@ fun ComposerBar(
                                 tint = palette.textSecondary,
                             )
                         }
+                    }
+                    IconButton(
+                        onClick = onHideComposer,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Keyboard,
+                            contentDescription = "Hide message composer",
+                            tint = palette.textSecondary,
+                        )
                     }
                     SelectorText(
                         label = (config.selectedModelDisplayName ?: "model").take(14),
