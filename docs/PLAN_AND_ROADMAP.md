@@ -5,7 +5,7 @@
 **Current Android development version:** **`0.8.14`** (`versionCode` 37) on `feat/jkp-modular-extraction`
 **Latest documented stable line:** **`0.7.2-stable`** (`versionCode` 18), tag `v0.7.2-stable`
 **Stable line:** tag `v0.7.2-stable`, branch `stable/v1.12.1-jkphermex-0.7.2` (coordinated with `JKP v1.12.1-stable`)
-**Last roadmap refresh:** `2026-08-01` (privacy/backup hardening, safe Maestro smoke, scrollbar and lifecycle reliability pass)
+**Last roadmap refresh:** `2026-08-04` (0.8.14 release gate: chat reliability pass shipped, 584 tests green, docs reconciled)
 **Authoritative for “what’s next” on the phone.** Port history: [`ANDROID_PORT_PLAN.md`](ANDROID_PORT_PLAN.md).  
 **Host roadmap (laptop agent):** [`E:\JKP\Jester-King-Prime-with-Hermes-Base-Fork\docs\PLAN_AND_ROADMAP.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/PLAN_AND_ROADMAP.md) · excellence: [`2026-07-18-jkp-overall-excellence-program.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-18-jkp-overall-excellence-program.md) · v1.13: [`2026-07-16-jkp-v1.13-roadmap.md`](file:///E:/JKP/Jester-King-Prime-with-Hermes-Base-Fork/docs/superpowers/plans/2026-07-16-jkp-v1.13-roadmap.md)
 
@@ -60,6 +60,14 @@ Completed in source and JVM/build verified:
 - The latest reliability audit consumes scrollbar drags before the transcript,
   moves shared-file metadata work off the UI thread, makes draft handoff retry-safe,
   and cancels every manually owned screen ViewModel/SSE recovery scope on exit.
+- Chat reliability pass (commit `614c2c2`, 2026-08-04, shipped in source):
+  session-scoped command approvals are auto-resolved for the paired session so a
+  run never stalls behind an unanswerable approval modal; returning to a chat
+  restores the previous scroll position exactly once after the transcript loads;
+  the composer can be hidden for a full-screen reading view and restored with a
+  floating button. Regression coverage added for the scroll restore and
+  approval paths. Full fresh unit suite is green at **584 tests, 0 failures /
+  0 errors / 0 skipped**.
 
 The 2026-07-28 connected-phone pass completed the identified remediation:
 
@@ -113,6 +121,20 @@ no phone is visible to ADB at this refresh.
 - iOS tree is **reference / upstream parity** unless explicitly scheduled.  
 - Do not commit secrets, release keystore, or phone screenshots with paths/session metadata.
 
+### 0.8.14 release gate evidence (2026-08-04)
+
+Executed per `docs/delegation-release-gate-2026-08-04.md` on
+`feat/jkp-modular-extraction`:
+
+| Check | Result |
+|---|---|
+| Unit tests (fresh `testDebugUnitTest --rerun-tasks`) | **584 tests, 0 failures, 0 errors, 0 skipped** across 75 suites (JUnit XML) — `BUILD SUCCESSFUL in 2m 8s`, 173 tasks executed |
+| Debug lint (`lintDebug`) | **0 errors, 45 warnings**, all in known-acceptable categories: GradleDependency ×33, AndroidGradlePluginVersion ×6, IconLauncherShape ×5, InsecureBaseConfiguration ×1 — `BUILD SUCCESSFUL in 3m 19s` |
+| `assembleDebug` | **GREEN** — `BUILD SUCCESSFUL in 31s`; APK `android/app/build/outputs/apk/debug/app-debug.apk`, 21,622,778 bytes (20.6 MB) |
+| `assembleRelease` | **GREEN** — `BUILD SUCCESSFUL in 2m 35s`; unsigned APK `android/app/build/outputs/apk/release/app-release-unsigned.apk`, 2,896,444 bytes (2.8 MB, R8-minified) |
+| Release signing | **Residual — owner-gated.** Release keystore signing resolves from `HERMEX_RELEASE_*` env vars / `local.properties`; the build succeeds unsigned, so store signing remains operator/approval-gated |
+| Maestro safety | **Device-gated.** `tools/verify_maestro_safety.py` does not exist in this repo (no `tools/` dir), so the delegation fallback `ls maestro/` was used; the flows under `maestro/` are read-only by design but require a connected ADB phone + local Maestro CLI, and no device was available. No adb commands were run |
+
 ---
 
 ## 2. Roadmap by version
@@ -121,7 +143,7 @@ no phone is visible to ADB at this refresh.
 
 | Gate | Status |
 |---|---|
-| Unit tests + APKs | **GREEN locally**: 581 debug + 581 release tests, zero failures/errors/skips; debug, unsigned release, and instrumentation APKs assemble |
+| Unit tests + APKs | **GREEN locally**: 584 debug + 584 release tests, zero failures/errors/skips; debug, unsigned release, and instrumentation APKs assemble |
 | Android lint | **GREEN analysis** (0 errors; 45 reviewed non-blocking warnings in the latest report) |
 | Scrollbar math, dragging, semantics | **GREEN in tests; device rerun pending**: prior top `0.001`, midpoint `0.494`, bottom `1.000`, and continuous drag `0.665` proof remains valid; the new drag-consumption refinement awaits the connected-phone smoke |
 | Cold-start sessions | **GREEN**: three force-stop launches returned all 37 live conversations on OPPO CPH2343 |
