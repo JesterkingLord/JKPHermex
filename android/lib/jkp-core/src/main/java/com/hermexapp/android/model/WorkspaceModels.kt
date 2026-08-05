@@ -19,11 +19,31 @@ data class DirectoryListResponse(
 data class WorkspaceEntry(
     val name: String? = null,
     val path: String? = null,
+    /** `"dir"`, `"file"` or `"symlink"`. */
     val type: String? = null,
-    @SerialName("is_directory") val isDirectory: Boolean? = null,
+    /**
+     * Only sent for symlinks, and it is `is_dir` — not `is_directory`, which
+     * the server never sends. A regular entry carries no such flag at all; its
+     * kind is in [type]. The previous `@SerialName("is_directory")` therefore
+     * decoded to null every time, which made a symlink pointing at a directory
+     * unbrowsable (its own type is "symlink", so the type fallback said no).
+     */
+    @SerialName("is_dir") val isDir: Boolean? = null,
     val size: Long? = null,
+    /** Nanosecond mtime; the newest-first sort the file views want. */
+    @SerialName("mtime_ns") val mtimeNs: Long? = null,
+    /** Symlink destination, absent for entries that escape the workspace. */
+    val target: String? = null,
+    /**
+     * True when a symlink points outside the workspace. The server
+     * deliberately withholds the target, size and resolved kind for these, and
+     * refuses to read through them, so the UI must not offer navigation.
+     */
+    @SerialName("target_outside_workspace") val targetOutsideWorkspace: Boolean? = null,
 ) {
-    val isBrowsableDirectory: Boolean get() = isDirectory == true || type == "dir"
+    val isBrowsableDirectory: Boolean
+        get() = targetOutsideWorkspace != true && (isDir == true || type == "dir")
+
     val stableId: String get() = path ?: name ?: "entry-${hashCode()}"
 }
 
