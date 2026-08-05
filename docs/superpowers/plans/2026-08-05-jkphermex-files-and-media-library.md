@@ -84,6 +84,24 @@ device" rather than "Uploaded" — a label the app can actually stand behind.
 
 ---
 
+## 3b. Correction after starting slice 1 (2026-08-05)
+
+Slice 1 assumed the contract had to be built. Most of it already existed:
+`Endpoint.DIRECTORY_LIST("/api/list")`, `ApiClient.directoryList(sessionId,
+path)`, `DirectoryListResponse`/`WorkspaceEntry`, and a browser in
+`lib/jkp-workspace`. The work is correcting and extending that, not starting it.
+
+Correcting it found a live bug (`21fa7dd`): `WorkspaceEntry` mapped
+`@SerialName("is_directory")`, a field the server never sends. `/api/list`
+emits a regular entry with no directory flag at all (kind lives in `type`) and a
+symlink with `is_dir`, `target`, `target_outside_workspace`. Ordinary folders
+browsed only by luck of the `type == "dir"` fallback; a symlink to a directory
+did not browse at all. `mtime_ns` — the sort key this plan depends on — was also
+being dropped.
+
+Revised slice 1: DONE. Remaining slices unchanged, except that slice 2 extends
+the existing workspace browser rather than adding a new screen from scratch.
+
 ## 4. Slices
 
 ### Slice 1 — contract + repository
