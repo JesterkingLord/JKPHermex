@@ -212,6 +212,7 @@ fun NotesScreen(
                     state = state,
                     viewModel = viewModel,
                     onEdit = { id -> editor = EditorState.Open(id) },
+                    editingNoteId = (editor as? EditorState.Open)?.noteId,
                     onSwipeDelete = { id ->
                         // Capture the row BEFORE delete so we can restore on UNDO.
                         val deleted = state.notes.firstOrNull { it.id == id }
@@ -514,13 +515,19 @@ private fun NotesList(
     onSwipeDelete: (String) -> Unit,
     onEdit: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** The note currently open in the editor, hidden from the list below it. */
+    editingNoteId: String? = null,
 ) {
     LazyColumn(
         modifier = modifier.testTag("notes_list"),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(state.notes, key = { it.id }) { note ->
+        // The open note is already on screen as the editor card directly
+        // above. Leaving it in the list too showed the same note twice, with
+        // two different renderings of the text you were typing.
+        val rows = state.notes.filterNot { it.id == editingNoteId }
+        items(rows, key = { it.id }) { note ->
             NoteRow(
                 note = note,
                 selected = note.id in state.selection,
