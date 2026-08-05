@@ -16,13 +16,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -50,12 +54,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
@@ -115,7 +122,21 @@ fun ChatScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val speech = rememberSpeechController()
     val context = LocalContext.current
-    var composerVisible by remember(viewModel) { mutableStateOf(true) }
+    // Slice 3 — full-screen reader mode: `composerVisible` is the INVERSE of
+    // AppPrefs.readerMode (reader mode on == composer hidden), so the choice
+    // survives restarts. Seeded from the pref so the first frame is already
+    // correct (no composer flash), then re-synced whenever the pref changes;
+    // the only writers of the pref are the hide/show toggles below, so this
+    // never fights the user.
+    val prefs = viewModel.prefs
+    // collectAsState, not .value: reading a StateFlow's value inside
+    // composition does not observe it, so the screen would not react when the
+    // preference changed (and lint rejects it outright).
+    val persistedReaderMode = prefs?.readerMode?.collectAsState()?.value
+    // Fallback for previews and tests, which build the view model without a
+    // preferences store; there is nowhere to persist, so hold it locally.
+    var localReaderMode by remember(viewModel) { mutableStateOf(false) }
+    val composerVisible = composerVisibleFor(persistedReaderMode ?: localReaderMode)
     // Wave 2: needed for the FastScrollbar + JumpFab callbacks, which
     // call `LazyListState.animateScrollToItem(target)` from a regular
     // click handler (not a LaunchedEffect / coroutine context).
@@ -228,49 +249,89 @@ fun ChatScreen(
         topBar = {
             HermexHeader(
                 title = state.title ?: "New chat",
-                subtitle = "JKP Mobile",
+                // Slice 3 — reader mode dims the title-bar chrome: the subtitle
+                // and the action cluster (search / files / git) drop out, so
+                // only the session title and back control remain. The
+                // show-composer affordance becomes the floating 48 dp FAB.
+                subtitle = if (composerVisible) "JKP Mobile" else null,
                 onBack = if (leadingAction == ChatLeadingAction.MENU) onOpenMenu else onBack,
                 backIcon = if (leadingAction == ChatLeadingAction.MENU) Icons.Filled.Menu else null,
                 backContentDescription =
                     if (leadingAction == ChatLeadingAction.MENU) "Open navigation menu" else "Back to sessions",
                 actions = {
-                    if (!composerVisible) {
+                    if (composerVisible) {
                         CircleButton(
-                            onClick = { composerVisible = true },
-                            contentDescription = "Show message composer",
-                            icon = Icons.Filled.Keyboard,
+                            // Wave 4 Slice 4.2: in-chat find. Tapping opens the
+                            // ChatSearchBar overlay (toggled by VM state).
+                            onClick = {
+                                if (state.searchActive) {
+                                    viewModel.closeSearch()
+                                } else {
+                                    viewModel.openSearch()
+                                }
+                            },
+                            contentDescription =
+                                if (state.searchActive) "Close conversation search" else "Search conversation",
+                            icon = Icons.Filled.Search,
+                            size = 40,
+                        )
+                        CircleButton(
+                            onClick = onOpenFiles,
+                            contentDescription = "Open session files",
+                            icon = Icons.Filled.Folder,
+                            size = 40,
+                        )
+                        CircleButton(
+                            onClick = onOpenGit,
+                            contentDescription = "Open Git workspace",
+                            icon = Icons.Filled.AccountTree,
                             size = 40,
                         )
                     }
-                    CircleButton(
-                        // Wave 4 Slice 4.2: in-chat find. Tapping opens the
-                        // ChatSearchBar overlay (toggled by VM state).
-                        onClick = {
-                            if (state.searchActive) {
-                                viewModel.closeSearch()
-                            } else {
-                                viewModel.openSearch()
-                            }
-                        },
-                        contentDescription =
-                            if (state.searchActive) "Close conversation search" else "Search conversation",
-                        icon = Icons.Filled.Search,
-                        size = 40,
-                    )
-                    CircleButton(
-                        onClick = onOpenFiles,
-                        contentDescription = "Open session files",
-                        icon = Icons.Filled.Folder,
-                        size = 40,
-                    )
-                    CircleButton(
-                        onClick = onOpenGit,
-                        contentDescription = "Open Git workspace",
-                        icon = Icons.Filled.AccountTree,
-                        size = 40,
-                    )
                 },
             )
+        },
+        // Slice 3 — reader mode: a single floating 48 dp show-composer FAB at
+        // the bottom-right. Lives in the Scaffold slot so it overlays every
+        // content branch (loading / empty / transcript). Built on the app's
+        // Surface button idiom (same as JumpToLatestButton): stock M3 FABs
+        // enforce a 56 dp content box, which would squeeze the icon at 48 dp.
+        // The composer's AnimatedVisibility takes zero height when hidden, so
+        // the transcript already fills the bottom inset — the FAB is the only
+        // chrome left.
+        floatingActionButton = {
+            if (!composerVisible) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 16.dp, bottom = 16.dp)
+                        .size(48.dp)
+                        .semantics {
+                            contentDescription = "Show message composer"
+                            role = Role.Button
+                        }
+                        .clickable(role = Role.Button) {
+                            localReaderMode = false
+                            prefs?.setReaderMode(false)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        color = palette.accent,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = CircleShape,
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Keyboard,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                }
+            }
         },
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -421,26 +482,30 @@ fun ChatScreen(
                     // while newer content is below. The scrollbar owns top
                     // and arbitrary positioning, so no second arrow competes
                     // with transcript text or the right-edge gesture lane.
-                    JumpToLatestButton(
-                        canScrollForward = listState.canScrollForward,
-                        isStreaming = state.isStreaming,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 56.dp, bottom = 24.dp),
-                        onClick = {
-                            scope.launch {
-                                if (listState.canScrollForward) {
-                                    jumpToLatestTarget(state.entries.size)?.let { target ->
-                                        listState.animateScrollToItem(
-                                            target.itemIndex,
-                                            target.itemScrollOffsetPx,
-                                        )
+                    // Slice 3 — reader mode suppresses the pill entirely: the
+                    // bottom-right corner belongs to the show-composer FAB.
+                    if (composerVisible) {
+                        JumpToLatestButton(
+                            canScrollForward = listState.canScrollForward,
+                            isStreaming = state.isStreaming,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 56.dp, bottom = 24.dp),
+                            onClick = {
+                                scope.launch {
+                                    if (listState.canScrollForward) {
+                                        jumpToLatestTarget(state.entries.size)?.let { target ->
+                                            listState.animateScrollToItem(
+                                                target.itemIndex,
+                                                target.itemScrollOffsetPx,
+                                            )
+                                        }
+                                        viewModel.markSeen()
                                     }
-                                    viewModel.markSeen()
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
 
@@ -460,12 +525,52 @@ fun ChatScreen(
                     onPick = viewModel::applySlashCommand,
                 )
                 AttachmentStrip(state, viewModel)
+
+                // v0.8.15 slice 5 — stream status chips above the composer:
+                // "Working…" while the agent is silent, "Reconnecting…" while
+                // the transport drop recovery runs, "Reply ready" for ~2s
+                // after a done event. All three clear automatically.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.streamStatusChip?.let { chip ->
+                        StreamStatusChip(
+                            text = chip,
+                            color = if (chip == HangHonesty.RECONNECTING_CHIP) {
+                                palette.warning
+                            } else {
+                                palette.textSecondary
+                            },
+                        )
+                    }
+                    val replyReadyUntil = state.replyReadyUntilMs
+                    if (replyReadyUntil > 0L) {
+                        val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
+                        LaunchedEffect(replyReadyUntil) {
+                            while (true) {
+                                now.longValue = System.currentTimeMillis()
+                                if (now.longValue >= replyReadyUntil) break
+                                kotlinx.coroutines.delay(200L)
+                            }
+                        }
+                        if (now.longValue < replyReadyUntil) {
+                            StreamStatusChip(text = HangHonesty.REPLY_READY_CHIP, color = palette.success)
+                        }
+                    }
+                }
                 ComposerBar(
                     viewModel = viewModel,
                     state = state,
                     onHideComposer = {
                         keyboard?.hide()
-                        composerVisible = false
+                        localReaderMode = true
+                        prefs?.setReaderMode(true)
+                        // Reader mode is for reading: drop the in-chat find
+                        // overlay if it is open.
+                        viewModel.closeSearch()
                     },
                     onSendHaptic = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                     onStopHaptic = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
@@ -859,4 +964,31 @@ private fun EditUserMessageDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+/**
+ * v0.8.15 slice 5 — small non-modal status pill rendered above the composer.
+ * Not tappable, but sized to the 48dp minimum touch-target height so the
+ * composer row's rhythm stays consistent.
+ */
+@Composable
+private fun StreamStatusChip(text: String, color: Color) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = color.copy(alpha = 0.12f),
+        modifier = Modifier.heightIn(min = 48.dp),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
