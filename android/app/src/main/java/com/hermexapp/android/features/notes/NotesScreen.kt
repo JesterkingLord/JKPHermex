@@ -211,6 +211,7 @@ fun NotesScreen(
                 else -> NotesList(
                     state = state,
                     viewModel = viewModel,
+                    onEdit = { id -> editor = EditorState.Open(id) },
                     onSwipeDelete = { id ->
                         // Capture the row BEFORE delete so we can restore on UNDO.
                         val deleted = state.notes.firstOrNull { it.id == id }
@@ -513,6 +514,7 @@ private fun NotesList(
     state: NotesViewModel.UiState,
     viewModel: NotesViewModel,
     onSwipeDelete: (String) -> Unit,
+    onEdit: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -526,11 +528,12 @@ private fun NotesList(
                 selected = note.id in state.selection,
                 selectionMode = state.selectionMode,
                 onClick = {
-                    if (state.selectionMode) viewModel.toggleSelection(note.id)
-                    // No-op otherwise — wave 8.3 doesn't open the editor on
-                    // row tap (the editor is opened via the FAB or the
-                    // permanent editor when an existing note is being
-                    // edited).
+                    // Tapping a note opens it. Previously this was a no-op
+                    // outside selection mode and the FAB only created new
+                    // notes, which left an existing note with no route to the
+                    // editor at all — the note could be read, pinned, or
+                    // deleted, but never edited.
+                    if (state.selectionMode) viewModel.toggleSelection(note.id) else onEdit(note.id)
                 },
                 onLongPress = { viewModel.toggleSelection(note.id) },
                 onTogglePin = { viewModel.togglePinned(note.id, note.pinned) },
