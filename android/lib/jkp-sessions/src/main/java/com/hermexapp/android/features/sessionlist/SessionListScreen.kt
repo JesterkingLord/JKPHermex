@@ -1,6 +1,12 @@
 package com.hermexapp.android.features.sessionlist
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -52,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,6 +69,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -79,6 +89,9 @@ import com.hermexapp.android.ui.PickerRow
 import com.hermexapp.android.ui.PickerSection
 import com.hermexapp.android.ui.relativeTimeAgo
 import com.hermexapp.android.ui.theme.LocalHermexPalette
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 
 /**
@@ -164,6 +177,32 @@ fun SessionListScreen(
                 message = message,
                 duration = duration,
             )
+        }
+    }
+
+    // v0.8.15 — background refresh while this screen is composed. The
+    // lifecycle observer flips the ViewModel between the 15s foreground
+    // and 60s background cadences; the poll loop itself never restarts
+    // (see SessionListViewModel.startBackgroundRefresh).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(viewModel, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.onScreenResumed()
+                Lifecycle.Event.ON_PAUSE -> viewModel.onScreenPaused()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        // The observer only sees transitions that happen after
+        // registration, and the screen is already RESUMED when it first
+        // composes — seed the foreground cadence explicitly so the first
+        // tick isn't stuck on the 60s background rate.
+        viewModel.onScreenResumed()
+        viewModel.startBackgroundRefresh()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.stopBackgroundRefresh()
         }
     }
 
@@ -971,6 +1010,29 @@ private fun SessionRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // v0.8.15 — live indicator: a pulsing 8dp green dot next
+                // to the title while the session is streaming. The pulse
+                // (0.3f→1f alpha, 900ms, reverse) keeps the row visibly
+                // "alive" without any text churn.
+                if (shouldShowStreamingDot(session)) {
+                    val infinite = rememberInfiniteTransition(label = "streaming-pulse")
+                    val alpha by infinite.animateFloat(
+                        initialValue = 0.3f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(900, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                        label = "pulse",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .graphicsLayer { this.alpha = alpha }
+                            .background(Color(0xFF34C759), shape = CircleShape),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
             }
             Text(
                 listOfNotNull(
@@ -993,9 +1055,6 @@ private fun SessionRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.textSecondary,
             )
-            if (session.isStreaming == true || session.activeStreamId != null) {
-                Box(Modifier.size(8.dp).background(palette.success, CircleShape))
-            }
         }
     }
 }
@@ -1004,3 +1063,15 @@ private fun SessionRow(
 // Wave 9.6 — `sumOfMeasuredHeights` removed. The FastScrollbar no
 // longer asks for a pixel-based total height; it uses item-count
 // fraction + LazyListState pixel-perfect edge flags.
+
+/**
+ * v0.8.15 — live-indicator dot rule for [SessionRow]. The pulsing green
+ * dot renders while the server reports the session is actively streaming
+ * — either the `is_streaming` flag or a live `active_stream_id` (the
+ * historical marker, pre-v0.8.15 behavior). Owned by the row composable
+ * and kept as a pure predicate so SessionRowStreamingDotTest can pin the
+ * show/hide decision on the JVM (this module has no Compose UI-test
+ * runner).
+ */
+internal fun shouldShowStreamingDot(session: SessionSummary): Boolean =
+    session.isStreaming == true || session.activeStreamId != null
