@@ -527,7 +527,35 @@ private fun NotesList(
         // above. Leaving it in the list too showed the same note twice, with
         // two different renderings of the text you were typing.
         val rows = state.notes.filterNot { it.id == editingNoteId }
-        items(rows, key = { it.id }) { note ->
+        val pinnedRows = rows.filter { it.pinned }
+        val otherRows = rows.filterNot { it.pinned }
+
+        if (showSectionHeaders(pinnedRows.size, otherRows.size)) {
+            item(key = "hdr_pinned") { NotesSectionHeader("Pinned") }
+        }
+        items(pinnedRows, key = { it.id }) { note ->
+            NoteRow(
+                note = note,
+                selected = note.id in state.selection,
+                selectionMode = state.selectionMode,
+                onClick = {
+                    // Tapping a note opens it. Previously this was a no-op
+                    // outside selection mode and the FAB only created new
+                    // notes, which left an existing note with no route to the
+                    // editor at all — the note could be read, pinned, or
+                    // deleted, but never edited.
+                    if (state.selectionMode) viewModel.toggleSelection(note.id) else onEdit(note.id)
+                },
+                onLongPress = { viewModel.toggleSelection(note.id) },
+                onTogglePin = { viewModel.togglePinned(note.id, note.pinned) },
+                onSwipeDelete = { onSwipeDelete(note.id) },
+            )
+        }
+
+        if (showSectionHeaders(pinnedRows.size, otherRows.size)) {
+            item(key = "hdr_others") { NotesSectionHeader("Others") }
+        }
+        items(otherRows, key = { it.id }) { note ->
             NoteRow(
                 note = note,
                 selected = note.id in state.selection,
@@ -703,4 +731,25 @@ private fun formatRelative(epochMillis: Long): String {
         diff < 7 * day -> "${diff / day}d ago"
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMillis))
     }
+}
+
+/**
+ * Whether the list should label its two groups.
+ *
+ * Pinned notes already sort to the top, but with no label the boundary is
+ * invisible — the list just looks arbitrarily ordered. Headers only earn their
+ * space when both groups exist: an all-pinned or all-unpinned list would show
+ * a single header over everything, which says nothing.
+ */
+internal fun showSectionHeaders(pinnedCount: Int, otherCount: Int): Boolean =
+    pinnedCount > 0 && otherCount > 0
+
+@Composable
+private fun NotesSectionHeader(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp),
+    )
 }
