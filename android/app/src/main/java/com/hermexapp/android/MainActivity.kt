@@ -243,6 +243,7 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
 
     val repository = remember(server) { container.sessionRepository(server) }
     val client = remember(server) { container.apiClient(server) }
+    val context = LocalContext.current
     val sessionListViewModel = remember(server) {
         SessionListViewModel(
             repository = repository,
@@ -253,6 +254,14 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
             // home screen. Re-read on every refresh because the user can
             // change servers via Settings → Auth.
             currentBaseUrlProvider = { container.currentBaseUrl()?.toString() },
+            // v0.8.15 — while the OS is in battery-saver mode the session
+            // list's background poll loop stays on its 60s cadence even in
+            // the foreground, so an overnight charge isn't drained by a
+            // 15s refresh loop.
+            isPowerSaveModeProvider = {
+                (context.getSystemService(android.content.Context.POWER_SERVICE)
+                    as? android.os.PowerManager)?.isPowerSaveMode == true
+            },
         ).also { it.refresh() }
     }
     DisposeViewModelOnExit(sessionListViewModel)
@@ -260,7 +269,6 @@ private fun ConnectedRoot(container: AppContainer, server: HttpUrl) {
     // A shared text or image (ACTION_SEND) becomes a fresh chat with the
     // composer prefilled (and the image uploaded + attached).
     val pendingShare by container.sharedDraftStore.pending.collectAsState()
-    val context = LocalContext.current
     LaunchedEffect(pendingShare) {
         pendingShare?.let { content ->
             // Keep the handoff pending until the server accepts a new session,
@@ -505,6 +513,7 @@ private fun RenderScreen(
                     sse = container.sseClient(),
                     prefs = container.prefs,
                     onAuthError = container.authManager::handleApiError,
+                    sentPrompts = container.sentPrompts,
                 ).also { vm ->
                     sharePrefillRef()?.let { vm.updateComposerText(it); consumeSharePrefill() }
                     if (shareFileUploadsRef().isNotEmpty()) {
@@ -558,7 +567,19 @@ private fun RenderScreen(
                         container.notifications?.notifyRunComplete(title, current.sessionId)
                     }
                 },
-                onLongPressSend = { insertSheetOpen = true },
+                // v0.8.15 — long-press send now honors the operator's
+                // StreamingSendBehavior preference: with a draft in the
+                // composer it steers / interrupts / queues instead of
+                // opening the insert palette (which stays reachable from
+                // the feature-rail chips while the composer is empty).
+                onLongPressSend = {
+                    val chat = chatViewModel.uiState.value
+                    if (chat.composerText.isNotBlank() || chat.attachments.isNotEmpty()) {
+                        chatViewModel.submitLongPressDraft()
+                    } else {
+                        insertSheetOpen = true
+                    }
+                },
                 // Wave 9: "Improve" — wrap the current draft in a polish
                 // instruction, hit send. We use the existing send pipeline
                 // rather than carving a separate "rewrite" endpoint because
@@ -675,7 +696,10 @@ private fun RenderScreen(
         Screen.Prompts -> {
             BackHandler { setScreen(Screen.SessionList) }
             val promptsVm = remember {
-                com.hermexapp.android.features.prompts.PromptsViewModel.Factory(container.promptStore)
+                com.hermexapp.android.features.prompts.PromptsViewModel.Factory(
+                    container.promptStore,
+                    sentPrompts = container.sentPrompts,
+                )
                     .create(com.hermexapp.android.features.prompts.PromptsViewModel::class.java)
             }
             DisposeViewModelOnExit(promptsVm)

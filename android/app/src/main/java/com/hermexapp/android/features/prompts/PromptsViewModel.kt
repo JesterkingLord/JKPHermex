@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.hermexapp.android.persistence.PromptEntity
 import com.hermexapp.android.persistence.PromptStore
+import com.hermexapp.android.persistence.SentPrompt
+import com.hermexapp.android.persistence.SentPromptsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +36,16 @@ import java.util.UUID
 class PromptsViewModel(
     private val store: PromptStore,
     private val clock: () -> Long = { System.currentTimeMillis() },
+    /**
+     * Prompts the operator has actually sent. Optional so the screen still
+     * works without a history attached (previews, tests).
+     */
+    private val sentPrompts: SentPromptsStore? = null,
 ) : ViewModel() {
+
+    /** Recently sent prompts, newest first, that are not already saved. */
+    val recentlySent: StateFlow<List<SentPrompt>> =
+        sentPrompts?.history ?: MutableStateFlow(emptyList())
 
     private val query = MutableStateFlow("")
     private val selection = MutableStateFlow<Set<String>>(emptySet())
@@ -102,6 +113,40 @@ class PromptsViewModel(
         return id
     }
 
+    /**
+     * Promotes a prompt the operator already sent into the saved library.
+     *
+     * The name is seeded from the first line so the row is recognisable
+     * immediately; the operator can rename it in the editor. The history entry
+     * is dropped afterwards — it now lives in the library, and showing it in
+     * both places would just be the same prompt twice.
+     */
+    fun saveSentToLibrary(entry: SentPrompt): String {
+        val id = UUID.randomUUID().toString()
+        val firstLine = entry.body.lineSequence().firstOrNull()?.trim().orEmpty()
+        viewModelScope.launch {
+            store.upsert(
+                PromptEntity(
+                    id = id,
+                    name = firstLine.take(NAME_SEED_MAX_CHARS).ifBlank { "Saved prompt" },
+                    body = entry.body,
+                    tags = "",
+                    pinned = false,
+                    usageCount = entry.timesSent,
+                    updatedAtMillis = clock(),
+                    createdAtMillis = clock(),
+                )
+            )
+        }
+        sentPrompts?.forget(entry.body)
+        return id
+    }
+
+    /** Drops a sent prompt from the history without saving it. */
+    fun forgetSent(entry: SentPrompt) {
+        sentPrompts?.forget(entry.body)
+    }
+
     fun upsert(prompt: PromptEntity) {
         viewModelScope.launch { store.upsert(prompt.copy(updatedAtMillis = clock())) }
     }
@@ -164,13 +209,21 @@ class PromptsViewModel(
      * so a future Profile screen can drop in a custom store without
      * smuggling through a generic interface.
      */
-    class Factory(private val store: PromptStore) : ViewModelProvider.Factory {
+    class Factory(
+        private val store: PromptStore,
+        private val sentPrompts: SentPromptsStore? = null,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(PromptsViewModel::class.java)) {
                 "PromptsViewModel.Factory cannot build $modelClass"
             }
-            return PromptsViewModel(store) as T
+            return PromptsViewModel(store, sentPrompts = sentPrompts) as T
         }
+    }
+
+    private companion object {
+        /** Enough of the first line to recognise the prompt in a list row. */
+        const val NAME_SEED_MAX_CHARS = 60
     }
 }

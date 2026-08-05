@@ -3,6 +3,8 @@ package com.hermexapp.android.features.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hermexapp.android.config.AppPrefs
+import com.hermexapp.android.config.StreamingSendBehavior
+import com.hermexapp.android.persistence.SentPromptsStore
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.model.ApprovalChoice
 import com.hermexapp.android.model.ChatMessage
@@ -29,6 +31,7 @@ import com.hermexapp.android.network.startChat
 import com.hermexapp.android.network.steerChat
 import com.hermexapp.android.network.uploadFile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +48,12 @@ import kotlinx.serialization.json.JsonElement
 /** Mobile is an authenticated control surface; keep command approvals session-scoped and non-modal. */
 private const val AUTO_APPROVE_MOBILE_COMMANDS = true
 
+/** v0.8.15 slice 5 — seconds of stream silence before the "Working…" chip appears. */
+private const val WORKING_CHIP_SILENT_SECONDS = 8
+
+/** v0.8.15 slice 5 — how long "Reply ready" stays visible after a `done` event. */
+private const val REPLY_READY_DURATION_MS = 2_000L
+
 /**
  * Phase 4 chat state machine: transcript load, send → `/api/chat/start` →
  * SSE stream, token/reasoning/tool events into a timeline, steer-while-
@@ -54,13 +63,33 @@ private const val AUTO_APPROVE_MOBILE_COMMANDS = true
  * SSE events arrive on OkHttp's reader thread; every mutation goes through
  * `MutableStateFlow.update`, which is atomic, so no main-thread hop is needed.
  */
+
 class ChatViewModel(
     private val sessionId: String,
     private val repository: SessionRepository,
     private val client: ApiClient,
     private val sse: SseStreaming,
-    private val prefs: AppPrefs? = null,
+    val prefs: AppPrefs? = null,
     private val onAuthError: (Throwable) -> Unit = {},
+    /**
+     * v0.8.15 slice 5 — injectable wall clock. Production uses the real
+     * clock; JVM tests inject a virtual-clock source so the stall watch
+     * and the "Reply ready" window are deterministic under runTest.
+     */
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    /**
+     * Rolling history of prompts the operator actually sent, so a prompt that
+     * worked well can be promoted into the library afterwards instead of
+     * having to be saved before it was known to be any good. Optional: chat
+     * works exactly the same without it.
+     */
+    private val sentPrompts: SentPromptsStore? = null,
+    /**
+     * v0.8.15 slice 5 — injectable dispatcher for the stall-watch loop.
+     * Production uses [Dispatchers.Default]; tests inject the runTest
+     * scheduler's dispatcher to drive 8s of silence with virtual time.
+     */
+    private val hangDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     sealed class TimelineEntry {
@@ -92,6 +121,19 @@ class ChatViewModel(
         data class Notice(override val id: String, val text: String) : TimelineEntry()
     }
 
+/**
+ * v0.8.15: one buffered follow-up message. Enqueued by the /queue and
+ * /interrupt slash commands and by long-press send while a run is
+ * streaming ([StreamingSendBehavior.QUEUE] appends at the back, INTERRUPT
+ * inserts at the front). Drained by [ChatViewModel.drainQueuedMessages]
+ * when the current run ends.
+ */
+data class QueuedMessage(
+    val id: String,
+    val text: String,
+    val attachments: List<PendingAttachment> = emptyList(),
+)
+
     data class UiState(
         val title: String? = null,
         val entries: List<TimelineEntry> = emptyList(),
@@ -103,6 +145,17 @@ class ChatViewModel(
         val composerConfig: ComposerConfig = ComposerConfig(),
         val attachments: List<PendingAttachment> = emptyList(),
         val isUploadingAttachment: Boolean = false,
+        /**
+         * v0.8.15: client-side queue of follow-up messages waiting for the
+         * current run to finish. The Hermes server has no native
+         * `/api/chat/queue` HTTP route, so we buffer in the ViewModel and
+         * drain on [SseEvent.Done] / [SseEvent.Cancelled]. Filled by the
+         * /queue and /interrupt slash commands and by long-press send
+         * ([StreamingSendBehavior.QUEUE] appends, INTERRUPT inserts first).
+         */
+        val queuedMessages: List<QueuedMessage> = emptyList(),
+        /** Pre-computed "Queued for next turn (#N)" label for the chip; empty when none. */
+        val queuedMessagesLabel: String = "",
         /** Set once per completed run so the screen can fire a completion haptic/notification. */
         val finishedRunCount: Int = 0,
         /** Context-window usage from the last `done` event (Phase 9.2 indicator). */
@@ -181,6 +234,20 @@ class ChatViewModel(
          * [setConnectionState] wrapper and the transport-failure wiring.
          */
         val connectionState: JkpConnectionState = JkpConnectionState.CONNECTED,
+        /**
+         * v0.8.15: lightweight non-modal status chip shown above the composer
+         * while the agent is working. Differs from [hangTip] in three ways:
+         * (1) surfaces immediately on activity drop (not after a long stall),
+         * (2) shows a friendly "Working…" instead of an apology,
+         * (3) clears the moment any SSE event lands.
+         */
+        val streamStatusChip: String? = null,
+
+        /**
+         * Non-null for ~2 seconds when a `done` event lands, so a user scrolled
+         * up notices the reply. Empty after that.
+         */
+        val replyReadyUntilMs: Long = 0L,
     ) {
         val slashSuggestions: List<com.hermexapp.android.model.AgentCommand>
             get() = composerConfig.slashSuggestions(composerText)
@@ -220,7 +287,7 @@ class ChatViewModel(
      * Hang-honesty timer uses Default (not Main) so JVM unit tests without a
      * Main dispatcher still exercise [sendNow] / stream paths.
      */
-    private val hangScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val hangScope = CoroutineScope(SupervisorJob() + hangDispatcher)
 
     /**
      * Excellence 13.9 / 7.4: dedicated Default-dispatcher scope for best-effort
@@ -240,22 +307,24 @@ class ChatViewModel(
     private fun nextId(prefix: String): String = "$prefix-${entryCounter++}"
 
     private fun markStreamActivity() {
-        lastActivityAtMs = System.currentTimeMillis()
-        // Clear tip on new activity so it re-arms after another silent stretch.
-        if (_uiState.value.hangTip != null) {
-            _uiState.update { it.copy(hangTip = null) }
+        lastActivityAtMs = nowMs()
+        // Clear transient chips on new activity so they re-arm after another
+        // silent stretch (hangTip + v0.8.15 streamStatusChip).
+        val state = _uiState.value
+        if (state.hangTip != null || state.streamStatusChip != null) {
+            _uiState.update { it.copy(hangTip = null, streamStatusChip = null) }
         }
     }
 
     private fun startStallWatch() {
         stallWatchJob?.cancel()
-        lastActivityAtMs = System.currentTimeMillis()
+        lastActivityAtMs = nowMs()
         stallWatchJob = hangScope.launch {
             while (isActive) {
                 delay(1_000L)
                 val state = _uiState.value
                 if (!state.isStreaming) break
-                val silent = ((System.currentTimeMillis() - lastActivityAtMs) / 1000L).toInt()
+                val silent = ((nowMs() - lastActivityAtMs) / 1000L).toInt()
                 val tip = HangHonesty.tipIfStalled(
                     isStreaming = true,
                     silentSeconds = silent,
@@ -265,8 +334,11 @@ class ChatViewModel(
                     hasPendingApproval = AUTO_APPROVE_MOBILE_COMMANDS,
                 )
                 val banner = if (tip != null) HangHonesty.banner(silent) else null
-                if (state.hangTip != banner) {
-                    _uiState.update { it.copy(hangTip = banner) }
+                // v0.8.15 slice 5: faster feedback than the 15s HangHonesty
+                // tip — a friendly "Working…" chip after 8s of silence.
+                val working = if (silent >= WORKING_CHIP_SILENT_SECONDS) HangHonesty.WORKING_CHIP else null
+                if (state.hangTip != banner || state.streamStatusChip != working) {
+                    _uiState.update { it.copy(hangTip = banner, streamStatusChip = working) }
                 }
             }
         }
@@ -506,6 +578,166 @@ class ChatViewModel(
     fun send() {
         viewModelScope.launch { sendNow() }
     }
+    /**
+     * v0.8.15: the single entry point for the composer's primary send
+     * affordance. Drafts that start with `/` are routed through the local
+     * slash-command dispatcher ([SlashCommand]); everything else falls
+     * through to [send] unchanged.
+     */
+    fun submitDraft() {
+        val draft = _uiState.value.composerText.trim()
+        if (draft.isEmpty() && _uiState.value.attachments.isEmpty()) {
+            _uiState.update { it.copy(lastEmptySendAtMs = System.currentTimeMillis()) }
+            return
+        }
+        when (val parsed = SlashCommand.parse(draft)) {
+            null -> send()
+            else -> {
+                val (command, args) = parsed
+                when (command) {
+                    SlashCommand.STEER -> dispatchSteer(args)
+                    SlashCommand.QUEUE -> dispatchQueue(args)
+                    SlashCommand.INTERRUPT -> dispatchInterrupt(args)
+                    SlashCommand.RENAME -> dispatchRename(args)
+                    SlashCommand.STATUS -> {
+                        appendStatusNotice()
+                        _uiState.update { it.copy(composerText = "") }
+                    }
+                    SlashCommand.HELP -> {
+                        appendHelpNotice()
+                        _uiState.update { it.copy(composerText = "") }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun dispatchSteer(text: String) {
+        if (text.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Usage: /steer <message>") }
+            return
+        }
+        if (_uiState.value.isStreaming) {
+            viewModelScope.launch { steerNow(text) }
+        } else {
+            _uiState.update { it.copy(composerText = text) }
+            send()
+        }
+    }
+
+    private fun dispatchQueue(text: String) {
+        if (text.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Usage: /queue <message>") }
+            return
+        }
+        if (_uiState.value.isStreaming) {
+            enqueueMessage(text, _uiState.value.attachments)
+            _uiState.update { it.copy(composerText = "", attachments = emptyList()) }
+        } else {
+            _uiState.update { it.copy(composerText = text) }
+            send()
+        }
+    }
+
+    private fun dispatchInterrupt(text: String) {
+        if (text.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Usage: /interrupt <message>") }
+            return
+        }
+        if (_uiState.value.isStreaming) {
+            enqueueMessage(text, _uiState.value.attachments, atFront = true)
+            _uiState.update { it.copy(composerText = "", attachments = emptyList()) }
+            viewModelScope.launch { stopNow() }
+        } else {
+            _uiState.update { it.copy(composerText = text) }
+            send()
+        }
+    }
+
+    private fun dispatchRename(newTitle: String) {
+        if (newTitle.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Usage: /title <new title>") }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                repository.renameSession(sessionId, newTitle)
+                _uiState.update { it.copy(title = newTitle, composerText = "") }
+            } catch (e: ApiError) {
+                onAuthError(e)
+                _uiState.update { it.copy(errorMessage = e.userMessage) }
+            }
+        }
+    }
+
+    /**
+     * v0.8.15: long-press send. Honors the operator's [StreamingSendBehavior]
+     * preference stored in AppPrefs. Order: steer → interrupt → queue → drop.
+     * Each fallback returns control to the screen via the existing
+     * `errorMessage` field so the operator sees the reason.
+     *
+     * Called by the send-circle's long-press gesture; the regular tap still
+     * uses [send] (which already handles slash commands and the
+     * streaming/idle state correctly).
+     */
+    fun submitLongPressDraft() {
+        val text = _uiState.value.composerText.trim()
+        if (text.isEmpty() && _uiState.value.attachments.isEmpty()) {
+            _uiState.update { it.copy(lastEmptySendAtMs = System.currentTimeMillis()) }
+            return
+        }
+        val behavior = prefs?.streamingSendBehavior?.value ?: StreamingSendBehavior.STEER
+        when (behavior) {
+            StreamingSendBehavior.STEER -> {
+                if (_uiState.value.isStreaming) {
+                    viewModelScope.launch { steerNow(text) }
+                } else {
+                    send()
+                }
+            }
+            StreamingSendBehavior.INTERRUPT -> {
+                if (_uiState.value.isStreaming) {
+                    enqueueMessage(text, _uiState.value.attachments, atFront = true)
+                    _uiState.update { it.copy(composerText = "", attachments = emptyList()) }
+                    viewModelScope.launch { stopNow() }
+                } else {
+                    send()
+                }
+            }
+            StreamingSendBehavior.QUEUE -> {
+                if (_uiState.value.isStreaming) {
+                    enqueueMessage(text, _uiState.value.attachments)
+                    _uiState.update { it.copy(composerText = "", attachments = emptyList()) }
+                } else {
+                    send()
+                }
+            }
+        }
+    }
+
+    /**
+     * v0.8.15: buffers a follow-up message while a run is streaming — used
+     * by the /queue and /interrupt slash commands and by long-press send.
+     * [StreamingSendBehavior.INTERRUPT] (and /interrupt) insert at the
+     * front, the run they are about to cancel; QUEUE (and /queue) append at
+     * the back. Drained by [drainQueuedMessages] / [flushQueuedMessages]
+     * when the run ends.
+     */
+    fun enqueueMessage(text: String, attachments: List<PendingAttachment>, atFront: Boolean = false) {
+        val new = QueuedMessage(
+            id = nextId("queued"),
+            text = text,
+            attachments = attachments,
+        )
+        _uiState.update {
+            val list = if (atFront) listOf(new) + it.queuedMessages
+                       else it.queuedMessages + new
+            it.copy(
+                queuedMessages = list,
+                queuedMessagesLabel = if (list.isEmpty()) "" else "Queued for next turn (#${list.size})",
+            )
+        }
+    }
 
     fun stop() {
         viewModelScope.launch { stopNow() }
@@ -566,6 +798,11 @@ class ChatViewModel(
         val message = PendingAttachment.messageText(draft, attachments)
         val config = state.composerConfig
 
+        // Remembered on send, not on success: the operator wrote it either
+        // way, and a prompt worth reusing is not made less so by a transport
+        // failure. Recording must never break sending.
+        runCatching { sentPrompts?.record(draft, nowMs()) }
+
         _uiState.update {
             it.copy(
                 composerText = "",
@@ -611,7 +848,17 @@ class ChatViewModel(
             }
             activeStreamId = streamId
             // v0.8.14: a successful start means the host just answered.
-            _uiState.update { it.copy(isStreaming = true, hangTip = null, connectionState = JkpConnectionState.CONNECTED) }
+            _uiState.update {
+                it.copy(
+                    isStreaming = true,
+                    hangTip = null,
+                    connectionState = JkpConnectionState.CONNECTED,
+                    // v0.8.15 slice 5: a fresh run clears any stale chip so
+                    // "Reconnecting…" / "Reply ready" never leak across runs.
+                    streamStatusChip = null,
+                    replyReadyUntilMs = 0L,
+                )
+            }
             startStallWatch()
             sse.start(client.chatStreamUrl(streamId), ::onSseEvent)
         } catch (e: ApiError) {
@@ -683,6 +930,39 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * v0.8.15: pop the head of the queue into the composer and send it as
+     * a fresh turn. Called when the current run ends (SSE `stream_end` /
+     * `cancel`). No-op when the queue is empty.
+     */
+    internal fun drainQueuedMessages() {
+        val head = _uiState.value.queuedMessages.firstOrNull() ?: return
+        _uiState.update { state ->
+            state.copy(
+                queuedMessages = state.queuedMessages.drop(1),
+                queuedMessagesLabel = if (state.queuedMessages.size <= 1) ""
+                    else "Queued for next turn (#${state.queuedMessages.size - 1})",
+            )
+        }
+        _uiState.update { it.copy(composerText = head.text, attachments = head.attachments) }
+        send()
+    }
+
+    private fun appendStatusNotice() {
+        val state = _uiState.value
+        val queued = state.queuedMessages.size
+        val streaming = if (state.isStreaming) "Yes" else "No"
+        val title = state.title ?: "(no title)"
+        val line = "Session: $title · Streaming: $streaming · Queued: $queued"
+        _uiState.update { it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), line)) }
+    }
+
+    private fun appendHelpNotice() {
+        val lines = LOCAL_SLASH_COMMANDS.joinToString("\n") { "  /${it.verb} ${it.argHint} — ${it.description}" }
+        val notice = "Available slash commands:\n$lines"
+        _uiState.update { it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), notice)) }
+    }
+
     /** Stops the SSE stream when the screen goes away. */
     fun teardown() {
         stopStallWatch()
@@ -733,9 +1013,13 @@ class ChatViewModel(
             SseEvent.StreamEnd -> {
                 sse.stop()
                 finishStreaming()
+                drainQueuedMessages()
             }
-            SseEvent.Cancelled -> _uiState.update {
-                it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), "Run stopped."))
+            SseEvent.Cancelled -> {
+                _uiState.update {
+                    it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), "Run stopped."))
+                }
+                drainQueuedMessages()
             }
             is SseEvent.Error -> {
                 // Catalog honesty: never surface raw server error JSON to operators.
@@ -757,7 +1041,15 @@ class ChatViewModel(
                     )
                     // v0.8.14: the drop is a transport failure — the composer
                     // stays visible but inert until the host answers again.
-                    _uiState.update { it.copy(connectionState = JkpConnectionState.FAILED) }
+                    _uiState.update {
+                        it.copy(
+                            connectionState = JkpConnectionState.FAILED,
+                            // v0.8.15 slice 5: recovery (1/2/4s backoff +
+                            // session re-fetch) is about to start — tell the
+                            // operator why the stream went quiet.
+                            streamStatusChip = HangHonesty.RECONNECTING_CHIP,
+                        )
+                    }
                     reconnectScope.launch {
                         maybeAttemptReconnectRecovery(reconnectAttemptCount++)
                     }
@@ -869,6 +1161,8 @@ class ChatViewModel(
                 title = session?.title ?: state.title,
                 entries = if (session != null) entriesFromDetail(session) else state.entries,
                 contextWindow = usage ?: state.contextWindow,
+                // v0.8.15 slice 5: "Reply ready" chip for ~2s after done.
+                replyReadyUntilMs = nowMs() + REPLY_READY_DURATION_MS,
             )
         }
     }
@@ -1182,7 +1476,12 @@ class ChatViewModel(
             attempt = attempt,
             delaysS = delaysS,
         )
-        if (!policy.shouldReconnect) return
+        if (!policy.shouldReconnect) {
+            // v0.8.15 slice 5: recovery budget exhausted — drop the
+            // "Reconnecting…" chip so it never lingers past the last attempt.
+            _uiState.update { it.copy(streamStatusChip = null) }
+            return
+        }
         delay(policy.delayS * 1000L)
         // Re-fetch the session (network; falls back to cache offline). Best-effort:
         // if the host is still unreachable this throws and we keep the banner.
@@ -1198,6 +1497,8 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 connectionState = if (fromCache) JkpConnectionState.OFFLINE else JkpConnectionState.CONNECTED,
+                // v0.8.15 slice 5: the host answered again — reconnect is over.
+                streamStatusChip = if (fromCache) it.streamStatusChip else null,
             )
         }
         val full = entriesFromDetail(recoveredDetail)
@@ -1233,10 +1534,39 @@ class ChatViewModel(
             state.copy(
                 isStreaming = false,
                 hangTip = null,
+                // v0.8.15 slice 5: never let a status chip outlive the run.
+                streamStatusChip = null,
                 entries = finalizeDrafts(state.entries),
                 finishedRunCount = state.finishedRunCount + if (wasStreaming) 1 else 0,
             )
         }
+        // v0.8.15: a run just ended — send the oldest long-press queued
+        // message (QUEUE semantics: auto-send when the run completes;
+        // INTERRUPT semantics: the cancelled message goes out as the next turn).
+        flushQueuedMessages()
+    }
+
+    /**
+     * v0.8.15: promotes the oldest queued long-press draft back into the
+     * composer and sends it through the normal pipeline (slash commands,
+     * attachments, error handling all behave like a typed send). No-op when
+     * the queue is empty, so the streaming lifecycle is untouched for
+     * operators who never long-press-send.
+     */
+    private fun flushQueuedMessages() {
+        val queued = _uiState.value.queuedMessages
+        if (queued.isEmpty()) return
+        val next = queued.first()
+        _uiState.update { state ->
+            val rest = state.queuedMessages.drop(1)
+            state.copy(
+                queuedMessages = rest,
+                queuedMessagesLabel = if (rest.isEmpty()) "" else "Queued for next turn (#${rest.size})",
+                composerText = next.text,
+                attachments = next.attachments,
+            )
+        }
+        viewModelScope.launch { sendNow() }
     }
 
     private fun finalizeDrafts(entries: List<TimelineEntry>): List<TimelineEntry> =

@@ -4,15 +4,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PushPin
@@ -49,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import com.hermexapp.android.persistence.SentPrompt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,10 +66,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermexapp.android.persistence.PromptEntity
@@ -92,6 +102,7 @@ fun PromptsScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val recentlySent by viewModel.recentlySent.collectAsState()
     var editor by remember { mutableStateOf<EditorState>(EditorState.Closed) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
@@ -214,6 +225,8 @@ fun PromptsScreen(
                         viewModel.requestInsert(prompt)
                         scope.launch { snackbarHost.showSnackbar("Inserted into chat.") }
                     },
+                    onEdit = { id -> editor = EditorState.Open(id) },
+                    onToggleSelect = viewModel::toggleSelection,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -244,10 +257,26 @@ private fun PromptEditor(
     var name by remember(promptId) { mutableStateOf(existing?.name ?: "") }
     var body by remember(promptId) { mutableStateOf(existing?.body ?: "") }
     var tags by remember(promptId) { mutableStateOf(existing?.tags ?: "") }
+    val nameFocus = remember { FocusRequester() }
 
     LaunchedEffect(existing?.name) { name = existing?.name.orEmpty() }
     LaunchedEffect(existing?.body) { body = existing?.body.orEmpty() }
     LaunchedEffect(existing?.tags) { tags = existing?.tags.orEmpty() }
+
+    // Auto-focus the name field whenever the editor opens so the user
+    // can start typing immediately without an extra tap.
+    LaunchedEffect(promptId) { nameFocus.requestFocus() }
+
+    fun currentEntity(): PromptEntity = PromptEntity(
+        id = promptId,
+        name = name,
+        body = body,
+        tags = tags,
+        pinned = existing?.pinned == true,
+        usageCount = existing?.usageCount ?: 0,
+        updatedAtMillis = System.currentTimeMillis(),
+        createdAtMillis = existing?.createdAtMillis ?: System.currentTimeMillis(),
+    )
 
     Card(
         modifier = Modifier
@@ -283,33 +312,19 @@ private fun PromptEditor(
                 value = name,
                 onChange = {
                     name = it
-                    viewModel.upsert(
-                        PromptEntity(
-                            id = promptId, name = it, body = body, tags = tags,
-                            pinned = existing?.pinned == true,
-                            usageCount = existing?.usageCount ?: 0,
-                            updatedAtMillis = System.currentTimeMillis(),
-                            createdAtMillis = existing?.createdAtMillis ?: System.currentTimeMillis(),
-                        )
-                    )
+                    viewModel.upsert(currentEntity())
                 },
                 placeholder = "Prompt name (e.g. \"Summarize article\")",
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(nameFocus),
                 fontWeight = FontWeight.SemiBold,
             )
             InlineField(
                 value = body,
                 onChange = {
                     body = it
-                    viewModel.upsert(
-                        PromptEntity(
-                            id = promptId, name = name, body = it, tags = tags,
-                            pinned = existing?.pinned == true,
-                            usageCount = existing?.usageCount ?: 0,
-                            updatedAtMillis = System.currentTimeMillis(),
-                            createdAtMillis = existing?.createdAtMillis ?: System.currentTimeMillis(),
-                        )
-                    )
+                    viewModel.upsert(currentEntity())
                 },
                 placeholder = "The prompt body. Use {{variables}} for the chat composer to substitute.",
                 modifier = Modifier.fillMaxWidth(),
@@ -320,15 +335,7 @@ private fun PromptEditor(
                 value = tags,
                 onChange = {
                     tags = it
-                    viewModel.upsert(
-                        PromptEntity(
-                            id = promptId, name = name, body = body, tags = it,
-                            pinned = existing?.pinned == true,
-                            usageCount = existing?.usageCount ?: 0,
-                            updatedAtMillis = System.currentTimeMillis(),
-                            createdAtMillis = existing?.createdAtMillis ?: System.currentTimeMillis(),
-                        )
-                    )
+                    viewModel.upsert(currentEntity())
                 },
                 placeholder = "tags (comma separated, e.g. \"writing, summary\")",
                 modifier = Modifier.fillMaxWidth(),
@@ -337,16 +344,21 @@ private fun PromptEditor(
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(
+                    onClick = {
+                        viewModel.upsert(currentEntity())
+                        onClose()
+                    },
+                    modifier = Modifier.testTag("prompt_editor_save_close"),
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Save & close")
+                }
                 Spacer(Modifier.weight(1f))
                 FilledTonalButton(
                     onClick = {
-                        val p = PromptEntity(
-                            id = promptId, name = name, body = body, tags = tags,
-                            pinned = existing?.pinned == true,
-                            usageCount = existing?.usageCount ?: 0,
-                            updatedAtMillis = System.currentTimeMillis(),
-                            createdAtMillis = existing?.createdAtMillis ?: System.currentTimeMillis(),
-                        )
+                        val p = currentEntity()
                         viewModel.upsert(p)
                         onInsert(p)
                     },
@@ -412,7 +424,11 @@ private fun PromptsEmpty(modifier: Modifier = Modifier) {
         Text("No prompts yet", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Tap New prompt to save a template. Insert it into the chat composer anytime.",
+            buildAnnotatedString {
+                append("Tap ")
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("New prompt") }
+                append(" to save a template you send often.")
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -437,29 +453,69 @@ private fun PromptsList(
     state: PromptsViewModel.UiState,
     onSwipeDelete: (String) -> Unit,
     onInsert: (PromptEntity) -> Unit,
+    onEdit: (String) -> Unit,
+    onToggleSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    recentlySent: List<SentPrompt> = emptyList(),
+    onSaveSent: (SentPrompt) -> Unit = {},
+    onForgetSent: (SentPrompt) -> Unit = {},
 ) {
     LazyColumn(
         modifier = modifier.testTag("prompts_list"),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Prompts the operator actually sent, offered for saving. Only shown
+        // when there are some and the list isn't filtered by a search — a
+        // search is a request for the library, not for history.
+        if (recentlySent.isNotEmpty() && state.query.isBlank()) {
+            item(key = "recently_sent_header") {
+                Text(
+                    text = "Recently sent",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp),
+                )
+            }
+            items(recentlySent, key = { "sent_" + it.body.hashCode() }) { entry ->
+                SentPromptRow(
+                    entry = entry,
+                    onSave = { onSaveSent(entry) },
+                    onForget = { onForgetSent(entry) },
+                )
+            }
+            if (state.prompts.isNotEmpty()) {
+                item(key = "saved_header") {
+                    Text(
+                        text = "Saved prompts",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+                    )
+                }
+            }
+        }
         items(state.prompts, key = { it.id }) { prompt ->
             PromptRow(
                 prompt = prompt,
                 onInsert = { onInsert(prompt) },
                 onSwipeDelete = { onSwipeDelete(prompt.id) },
+                onEdit = { onEdit(prompt.id) },
+                onToggleSelect = { onToggleSelect(prompt.id) },
             )
         }
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+)
 @Composable
 private fun PromptRow(
     prompt: PromptEntity,
     onInsert: () -> Unit,
     onSwipeDelete: () -> Unit,
+    onEdit: () -> Unit,
+    onToggleSelect: () -> Unit,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -490,7 +546,12 @@ private fun PromptRow(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp)),
+                .clip(RoundedCornerShape(12.dp))
+                .defaultMinSize(minHeight = 48.dp)
+                .combinedClickable(
+                    onClick = onEdit,
+                    onLongClick = onToggleSelect,
+                ),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
             ),
@@ -607,6 +668,54 @@ private fun BulkPromptsBar(
             Icon(Icons.Filled.Delete, contentDescription = null)
             Spacer(Modifier.width(4.dp))
             Text("Delete")
+        }
+    }
+}
+
+/**
+ * One prompt the operator already sent, with the two things worth doing to it:
+ * keep it (promote into the library) or drop it.
+ */
+@Composable
+private fun SentPromptRow(
+    entry: SentPrompt,
+    onSave: () -> Unit,
+    onForget: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = entry.body,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (entry.timesSent > 1) {
+                Text(
+                    text = "Sent " + entry.timesSent + " times",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = onForget,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("sent_prompt_forget"),
+                ) { Text("Not useful") }
+                TextButton(
+                    onClick = onSave,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("sent_prompt_save"),
+                ) { Text("Save to library") }
+            }
         }
     }
 }

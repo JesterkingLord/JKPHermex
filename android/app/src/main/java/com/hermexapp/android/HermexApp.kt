@@ -8,6 +8,8 @@ import com.hermexapp.android.auth.AuthManager
 import com.hermexapp.android.auth.KeystoreSecretStore
 import com.hermexapp.android.auth.SecretStore
 import com.hermexapp.android.config.AppPrefs
+import com.hermexapp.android.config.KeyValueStore
+import com.hermexapp.android.persistence.SentPromptsStore
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.network.ApiClient
@@ -106,6 +108,15 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
     }
 
     val prefs: AppPrefs? = context?.let { AppPrefs(it) }
+
+    /**
+     * Rolling history of prompts the operator has sent, so the prompts screen
+     * can offer them for saving after the fact. Device-local, like the drafts
+     * and the prompt library beside it.
+     */
+    val sentPrompts: SentPromptsStore? = context?.let {
+        SentPromptsStore(KeyValueStore.forPrefs(it, "hermex_sent_prompts"))
+    }
 
     val notifications: RunNotifications? = context?.let { RunNotifications(it) }
 
