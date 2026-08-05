@@ -1,5 +1,6 @@
 package com.hermexapp.android.features.notes
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -114,13 +115,29 @@ fun NotesScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // With the editor full-screen, back must close the note first. Leaving
+    // Notes entirely from an open note would look like the edit was discarded.
+    BackHandler(enabled = editor is EditorState.Open) { editor = EditorState.Closed }
+
     Scaffold(
         modifier = modifier.testTag("notes_screen"),
         topBar = {
             TopAppBar(
-                title = { Text(if (state.selectionMode) "${state.selection.size} selected" else "Notes") },
+                title = {
+                    Text(
+                        when {
+                            state.selectionMode -> "${state.selection.size} selected"
+                            editor is EditorState.Open -> "Note"
+                            else -> "Notes"
+                        },
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
+                    IconButton(
+                        onClick = {
+                            if (editor is EditorState.Open) editor = EditorState.Closed else onClose()
+                        },
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -156,7 +173,9 @@ fun NotesScreen(
             }
         },
         floatingActionButton = {
-            if (!state.selectionMode) {
+            // No "New note" button floating over a note you are already
+            // writing — it belongs to the list.
+            if (!state.selectionMode && editor !is EditorState.Open) {
                 ExtendedFloatingActionButton(
                     onClick = {
                         val id = viewModel.createEmptyNote()
@@ -170,8 +189,9 @@ fun NotesScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHost) },
     ) { inner ->
+        val openEditor = editor as? EditorState.Open
         Column(modifier = Modifier.fillMaxSize().padding(inner)) {
-            AnimatedVisibility(visible = showSearch) {
+            AnimatedVisibility(visible = showSearch && openEditor == null) {
                 OutlinedTextField(
                     value = state.query,
                     onValueChange = viewModel::setQuery,
@@ -185,10 +205,11 @@ fun NotesScreen(
                 )
             }
 
-            // The editor is rendered at the top of the list when open.
-            // It's a self-contained card above the LazyColumn — collapsing
-            // it sets editor = Closed.
-            (editor as? EditorState.Open)?.let { open ->
+            // Open a note and it takes the screen, the way Keep does. It used
+            // to be a card stacked above the list, so an open note competed
+            // with a scrolling list of every other note — and until the row
+            // was filtered out you saw the same note twice.
+            (openEditor)?.let { open ->
                 NoteEditor(
                     noteId = open.noteId,
                     viewModel = viewModel,
@@ -201,6 +222,8 @@ fun NotesScreen(
                     },
                 )
             }
+
+            if (openEditor != null) return@Column
 
             when {
                 state.isEmpty && !state.filterActive -> NotesEmpty(modifier = Modifier.fillMaxSize())
