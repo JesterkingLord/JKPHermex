@@ -17,6 +17,16 @@ object HangHonesty {
     val TIP: String = ClientErrorCatalog.APPROVAL_WAIT.message
 
     /**
+     * v0.8.15 slice 5 — stream status chip copy, rendered above the composer
+     * while the agent works. Differs from [TIP] (the 15s apology): these
+     * surface as soon as 8s of silence pass, read as friendly status rather
+     * than an apology, and clear the moment any SSE event lands.
+     */
+    const val WORKING_CHIP: String = "Working…"
+    const val RECONNECTING_CHIP: String = "Reconnecting…"
+    const val REPLY_READY_CHIP: String = "Reply ready"
+
+    /**
      * Mid-stream transport drop (SSE onFailure). Prefer network catalog +
      * recover hint so operators don't read a raw OkHttp exception as "agent died".
      */

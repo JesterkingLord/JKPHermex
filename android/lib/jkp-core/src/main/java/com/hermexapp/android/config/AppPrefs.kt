@@ -7,6 +7,21 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class ThemeChoice { SYSTEM, LIGHT, DARK }
 
+/**
+ * Operator choice for what the long-press send button does while a run is
+ * streaming. Mirrors the iOS `StreamingSendBehavior` enum (ios/HermesMobile/
+ * Features/Chat/ChatView.swift:55 — `@AppStorage(StreamingSendBehavior.storageKey)`).
+ *
+ * - [STEER] inject the message at the next tool boundary via `/api/chat/steer`.
+ *   Same behaviour the regular send button has while streaming. Default.
+ * - [INTERRUPT] cancel the current run and send the message as the next turn.
+ *   Closest to Telegram-style "send anyway" / "interject now".
+ * - [QUEUE] buffer the message client-side and auto-send it as soon as the
+ *   current run completes. The upstream Hermes server has no native HTTP
+ *   `/api/chat/queue` route, so the queue lives in the ViewModel.
+ */
+enum class StreamingSendBehavior { STEER, INTERRUPT, QUEUE }
+
 /** Header Logo Color presets, mirroring the iOS `HeaderLogoColor.presets` and
  *  extending with project-flavoured options (EFER/EFURC/EFEMM + JKP Void).
  *
@@ -137,6 +152,35 @@ class AppPrefs(private val store: KeyValueStore) {
     }
 
     /**
+     * What long-press send does while a run is streaming
+     * (see [StreamingSendBehavior]). Default [StreamingSendBehavior.STEER]
+     * to match the iOS app's default.
+     */
+    private val _streamingSendBehavior = MutableStateFlow(
+        decodeStreamingSendBehavior(store.getString(KEY_STREAMING_SEND_BEHAVIOR)),
+    )
+    val streamingSendBehavior: StateFlow<StreamingSendBehavior> = _streamingSendBehavior
+
+    fun setStreamingSendBehavior(value: StreamingSendBehavior) {
+        _streamingSendBehavior.value = value
+        store.putString(KEY_STREAMING_SEND_BEHAVIOR, value.name)
+    }
+
+    /**
+     * Full-screen reader mode preference. When true, the chat composer is
+     * hidden and the transcript fills the screen edge-to-edge. Persists
+     * across restarts so the operator doesn't have to hide the composer
+     * every time they open a chat.
+     */
+    private val _readerMode = MutableStateFlow(store.getBoolean(KEY_READER_MODE, false))
+    val readerMode: StateFlow<Boolean> = _readerMode
+
+    fun setReaderMode(value: Boolean) {
+        _readerMode.value = value
+        store.putBoolean(KEY_READER_MODE, value)
+    }
+
+    /**
      * Wave 2 (2026-07-27) — scroll position memory per session.
      *
      * The chat screen stores `(firstVisibleItemIndex, firstVisibleItemScrollOffset)`
@@ -172,6 +216,10 @@ class AppPrefs(private val store: KeyValueStore) {
     private fun encodeReasoningEffort(value: ReasoningEffort): String =
         value.wireValue ?: ""   // AUTO → "" (we never send "auto" to the server)
 
+    private fun decodeStreamingSendBehavior(raw: String?): StreamingSendBehavior =
+        raw?.let { runCatching { StreamingSendBehavior.valueOf(it) }.getOrNull() }
+            ?: StreamingSendBehavior.STEER
+
     private companion object {
         const val KEY_THEME = "theme"
         const val KEY_ACCENT = "accent_hex"
@@ -180,6 +228,8 @@ class AppPrefs(private val store: KeyValueStore) {
         const val KEY_NOTIFICATIONS = "notifications_enabled"
         const val KEY_REASONING_EFFORT = "reasoning_effort"
         const val KEY_SHOW_REASONING = "show_reasoning"
+        const val KEY_STREAMING_SEND_BEHAVIOR = "streaming_send_behavior"
+        const val KEY_READER_MODE = "reader_mode"
         private const val KEY_SCROLL_POS_PREFIX = "scroll_pos_"
     }
 }

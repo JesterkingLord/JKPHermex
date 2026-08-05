@@ -53,6 +53,7 @@ import com.hermexapp.android.ui.PickerRow
 import com.hermexapp.android.ui.PickerSection
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 import com.hermexapp.android.ui.theme.accentColorFromHex
+import com.hermexapp.android.config.StreamingSendBehavior
 import com.hermexapp.android.config.ThemeChoice
 import com.hermexapp.android.model.ModelCatalogGroup
 import com.hermexapp.android.network.ApiClient
@@ -89,6 +90,7 @@ fun SettingsScreen(
     var currentDefaultModel by remember { mutableStateOf<String?>(null) }
     var modelGroups by remember { mutableStateOf<List<ModelCatalogGroup>>(emptyList()) }
     var showModelPicker by remember { mutableStateOf(false) }
+    var showSendBehaviorPicker by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var showAddHeader by remember { mutableStateOf(false) }
 
@@ -121,6 +123,7 @@ fun SettingsScreen(
     val expandThinking by prefs.expandThinking.collectAsState()
     val expandTools by prefs.expandTools.collectAsState()
     val notificationsEnabled by prefs.notificationsEnabled.collectAsState()
+    val streamingSendBehavior by prefs.streamingSendBehavior.collectAsState()
 
     LaunchedEffect(Unit) {
         runCatching { client.serverSettings() }.getOrNull()?.let {
@@ -286,6 +289,25 @@ fun SettingsScreen(
             SectionTitle("Chat display")
             ToggleRow("Expand thinking by default", expandThinking) { prefs.setExpandThinking(it) }
             ToggleRow("Expand tool calls by default", expandTools) { prefs.setExpandTools(it) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable { showSendBehaviorPicker = true },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text("Long-press send", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    when (streamingSendBehavior) {
+                        StreamingSendBehavior.STEER -> "Steer current run"
+                        StreamingSendBehavior.INTERRUPT -> "Interrupt and send now"
+                        StreamingSendBehavior.QUEUE -> "Queue for next turn"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             HorizontalDivider()
 
             SectionTitle("Notifications")
@@ -396,6 +418,41 @@ if (showAddHeader && registry != null) {
                 registry.setHeaders(serverUrl, activeHeaders + (name to value))
                 showAddHeader = false
             },
+        )
+    }
+
+    if (showSendBehaviorPicker) {
+        HermexPickerSheet(
+            title = "Long-press send",
+            sections = listOf(
+                PickerSection(
+                    header = "While a response is streaming",
+                    rows = listOf(
+                        PickerRow(
+                            "Steer current run",
+                            StreamingSendBehavior.STEER,
+                            "Add the message at the next tool boundary (default)",
+                        ),
+                        PickerRow(
+                            "Interrupt and send now",
+                            StreamingSendBehavior.INTERRUPT,
+                            "Stop the current run, then send the message",
+                        ),
+                        PickerRow(
+                            "Queue for next turn",
+                            StreamingSendBehavior.QUEUE,
+                            "Send automatically when the run completes",
+                        ),
+                    ),
+                ),
+            ),
+            isSelected = { it == streamingSendBehavior },
+            onPick = { choice ->
+                prefs.setStreamingSendBehavior(choice)
+                showSendBehaviorPicker = false
+            },
+            onDismiss = { showSendBehaviorPicker = false },
+            searchable = false,
         )
     }
 
