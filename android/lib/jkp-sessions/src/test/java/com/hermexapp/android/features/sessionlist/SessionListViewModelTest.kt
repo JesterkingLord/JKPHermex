@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -462,6 +463,186 @@ class SessionListViewModelTest {
         seeded.setFilterMode(SessionListViewModel.FilterMode.Pinned)
         assertEquals(emptyList<SessionSummary>(), seeded.filteredSessions)
     }
+
+    // ---------------- v0.8.15 — background refresh ----------------
+    // The session list now polls while the screen is composed instead of
+    // waiting for a manual pull-to-refresh (the operator's "the list feels
+    // stuck" pain). The loop reads the current interval on every tick
+    // (15s foreground / 60s background or power-save), skips a tick while
+    // a refresh is in-flight, and must not survive stopBackgroundRefresh().
+    // Assertions are behavioral: they count repository loads against the
+    // virtual clock of the shared StandardTestDispatcher.
+
+    @Test
+    fun `startBackgroundRefresh polls refreshNow on the foreground cadence`() = runTest(dispatcher) {
+        viewModel.onScreenResumed() // foreground → 15s cadence
+        try {
+            viewModel.startBackgroundRefresh()
+
+            advanceTimeBy(15_000) // first tick
+            runCurrent()
+            assertTrue("first poll should have refreshed once", repo.loadCount >= 1)
+
+            advanceTimeBy(15_000) // second tick — proves the loop is periodic
+            runCurrent()
+            assertTrue("loop should have polled repeatedly", repo.loadCount >= 2)
+        } finally {
+            viewModel.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `stopBackgroundRefresh cancels the polling loop`() = runTest(dispatcher) {
+        viewModel.startBackgroundRefresh()
+        viewModel.stopBackgroundRefresh()
+
+        // Give the (cancelled) loop more than three 60s cadences of
+        // virtual time — nothing may hit the repository.
+        advanceTimeBy(200_000)
+        assertEquals(0, repo.loadCount)
+    }
+
+    @Test
+    fun `onScreenResumed picks the 15s foreground cadence`() = runTest(dispatcher) {
+        viewModel.onScreenResumed()
+        try {
+            viewModel.startBackgroundRefresh()
+            advanceTimeBy(15_000)
+            runCurrent()
+            // Two loads: the immediate one from resuming, plus the 15s tick.
+            assertEquals(2, repo.loadCount)
+        } finally {
+            viewModel.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `onScreenResumed refreshes straight away instead of waiting for a tick`() = runTest(dispatcher) {
+        // The reported symptom: the list looks stuck, and pulling to refresh
+        // "unsticks" it. Nothing was broken — returning to the screen just
+        // did not ask for anything until the next tick came round.
+        viewModel.onScreenResumed()
+
+        advanceUntilIdle()
+
+        assertEquals("resuming must refresh without waiting", 1, repo.loadCount)
+    }
+
+    @Test
+    fun `returning to the foreground does not sit out the rest of a 60s wait`() = runTest(dispatcher) {
+        viewModel.onScreenPaused() // 60s cadence
+        try {
+            viewModel.startBackgroundRefresh()
+            advanceTimeBy(5_000) // a 60s wait is now in flight
+
+            viewModel.onScreenResumed() // promotes to 15s and refreshes now
+            // advanceTimeBy, never advanceUntilIdle, while the poll loop is
+            // running: the loop is infinite by design, so "until idle" never
+            // arrives and the test spins instead of failing.
+            advanceTimeBy(1)
+            val afterResume = repo.loadCount
+
+            // 15s later the loop must have ticked again, rather than sitting
+            // out the minute it had already committed to.
+            advanceTimeBy(15_000)
+            runCurrent()
+            assertTrue(
+                "the poll cadence must follow the screen, not the wait it started with",
+                repo.loadCount > afterResume,
+            )
+        } finally {
+            viewModel.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `onScreenResumed keeps the 60s cadence while power save is active`() = runTest(dispatcher) {
+        val powerSaveVm = SessionListViewModel(
+            repository = repo,
+            onAuthError = {},
+            isPowerSaveModeProvider = { true },
+        )
+        powerSaveVm.onScreenResumed()
+        advanceUntilIdle()
+        // Resuming still refreshes once immediately; power save governs the
+        // repeat cadence, not whether the operator gets a current list now.
+        val afterResume = repo.loadCount
+        assertEquals(1, afterResume)
+        try {
+            powerSaveVm.startBackgroundRefresh()
+
+            advanceTimeBy(15_000) // a foreground tick would fire here — must not
+            runCurrent()
+            assertEquals(afterResume, repo.loadCount)
+
+            advanceTimeBy(45_000) // the first 60s tick fires now
+            runCurrent()
+            assertEquals(afterResume + 1, repo.loadCount)
+        } finally {
+            powerSaveVm.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `onScreenPaused drops the cadence back to 60s`() = runTest(dispatcher) {
+        viewModel.onScreenResumed() // 15s — and one immediate refresh
+        viewModel.onScreenPaused() // background → 60s
+        advanceTimeBy(1)
+        val baseline = repo.loadCount
+        try {
+            viewModel.startBackgroundRefresh()
+
+            advanceTimeBy(15_000)
+            runCurrent()
+            assertEquals("a foreground tick must not fire while paused", baseline, repo.loadCount)
+
+            advanceTimeBy(45_000)
+            runCurrent()
+            assertEquals("the 60s tick fires now", baseline + 1, repo.loadCount)
+        } finally {
+            // The poll loop is infinite by design. Left running, runTest's
+            // drain phase advances virtual time through it forever, so a
+            // failed assertion above would hang the whole suite instead of
+            // reporting. This is what made the module untestable.
+            viewModel.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `background poll skips ticks while a search is active`() = runTest(dispatcher) {
+        viewModel.onScreenResumed() // foreground → 15s cadence, one refresh
+        advanceTimeBy(1)
+        val baseline = repo.loadCount
+        try {
+            viewModel.startBackgroundRefresh()
+            viewModel.updateSearchQuery("needle")
+
+            // Two full ticks elapse while the query is non-blank — neither may
+            // replace the search results with the full list.
+            advanceTimeBy(30_000)
+            runCurrent()
+            assertEquals(
+                "a poll must never clobber an active search",
+                baseline,
+                repo.loadCount,
+            )
+
+            // Clearing the search refreshes immediately (existing behavior);
+            // from then on the poll ticks normally again.
+            viewModel.updateSearchQuery("")
+            advanceTimeBy(15_000) // the immediate refresh + one tick
+            runCurrent()
+            assertEquals(baseline + 2, repo.loadCount)
+        } finally {
+            viewModel.stopBackgroundRefresh()
+        }
+        advanceUntilIdle()
+    }
 }
 
 /**
@@ -490,7 +671,12 @@ private class FakeSessionRepository(
     var loadSessionsGate: CompletableDeferred<Unit>? = null
     var loadSessionsError: Throwable? = null
 
+    // v0.8.15: number of loadSessions() calls — lets the background-poll
+    // tests count refreshes against the virtual clock.
+    var loadCount = 0
+
     override suspend fun loadSessions(): SessionRepository.SessionsResult {
+        loadCount++
         loadSessionsGate?.await()
         val err = loadSessionsError
         if (err != null) throw err

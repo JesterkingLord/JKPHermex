@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 fun filterSessions(
@@ -26,6 +27,11 @@ fun filterSessions(
     SessionListViewModel.FilterMode.Archived -> sessions.filter { it.archived == true }
 }
 
+/**
+ * v0.8.15 — live-indicator dot rule moved to [SessionListScreen]
+ * (shouldShowStreamingDot) so the row composable owns the predicate;
+ * see SessionRowStreamingDotTest.
+ */
 class SessionListViewModel(
     private val repository: SessionRepository,
     private val onAuthError: (Throwable) -> Unit = {},
@@ -38,6 +44,16 @@ class SessionListViewModel(
      * Settings to figure out which URL failed.
      */
     private val currentBaseUrlProvider: () -> String? = { null },
+    /**
+     * v0.8.15: reports whether the OS power-save mode is active. Wired by
+     * [MainActivity] from [android.os.PowerManager.isPowerSaveMode] so the
+     * background refresh loop can stay on its longest (60s) cadence while
+     * the battery is being conserved — an overnight charge must not be
+     * drained by a 15s poll loop. Kept as a provider (rather than reaching
+     * for a Context inside the ViewModel) so the pure-JVM unit tests can
+     * script both branches.
+     */
+    private val isPowerSaveModeProvider: () -> Boolean = { false },
 ) : ViewModel() {
 
     data class UiState(
@@ -107,6 +123,23 @@ class SessionListViewModel(
 
     private var searchJob: Job? = null
 
+    /**
+     * v0.8.15: background polling loop. Started by the screen's
+     * `DisposableEffect` and cancelled when the screen leaves composition,
+     * so the session list keeps itself fresh without requiring a manual
+     * pull-to-refresh (the operator's core "the list feels stuck" pain).
+     */
+    private var pollJob: Job? = null
+
+    /**
+     * v0.8.15: tick rate for the background poll loop, read on every
+     * iteration so the screen can switch between the 15s foreground and
+     * 60s background cadences without restarting the loop. Initial value
+     * is the slowest cadence; [onScreenResumed] promotes it to 15s the
+     * moment the screen is (re)entered.
+     */
+    private val _currentPollIntervalMs = MutableStateFlow(60_000L)
+
     fun refresh() {
         viewModelScope.launch { refreshNow() }
     }
@@ -162,6 +195,64 @@ class SessionListViewModel(
         runCatching { repository.loadProjects() }.getOrNull()?.let { projects ->
             _uiState.update { it.copy(projects = projects) }
         }
+    }
+
+    /**
+     * v0.8.15: background polling loop. Tick rate is read from
+     * [_currentPollIntervalMs] on each iteration so the screen can switch
+     * between 15s foreground and 60s background cadences without
+     * restarting the loop.
+     *
+     * Power-save awareness: when BatteryManager.isPowerSaveMode is true,
+     * use the longest interval (60s) regardless of foreground/background.
+     * That keeps the operator's battery from draining overnight.
+     */
+    fun startBackgroundRefresh() {
+        if (pollJob?.isActive == true) return
+        pollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(_currentPollIntervalMs.value)
+                // Never clobber an in-progress search with the full list —
+                // the search field stays visible while sessions swap under
+                // it, which reads as "search is broken".
+                if (_uiState.value.searchQuery.isNotBlank()) continue
+                // Only refresh if the most recent refresh isn't still in-flight.
+                if (!_uiState.value.isLoading) {
+                    runCatching { refreshNow() }
+                }
+            }
+        }
+    }
+
+    fun stopBackgroundRefresh() {
+        pollJob?.cancel()
+        pollJob = null
+    }
+
+    fun onScreenResumed() {
+        val powerSave = runCatching { isPowerSaveModeProvider() }.getOrDefault(false)
+        val next = if (powerSave) 60_000L else 15_000L
+        val cadenceChanged = _currentPollIntervalMs.value != next
+        _currentPollIntervalMs.value = next
+
+        // Coming back to the list is exactly when the operator expects it to
+        // be current — it is what they were getting by pulling to refresh by
+        // hand. Waiting out a whole tick first is what made the list feel
+        // stuck when nothing was actually wrong.
+        if (!_uiState.value.isLoading) refresh()
+
+        // A wait already in flight was scheduled against the old cadence, so
+        // dropping from 60s to 15s would otherwise not take effect until the
+        // old minute had run out. Restarting the loop re-arms it at the new
+        // rate immediately.
+        if (cadenceChanged && pollJob?.isActive == true) {
+            stopBackgroundRefresh()
+            startBackgroundRefresh()
+        }
+    }
+
+    fun onScreenPaused() {
+        _currentPollIntervalMs.value = 60_000L
     }
 
     fun updateSearchQuery(query: String) {
@@ -450,4 +541,5 @@ class SessionListViewModel(
      */
     val filteredSessions: List<SessionSummary>
         get() = filterSessions(_uiState.value.sessions, _uiState.value.filterMode)
+
 }
