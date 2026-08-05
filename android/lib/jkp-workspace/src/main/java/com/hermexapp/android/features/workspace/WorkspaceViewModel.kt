@@ -47,6 +47,7 @@ class WorkspaceViewModel(
         val gitStatus: GitStatus? = null,
         val gitBranches: GitBranches? = null,
         val openDiff: GitDiff? = null,
+        val sort: WorkspaceSort = WorkspaceSort.NAME,
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
         val noticeMessage: String? = null,
@@ -65,11 +66,7 @@ class WorkspaceViewModel(
             val response = client.directoryList(sessionId, path)
             _uiState.update { state ->
                 state.copy(
-                    entries = response.entries.orEmpty()
-                        .sortedWith(
-                            compareByDescending<WorkspaceEntry> { it.isBrowsableDirectory }
-                                .thenBy { it.name?.lowercase() ?: "" },
-                        ),
+                    entries = sortWorkspaceEntries(response.entries.orEmpty(), state.sort),
                     currentPath = path,
                     pathStack = if (push) state.pathStack + listOf(path) else state.pathStack,
                     isLoading = false,
@@ -80,6 +77,18 @@ class WorkspaceViewModel(
             onAuthError(e)
             _uiState.update { it.copy(errorMessage = e.userMessage, isLoading = false) }
         }
+    }
+
+    /** Crumbs for the current directory, root first. */
+    val crumbs: List<WorkspaceCrumb> get() = workspaceCrumbs(_uiState.value.currentPath)
+
+    /**
+     * Re-orders what is already loaded. No refetch: the entries in hand are
+     * the same ones the server would return, and a network round trip to
+     * change a sort would make the control feel broken.
+     */
+    fun setSort(sort: WorkspaceSort) {
+        _uiState.update { it.copy(sort = sort, entries = sortWorkspaceEntries(it.entries, sort)) }
     }
 
     /** @return false when already at the workspace root (caller should close). */

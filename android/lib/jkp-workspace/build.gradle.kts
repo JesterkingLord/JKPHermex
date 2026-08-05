@@ -31,4 +31,8 @@ android {
 
 dependencies {
     implementation(project(":lib:jkp-core"))
+
+    // First tests in this module. junit is already in the version catalog and
+    // used by every other module here — no new third-party dependency.
+    testImplementation(libs.junit)
 }
