@@ -303,7 +303,7 @@ fun ComposerBar(
                                                 viewModel.stop()
                                             } else {
                                                 onSendHaptic()
-                                                viewModel.send()
+                                                viewModel.submitDraft()
                                             }
                                         },
                                         onLongClick = {
@@ -318,7 +318,7 @@ fun ComposerBar(
                                             viewModel.stop()
                                         } else {
                                             onSendHaptic()
-                                            viewModel.send()
+                                            viewModel.submitDraft()
                                         }
                                     }
                                 }

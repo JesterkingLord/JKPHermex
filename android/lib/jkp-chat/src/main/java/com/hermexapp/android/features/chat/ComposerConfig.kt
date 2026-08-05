@@ -52,6 +52,10 @@ data class ComposerConfig(
             }
             .take(8)
     }
+
+    /** v0.8.15: the static local slash catalog — rendered before `/api/commands` round-trips. */
+    internal val localSlashCommands: List<SlashCommandDescriptor>
+        get() = LOCAL_SLASH_COMMANDS
 }
 
 /** One pending upload, mirroring the iOS `PendingAttachment`. */
