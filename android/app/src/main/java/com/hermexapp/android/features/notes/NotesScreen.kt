@@ -273,11 +273,19 @@ private fun NoteEditor(
     val colorHex = existing?.colorHex ?: com.hermexapp.android.features.notes.NotesViewModel.DEFAULT_COLOR_HEX
     val status = existing?.status ?: NoteStatus.IDEA
 
-    // Whenever the backing store changes (other edits, refresh), refresh
-    // local field state ONLY when it differs — otherwise we'd overwrite
-    // the user's in-flight keystrokes.
-    LaunchedEffectIfChanged(existing?.title) { title = existing?.title.orEmpty() }
-    LaunchedEffectIfChanged(existing?.body) { body = existing?.body.orEmpty() }
+    // No sync-back from the store while the editor is open.
+    //
+    // Every keystroke calls upsert(), the store then emits the saved note, and
+    // this used to copy that value straight back into the field. Under normal
+    // typing speed the write lands between two keystrokes and overwrites the
+    // newer one, so characters are silently dropped: typing "working on EFURC
+    // until it's finished" produced "wng on EFURC unio  fisher" on a real
+    // device. That is data loss, not a cosmetic glitch.
+    //
+    // While the editor is open the field is the source of truth; the store is
+    // downstream of it. `remember(noteId)` above already re-seeds the fields
+    // when a different note is opened, which is the only moment the stored
+    // value should win.
 
     Card(
         modifier = Modifier
@@ -459,16 +467,6 @@ private fun TextFieldInline(
         ),
         modifier = modifier,
     )
-}
-
-/**
- * LaunchedEffect that re-runs only when [key] changes (compared with
- * Equals), used to pull updated store values into editor-local state
- * without clobbering keystrokes.
- */
-@Composable
-private fun LaunchedEffectIfChanged(key: Any?, block: () -> Unit) {
-    androidx.compose.runtime.LaunchedEffect(key) { block() }
 }
 
 @Composable
