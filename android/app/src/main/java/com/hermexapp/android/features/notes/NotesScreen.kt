@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -294,6 +295,13 @@ private fun NoteEditor(
     val existing = state.notes.firstOrNull { it.id == noteId }
     var title by remember(noteId) { mutableStateOf(existing?.title ?: "") }
     var body by remember(noteId) { mutableStateOf(existing?.body ?: "") }
+
+    // The note exactly as it was when this editor opened. Every keystroke
+    // autosaves, so without this snapshot there is nothing to go back to — a
+    // mistyped edit is simply the note now. Captured once per note id, so it
+    // survives recomposition but resets when a different note is opened.
+    val opened = remember(noteId) { existing }
+    val edited = noteHasUnsavedEdits(opened, title, body)
     val colorHex = existing?.colorHex ?: com.hermexapp.android.features.notes.NotesViewModel.DEFAULT_COLOR_HEX
     val status = existing?.status ?: NoteStatus.IDEA
 
@@ -381,6 +389,26 @@ private fun NoteEditor(
                 singleLine = false,
                 fontWeight = FontWeight.Normal,
             )
+            // Its own line, not the status row: that row already holds the
+            // status chip and the Implement button, and a third control
+            // squeezed "Mark action first" into a circle with its label
+            // wrapped across three lines.
+            //
+            // Only offered once something actually changed, so it is not a
+            // permanently lit button that usually does nothing.
+            if (edited && opened != null) {
+                TextButton(
+                    onClick = {
+                        title = opened.title
+                        body = opened.body
+                        viewModel.upsert(opened)
+                    },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("note_editor_revert"),
+                ) { Text("Undo edits") }
+            }
+
             // Wave 9: status chip + 🤖 Implement button.
             Row(
                 modifier = Modifier
@@ -775,4 +803,21 @@ private fun NotesSectionHeader(label: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 4.dp),
     )
+}
+
+/**
+ * Whether the editor holds changes that differ from the note it opened with.
+ *
+ * The editor autosaves on every keystroke, so "unsaved" is the wrong word for
+ * what this detects — the store is already updated. What it answers is whether
+ * there is an earlier version worth offering back. A brand-new note (no
+ * [opened]) has nothing to revert to.
+ */
+internal fun noteHasUnsavedEdits(
+    opened: com.hermexapp.android.persistence.NoteEntity?,
+    title: String,
+    body: String,
+): Boolean {
+    if (opened == null) return false
+    return opened.title != title || opened.body != body
 }
