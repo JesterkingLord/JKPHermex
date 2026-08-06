@@ -81,3 +81,63 @@ fun workspaceParentPath(path: String?): String? {
     val cut = clean.lastIndexOf('/')
     return if (cut <= 0) null else clean.substring(0, cut)
 }
+
+/**
+ * Broad kind of a workspace entry, decided from its name.
+ *
+ * The server does not classify files — `/api/list` reports `type` as only
+ * "dir", "file" or "symlink" — so the kind is derived here from the extension.
+ */
+enum class WorkspaceFileKind(val glyph: String) {
+    FOLDER("📁"),
+    IMAGE("🖼️"),
+    VIDEO("🎬"),
+    AUDIO("🎵"),
+    DOCUMENT("📄"),
+    CODE("📝"),
+    ARCHIVE("🗜️"),
+    /** A symlink that leaves the workspace: shown, but never navigable. */
+    BLOCKED("⛔"),
+    OTHER("📄"),
+}
+
+private val imageExtensions = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif")
+private val videoExtensions = setOf("mp4", "mov", "webm", "mkv", "avi", "m4v")
+private val audioExtensions = setOf("mp3", "wav", "ogg", "flac", "m4a", "aac")
+private val documentExtensions = setOf("pdf", "md", "txt", "rtf", "doc", "docx", "odt", "csv", "xlsx")
+private val archiveExtensions = setOf("zip", "tar", "gz", "7z", "rar", "bz2", "xz")
+private val codeExtensions = setOf(
+    "kt", "kts", "java", "swift", "py", "js", "ts", "tsx", "jsx", "go", "rs", "rb", "c", "h",
+    "cpp", "hpp", "cs", "sh", "ps1", "bat", "json", "yaml", "yml", "toml", "xml", "html", "css",
+    "sql", "gradle", "properties",
+)
+
+/**
+ * Classifies [entry] for display.
+ *
+ * An escaping symlink is reported as [WorkspaceFileKind.BLOCKED] before
+ * anything else: the server withholds its target and refuses to read through
+ * it, so showing it as an ordinary file would invite a tap that can only fail.
+ *
+ * A name with no extension is [WorkspaceFileKind.OTHER] rather than a guess —
+ * "LICENSE" and "Makefile" are not usefully any of these categories.
+ */
+fun workspaceFileKind(entry: WorkspaceEntry): WorkspaceFileKind {
+    if (entry.targetOutsideWorkspace == true) return WorkspaceFileKind.BLOCKED
+    if (entry.isBrowsableDirectory) return WorkspaceFileKind.FOLDER
+
+    val name = entry.name ?: entry.path.orEmpty()
+    val dot = name.lastIndexOf('.')
+    // A leading dot is a hidden file (".gitignore"), not an extension.
+    if (dot <= 0 || dot == name.length - 1) return WorkspaceFileKind.OTHER
+
+    return when (name.substring(dot + 1).lowercase()) {
+        in imageExtensions -> WorkspaceFileKind.IMAGE
+        in videoExtensions -> WorkspaceFileKind.VIDEO
+        in audioExtensions -> WorkspaceFileKind.AUDIO
+        in documentExtensions -> WorkspaceFileKind.DOCUMENT
+        in archiveExtensions -> WorkspaceFileKind.ARCHIVE
+        in codeExtensions -> WorkspaceFileKind.CODE
+        else -> WorkspaceFileKind.OTHER
+    }
+}

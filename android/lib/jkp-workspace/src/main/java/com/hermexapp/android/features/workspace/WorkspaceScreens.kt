@@ -119,7 +119,7 @@ fun FileBrowserScreen(viewModel: WorkspaceViewModel, onClose: () -> Unit) {
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(if (entry.isBrowsableDirectory) "📁" else "📄")
+                            Text(workspaceFileKind(entry).glyph)
                             Text(
                                 entry.name ?: entry.path ?: "?",
                                 style = MaterialTheme.typography.bodyMedium,
