@@ -128,9 +128,45 @@ the existing workspace browser rather than adding a new screen from scratch.
 - Tests: ledger round-trip, dedupe, and that a file absent from the ledger is
   never labelled uploaded.
 
-### Slice 5 — cross-session view (optional, after 1–4 land)
-- "Recent files" across the sessions already cached locally, since `/api/list`
-  is per session. Cost: N calls. Gate behind explicit refresh, not a poll.
+### Slice 5 — cross-session view
+
+Designed 2026-08-07 against verified shapes so the next pass implements rather
+than re-derives.
+
+**Why it is not one call.** `/api/list` requires `session_id`, so "recent files
+everywhere" means one request per session. `GET /api/sessions`
+(`ApiClient.sessions()`) returns `SessionSummary` rows carrying `session_id`,
+`title`, `workspace` and `updated_at` — everything needed to fan out and to
+attribute each file back to a session.
+
+**Bound the fan-out.** Sixty-plus sessions is sixty-plus requests, which is not
+something to do on screen entry. Walk only the N most recently updated sessions
+(`updated_at` descending, N ≈ 10) and say so in the UI — "Recent files from
+your last 10 sessions" is honest; "recent files" implies everything and would
+be a lie.
+
+**Never poll it.** Explicit refresh only. A background sweep of N sessions is a
+burst of requests the operator did not ask for, and the session-list poll
+already exists for freshness.
+
+**Merging — the part worth testing, and pure:**
+- key on `workspace + path`, because the same relative path in two workspaces is
+  two different files while the same path in one workspace is one;
+- when a file appears in several sessions sharing a workspace, keep the newest
+  `mtime_ns` and remember which session surfaced it;
+- entries with no `mtime_ns` sort last, matching `sortWorkspaceEntries`;
+- an escaping symlink is excluded outright — `workspaceFileKind` already reports
+  `BLOCKED`, and a cross-session list is exactly where an unreachable row is
+  most confusing.
+
+**Degradation.** One session failing must not fail the view: collect what
+succeeded, and report the count that did not. "Showing files from 8 of 10
+sessions" beats an error screen, and matches how the content layer already
+degrades.
+
+**Reuse.** `sortWorkspaceEntries`, `workspaceFileKind` and `WorkspaceCrumb`
+already exist and need no changes. The new surface is a list plus a refresh
+action, not a second browser.
 
 ---
 
