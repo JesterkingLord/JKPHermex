@@ -46,7 +46,17 @@ sealed class ApiError : Exception() {
                     status = statusCode,
                     message = body,
                 )
+                // Read once into a local: a custom getter is not smart-cast, so
+                // a null check on the property alone would not compile.
+                val reason = serverReason
                 when {
+                    // A 404 that explains itself is worth more than our guess.
+                    // The host answers "Session not found" or "File not found"
+                    // in the body; telling the user to check their server URL
+                    // instead sends them to fix a setting that is already
+                    // correct. Only fall back to that advice when the body says
+                    // nothing — which is what a genuinely wrong host returns.
+                    statusCode == 404 && reason != null -> reason
                     statusCode == 404 ->
                         "The server endpoint was not found. Check that the URL points to a Hermes Web UI server."
                     statusCode == 408 ->
@@ -59,5 +69,35 @@ sealed class ApiError : Exception() {
             }
         }
 
+    /**
+     * The server's own explanation, when it sent one.
+     *
+     * The host replies to a failed read with `{"error": "Session not found"}`.
+     * Parsed by hand rather than with a serializer because a body that is not
+     * JSON at all — an HTML error page from a proxy, say — must yield null and
+     * not an exception; this runs while an error is already being reported.
+     *
+     * Anything long or multi-line is rejected: a stack trace or an HTML page
+     * that happens to contain the word is not a sentence to show a user.
+     */
+    private val serverReason: String?
+        get() {
+            val raw = (this as? Http)?.body?.trim() ?: return null
+            if (!raw.startsWith("{")) return null
+            val match = SERVER_ERROR_FIELD.find(raw) ?: return null
+            val reason = match.groupValues[1].trim()
+            // A newline arrives inside JSON as the two characters \ and n, so
+            // checking for a real '\n' here would never match — which is how a
+            // multi-line traceback slipped through the first version of this.
+            return reason.takeIf {
+                it.isNotEmpty() && it.length <= 160 && !it.contains('\n') && !it.contains("\\n")
+            }
+        }
+
     override val message: String get() = userMessage
+
+    private companion object {
+        /** `"error": "…"`, tolerating whitespace and escaped quotes. */
+        val SERVER_ERROR_FIELD = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+    }
 }
