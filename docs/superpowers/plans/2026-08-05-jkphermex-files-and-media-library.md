@@ -128,10 +128,34 @@ the existing workspace browser rather than adding a new screen from scratch.
 - Tests: ledger round-trip, dedupe, and that a file absent from the ledger is
   never labelled uploaded.
 
-### Slice 5 — cross-session view
+### Slice 5 — cross-session view — SHIPPED 2026-08-07 (`9bf8604`)
 
-Designed 2026-08-07 against verified shapes so the next pass implements rather
-than re-derives.
+Built as designed below. `RecentFiles.kt` (pure merge + session selection),
+`RecentFilesViewModel` (bounded fan-out, degrades per session),
+`RecentFilesScreen`, reached from the file browser header; tapping a row opens
+the file via `Screen.Files(sessionId, openPath)`. 18 unit tests.
+
+Three defects the device found and the tests could not — worth carrying into
+the next slice, since all three are shapes that recur:
+
+1. **Session titles are often pasted prompts**, not names. Every row read
+   "<local-command-caveat>Caveat: The messages b…". `recentFileSourceLabel`
+   now takes a title only when it looks like a name.
+2. **Concurrent loads clobber each other's errors.** The directory load clears
+   `errorMessage` on completion, so a file open racing it failed silently and
+   read as a dead tap. Awaited in order now.
+3. **`/api/file` does not always send `name` back**, so the header said
+   "Files" while showing a file. The requested path is kept for the title.
+
+**Known server-side gap, not fixed (operator's call):** `/api/list` falls back
+to `get_cli_sessions()` for CLI sessions absent from WebUI memory
+(`routes.py::_handle_list_dir`); `/api/file` goes through
+`get_session_for_file_ops()`, which falls back only to `state.db`. A CLI
+session missing from `state.db` therefore **lists fine and 404s on read** —
+reproduced on device. The app now surfaces the server's "Session not found"
+instead of wrongly blaming the server URL (`8dbb0b4`).
+
+Original design, kept for the record:
 
 **Why it is not one call.** `/api/list` requires `session_id`, so "recent files
 everywhere" means one request per session. `GET /api/sessions`
