@@ -44,6 +44,12 @@ class WorkspaceViewModel(
         val currentPath: String? = null,
         val entries: List<WorkspaceEntry> = emptyList(),
         val openFile: FileResponse? = null,
+        /**
+         * The path we asked for, kept because the server does not always send
+         * `name` back — without it the header read "Files" while a file was on
+         * screen, which is the one moment it should say which file.
+         */
+        val openFilePath: String? = null,
         val gitStatus: GitStatus? = null,
         val gitBranches: GitBranches? = null,
         val openDiff: GitDiff? = null,
@@ -110,7 +116,12 @@ class WorkspaceViewModel(
         try {
             val response = client.file(sessionId, path)
             _uiState.update {
-                it.copy(openFile = response, isLoading = false, errorMessage = response.error)
+                it.copy(
+                    openFile = response,
+                    openFilePath = path,
+                    isLoading = false,
+                    errorMessage = response.error,
+                )
             }
         } catch (e: ApiError) {
             onAuthError(e)
@@ -118,7 +129,7 @@ class WorkspaceViewModel(
         }
     }
 
-    fun closeFile() = _uiState.update { it.copy(openFile = null) }
+    fun closeFile() = _uiState.update { it.copy(openFile = null, openFilePath = null) }
 
     fun loadGit() {
         viewModelScope.launch { loadGitNow() }

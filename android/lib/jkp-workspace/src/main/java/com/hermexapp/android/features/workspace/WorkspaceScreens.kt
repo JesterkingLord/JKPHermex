@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,13 +43,34 @@ import com.hermexapp.android.ui.CircleButton
 import com.hermexapp.android.ui.HermexHeader
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 
+/**
+ * @param initialFilePath opens straight into this file instead of the root
+ *   listing. Recent files arrive as a session plus a path with no directory to
+ *   land in, so without this a tap there could only drop you at the root and
+ *   leave you to find the file again.
+ * @param onOpenRecentFiles null hides the entry point, for callers with no
+ *   destination to send it to.
+ */
 @Composable
-fun FileBrowserScreen(viewModel: WorkspaceViewModel, onClose: () -> Unit) {
+fun FileBrowserScreen(
+    viewModel: WorkspaceViewModel,
+    onClose: () -> Unit,
+    initialFilePath: String? = null,
+    onOpenRecentFiles: (() -> Unit)? = null,
+) {
     val state by viewModel.uiState.collectAsState()
     val palette = LocalHermexPalette.current
 
-    LaunchedEffect(Unit) {
-        if (state.entries.isEmpty() && !state.isLoading) viewModel.loadDirectory(null, push = false)
+    // One effect, awaited in order, because these two must not overlap: the
+    // directory load clears errorMessage on completion, so run concurrently it
+    // wipes whatever the file open reported. A file that fails to open then
+    // looks like a tap that did nothing at all.
+    LaunchedEffect(initialFilePath) {
+        val current = viewModel.uiState.value
+        if (current.entries.isEmpty() && !current.isLoading) {
+            viewModel.loadDirectoryNow(null, push = false)
+        }
+        if (initialFilePath != null) viewModel.openFileNow(initialFilePath)
     }
     BackHandler {
         if (state.openFile != null) viewModel.closeFile()
@@ -60,11 +82,27 @@ fun FileBrowserScreen(viewModel: WorkspaceViewModel, onClose: () -> Unit) {
         containerColor = palette.canvas,
         topBar = {
             HermexHeader(
-                title = state.openFile?.name ?: state.currentPath?.substringAfterLast('/') ?: "Files",
+                title = state.openFile?.name
+                    ?: state.openFilePath?.substringAfterLast('/')
+                    ?: state.currentPath?.substringAfterLast('/')
+                    ?: "Files",
                 subtitle = state.currentPath,
                 onBack = {
                     if (state.openFile != null) viewModel.closeFile()
                     else if (!viewModel.navigateUp()) onClose()
+                },
+                actions = {
+                    // Only at the root of the listing: while a file is open or
+                    // you are deep in a tree, leaving for a cross-session list
+                    // is not what the button next to the title should do.
+                    if (onOpenRecentFiles != null && state.openFile == null) {
+                        CircleButton(
+                            onClick = onOpenRecentFiles,
+                            contentDescription = "Recent files across sessions",
+                            icon = Icons.Filled.History,
+                            size = 40,
+                        )
+                    }
                 },
             )
         },

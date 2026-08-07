@@ -59,6 +59,8 @@ import com.hermexapp.android.features.sessionlist.SessionListScreen
 import com.hermexapp.android.features.sessionlist.SessionListViewModel
 import com.hermexapp.android.features.settings.SettingsScreen
 import com.hermexapp.android.features.workspace.FileBrowserScreen
+import com.hermexapp.android.features.workspace.RecentFilesScreen
+import com.hermexapp.android.features.workspace.RecentFilesViewModel
 import com.hermexapp.android.features.workspace.GitScreen
 import com.hermexapp.android.features.workspace.WorkspaceViewModel
 import com.hermexapp.android.platform.RunNotifications
@@ -215,7 +217,14 @@ class MainActivity : ComponentActivity() {
 private sealed class Screen {
     data object SessionList : Screen()
     data class Chat(val sessionId: String) : Screen()
-    data class Files(val sessionId: String) : Screen()
+    /**
+     * [openPath] lands directly on a file rather than the workspace root — how
+     * a tap in [RecentFiles] arrives, since it knows a path but no directory.
+     */
+    data class Files(val sessionId: String, val openPath: String? = null) : Screen()
+
+    /** Files from across recent sessions; [sessionId] is where Back returns. */
+    data class RecentFiles(val sessionId: String) : Screen()
     data class Git(val sessionId: String) : Screen()
     data class Panel(val kind: PanelKind) : Screen()
     data object Settings : Screen()
@@ -627,13 +636,29 @@ private fun RenderScreen(
             }
         }
         is Screen.Files -> {
-            val workspaceViewModel = remember(server, current.sessionId, "files") {
+            // openPath is part of the key: arriving at the same session with a
+            // different file must build a view model that opens that file,
+            // not reuse one already showing the previous one.
+            val workspaceViewModel = remember(server, current.sessionId, current.openPath, "files") {
                 WorkspaceViewModel(current.sessionId, client, container.authManager::handleApiError)
             }
             DisposeViewModelOnExit(workspaceViewModel)
             FileBrowserScreen(
                 viewModel = workspaceViewModel,
                 onClose = { setScreen(Screen.Chat(current.sessionId)) },
+                initialFilePath = current.openPath,
+                onOpenRecentFiles = { setScreen(Screen.RecentFiles(current.sessionId)) },
+            )
+        }
+        is Screen.RecentFiles -> {
+            val recentFilesViewModel = remember(server, "recent-files") {
+                RecentFilesViewModel(client, container.authManager::handleApiError)
+            }
+            DisposeViewModelOnExit(recentFilesViewModel)
+            RecentFilesScreen(
+                viewModel = recentFilesViewModel,
+                onOpenFile = { sessionId, path -> setScreen(Screen.Files(sessionId, path)) },
+                onClose = { setScreen(Screen.Files(current.sessionId)) },
             )
         }
         is Screen.Git -> {
@@ -724,6 +749,7 @@ private fun drawerSelectedFor(screen: Screen): MainScreenTab = when (screen) {
     Screen.SessionList -> MainScreenTab.Sessions
     is Screen.Chat -> MainScreenTab.Sessions
     is Screen.Files -> MainScreenTab.Sessions
+    is Screen.RecentFiles -> MainScreenTab.Sessions
     is Screen.Git -> MainScreenTab.Sessions
     is Screen.Panel -> when (screen.kind) {
         PanelKind.TASKS -> MainScreenTab.Tasks
