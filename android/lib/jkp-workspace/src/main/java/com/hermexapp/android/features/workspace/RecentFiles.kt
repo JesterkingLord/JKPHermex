@@ -118,6 +118,52 @@ fun mergeRecentFiles(
 }
 
 /**
+ * Which files the recent-files list is showing.
+ *
+ * Deliberately not "created" against "uploaded". The host records no
+ * provenance at all, so "created" is not something the app can know — only
+ * "this device uploaded it" is, from its own ledger. Naming the tabs after
+ * what is actually knowable keeps the UI from making a claim it cannot back.
+ */
+enum class RecentFileFilter(val label: String) {
+    ALL("All files"),
+
+    /**
+     * Uploaded *from this device*. A file sent from the operator's PC, or
+     * written by an agent, is not distinguishable from any other file on disk
+     * and correctly falls outside this.
+     */
+    UPLOADED_HERE("Uploaded from this device"),
+}
+
+/**
+ * Applies [filter] to [files].
+ *
+ * @param wasUploadedHere asks the ledger whether this device uploaded a path.
+ */
+fun filterRecentFiles(
+    files: List<RecentFile>,
+    filter: RecentFileFilter,
+    wasUploadedHere: (String?) -> Boolean,
+): List<RecentFile> = when (filter) {
+    RecentFileFilter.ALL -> files
+    RecentFileFilter.UPLOADED_HERE -> files.filter { wasUploadedHere(it.entry.path) }
+}
+
+/**
+ * What to say when a filter matches nothing.
+ *
+ * The empty ledger case needs its own sentence. "No files" would read as a
+ * bug — the files are plainly there under All — when the real answer is that
+ * this device has not uploaded any yet.
+ */
+fun recentFilesEmptyMessage(filter: RecentFileFilter): String = when (filter) {
+    RecentFileFilter.ALL -> "No files in your recent sessions yet."
+    RecentFileFilter.UPLOADED_HERE ->
+        "Nothing uploaded from this device yet. Files added from your PC are under All files."
+}
+
+/**
  * A short label for where a file came from.
  *
  * The obvious choice — the session title — is often not a name at all. Sessions

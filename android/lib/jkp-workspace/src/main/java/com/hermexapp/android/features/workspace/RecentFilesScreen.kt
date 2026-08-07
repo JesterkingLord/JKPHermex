@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -81,17 +83,40 @@ fun RecentFilesScreen(
                 )
             }
 
+            // The filter is state, not a fetch: switching tabs must not cost
+            // another ten requests.
+            val visible = viewModel.visibleFiles(state)
+
+            if (state.canFilterByUpload && state.files.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RecentFileFilter.entries.forEach { option ->
+                        FilterChip(
+                            selected = state.filter == option,
+                            onClick = { viewModel.setFilter(option) },
+                            label = { Text(option.label, maxLines = 1) },
+                            modifier = Modifier.heightIn(min = 40.dp),
+                            colors = FilterChipDefaults.filterChipColors(),
+                        )
+                    }
+                }
+            }
+
             when {
                 state.isLoading && state.files.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
 
-                state.files.isEmpty() && state.hasLoaded ->
-                    EmptyPanel("No files in your recent sessions yet.")
+                visible.isEmpty() && state.hasLoaded ->
+                    EmptyPanel(recentFilesEmptyMessage(state.filter))
 
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.files, key = { it.stableId }) { file ->
+                    items(visible, key = { it.stableId }) { file ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

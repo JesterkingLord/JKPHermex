@@ -523,6 +523,7 @@ private fun RenderScreen(
                     prefs = container.prefs,
                     onAuthError = container.authManager::handleApiError,
                     sentPrompts = container.sentPrompts,
+                    uploadLedger = container.uploadLedger,
                 ).also { vm ->
                     sharePrefillRef()?.let { vm.updateComposerText(it); consumeSharePrefill() }
                     if (shareFileUploadsRef().isNotEmpty()) {
@@ -652,7 +653,11 @@ private fun RenderScreen(
         }
         is Screen.RecentFiles -> {
             val recentFilesViewModel = remember(server, "recent-files") {
-                RecentFilesViewModel(client, container.authManager::handleApiError)
+                RecentFilesViewModel(
+                    client = client,
+                    onAuthError = container.authManager::handleApiError,
+                    uploadLedger = container.uploadLedger,
+                )
             }
             DisposeViewModelOnExit(recentFilesViewModel)
             RecentFilesScreen(

@@ -10,6 +10,7 @@ import com.hermexapp.android.auth.SecretStore
 import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.config.KeyValueStore
 import com.hermexapp.android.persistence.SentPromptsStore
+import com.hermexapp.android.persistence.UploadLedger
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.features.sessionlist.SessionRepositoryImpl
 import com.hermexapp.android.network.ApiClient
@@ -116,6 +117,15 @@ class AppContainer(secretStore: SecretStore, context: Context? = null) {
      */
     val sentPrompts: SentPromptsStore? = context?.let {
         SentPromptsStore(KeyValueStore.forPrefs(it, "hermex_sent_prompts"))
+    }
+
+    /**
+     * What this device uploaded, so the file library can label it honestly.
+     * One instance, shared: the chat writes it and the file library reads it,
+     * and two instances would each hold a stale copy of the other's writes.
+     */
+    val uploadLedger: UploadLedger? = context?.let {
+        UploadLedger(KeyValueStore.forPrefs(it, "hermex_upload_ledger"))
     }
 
     val notifications: RunNotifications? = context?.let { RunNotifications(it) }

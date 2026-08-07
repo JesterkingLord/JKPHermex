@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hermexapp.android.config.AppPrefs
 import com.hermexapp.android.config.StreamingSendBehavior
 import com.hermexapp.android.persistence.SentPromptsStore
+import com.hermexapp.android.persistence.UploadLedger
 import com.hermexapp.android.features.sessionlist.SessionRepository
 import com.hermexapp.android.model.ApprovalChoice
 import com.hermexapp.android.model.ChatMessage
@@ -84,6 +85,14 @@ class ChatViewModel(
      * works exactly the same without it.
      */
     private val sentPrompts: SentPromptsStore? = null,
+    /**
+     * Records what this device uploads, so the file library can label it.
+     * The host keeps no provenance of its own — `/api/list` reports a name, a
+     * size and an mtime and nothing about how the file arrived — so this is
+     * the only place that knowledge exists. Optional: uploads behave exactly
+     * the same without it, they simply go unlabelled.
+     */
+    private val uploadLedger: UploadLedger? = null,
     /**
      * v0.8.15 slice 5 — injectable dispatcher for the stall-watch loop.
      * Production uses [Dispatchers.Default]; tests inject the runTest
@@ -555,6 +564,14 @@ data class QueuedMessage(
                 }
                 return
             }
+            // Only now, past the error and empty-path guards above: a ledger
+            // that lists uploads which never landed would label a file the
+            // operator never sent, which is worse than labelling nothing.
+            uploadLedger?.record(
+                path = response.path!!,
+                filename = response.filename ?: filename,
+                atMillis = nowMs(),
+            )
             val attachment = PendingAttachment(
                 name = response.filename ?: filename,
                 path = response.path!!,

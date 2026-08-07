@@ -230,6 +230,64 @@ class RecentFilesTest {
         assertEquals(2, merged.map { it.stableId }.distinct().size)
     }
 
+    // ── The uploaded-here filter (slice 4) ──
+
+    @Test
+    fun the_all_filter_shows_everything_regardless_of_the_ledger() {
+        val files = mergeRecentFiles(
+            listOf(SessionListing(source("a", "/ws"), listOf(file("x.txt", 1), file("y.txt", 2)))),
+        )
+
+        assertEquals(2, filterRecentFiles(files, RecentFileFilter.ALL) { false }.size)
+    }
+
+    @Test
+    fun the_uploaded_filter_shows_only_what_this_device_sent() {
+        val files = mergeRecentFiles(
+            listOf(
+                SessionListing(
+                    source("a", "/ws"),
+                    listOf(file("mine.png", 2), file("written-by-agent.kt", 1)),
+                ),
+            ),
+        )
+
+        val uploaded = filterRecentFiles(files, RecentFileFilter.UPLOADED_HERE) {
+            it == "mine.png"
+        }
+
+        assertEquals(listOf("mine.png"), uploaded.map { it.entry.name })
+    }
+
+    @Test
+    fun the_uploaded_filter_is_empty_rather_than_falling_back_to_everything() {
+        // An empty filter must not quietly show all files: the operator would
+        // read every one of them as uploaded from this phone.
+        val files = mergeRecentFiles(
+            listOf(SessionListing(source("a", "/ws"), listOf(file("x.txt", 1)))),
+        )
+
+        assertTrue(filterRecentFiles(files, RecentFileFilter.UPLOADED_HERE) { false }.isEmpty())
+    }
+
+    @Test
+    fun the_empty_message_explains_where_pc_uploads_went() {
+        // "No files" would read as a bug when All plainly has files.
+        val message = recentFilesEmptyMessage(RecentFileFilter.UPLOADED_HERE)
+
+        assertTrue(message, message.contains("this device"))
+        assertTrue(message, message.contains("All files"))
+    }
+
+    @Test
+    fun the_filter_labels_never_claim_to_know_what_was_created() {
+        // The host records no provenance, so "Created" would be a claim the
+        // app cannot back with anything.
+        RecentFileFilter.entries.forEach { filter ->
+            assertTrue(filter.label, !filter.label.lowercase().contains("created"))
+        }
+    }
+
     // ── What a row says about where the file came from ──
 
     @Test

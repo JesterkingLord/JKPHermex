@@ -6,6 +6,7 @@ import com.hermexapp.android.network.ApiClient
 import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.network.directoryList
 import com.hermexapp.android.network.sessions
+import com.hermexapp.android.persistence.UploadLedger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,12 @@ class RecentFilesViewModel(
     private val client: ApiClient,
     private val onAuthError: (Throwable) -> Unit = {},
     private val sessionLimit: Int = DEFAULT_SESSION_SCAN_LIMIT,
+    /**
+     * What this device uploaded. Null means the "Uploaded from this device"
+     * filter has nothing to consult, so it is hidden rather than shown empty
+     * and blamed on there being no uploads.
+     */
+    private val uploadLedger: UploadLedger? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -33,12 +40,25 @@ class RecentFilesViewModel(
         val isLoading: Boolean = false,
         val hasLoaded: Boolean = false,
         val errorMessage: String? = null,
+        val filter: RecentFileFilter = RecentFileFilter.ALL,
+        /** False when there is no ledger to consult, which hides the filter. */
+        val canFilterByUpload: Boolean = false,
     ) {
         /** True when some sessions could not be read but others could. */
         val isPartial: Boolean get() = sessionsFailed > 0 && sessionsFailed < sessionsAttempted
     }
 
-    private val _uiState = MutableStateFlow(UiState())
+    /** Switches the visible set. Pure state — never refetches. */
+    fun setFilter(filter: RecentFileFilter) = _uiState.update { it.copy(filter = filter) }
+
+    /** The files the list should show, after [UiState.filter]. */
+    fun visibleFiles(state: UiState): List<RecentFile> = filterRecentFiles(
+        files = state.files,
+        filter = state.filter,
+        wasUploadedHere = { path -> uploadLedger?.wasUploadedFromThisDevice(path) == true },
+    )
+
+    private val _uiState = MutableStateFlow(UiState(canFilterByUpload = uploadLedger != null))
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     fun refresh() {
