@@ -49,6 +49,15 @@ data class NoteEntity(
     @ColumnInfo(name = "color_hex") val colorHex: String,
     val pinned: Boolean,
     @ColumnInfo(name = "status") val status: String = NoteStatus.IDEA,
+    /**
+     * Comma-separated labels, same storage shape as `local_prompts.tags` so the
+     * two features stay consistent. Empty string means unlabelled; a row from
+     * before v4 gets that from the column default.
+     *
+     * Parse with [NoteLabels.parse] rather than splitting by hand — it drops
+     * blanks and duplicates that would otherwise render as empty chips.
+     */
+    @ColumnInfo(name = "labels") val labels: String = "",
     @ColumnInfo(name = "updated_at_millis") val updatedAtMillis: Long,
     @ColumnInfo(name = "created_at_millis") val createdAtMillis: Long,
 )
@@ -203,4 +212,35 @@ class InMemoryNoteStore(
         )
         state.value = sorted
     }
+}
+
+/**
+ * Note labels, stored as one comma-separated string.
+ *
+ * Kept as a string rather than a related table because labels are a display
+ * grouping, not an entity — a join table would cost a migration and a second
+ * DAO to answer a question a `LIKE` already answers.
+ */
+object NoteLabels {
+    /**
+     * Splits stored labels for display: trimmed, blanks dropped, duplicates
+     * removed case-insensitively, original order kept.
+     *
+     * Blank entries come from ordinary typing ("work,,ideas", a trailing
+     * comma) and would otherwise render as empty chips that cannot be tapped.
+     */
+    fun parse(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
+        val seen = mutableSetOf<String>()
+        return raw.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+    }
+
+    /** Joins labels back to storage form, applying the same cleaning. */
+    fun join(labels: List<String>): String = parse(labels.joinToString(",")).joinToString(",")
+
+    /** True when [raw] carries [label], compared case-insensitively. */
+    fun contains(raw: String?, label: String): Boolean =
+        parse(raw).any { it.equals(label.trim(), ignoreCase = true) }
 }

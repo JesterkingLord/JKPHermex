@@ -21,6 +21,15 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+const val NOTE_LABELS_MIGRATION_SQL =
+    "ALTER TABLE local_notes ADD COLUMN labels TEXT NOT NULL DEFAULT ''"
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL(NOTE_LABELS_MIGRATION_SQL)
+    }
+}
+
 /**
  * Offline cache seam (Android port plan phase 3). Values are the raw response
  * JSON keyed by host + resource, so the cache never has its own schema to
@@ -140,10 +149,14 @@ interface CachedPayloadDao {
  * row from an older build, since SQLite fills it with the column default).
  * [MIGRATION_2_3] deliberately alters the table in place so upgrading never
  * erases locally-authored notes or prompts.
+ *
+ * v3 → v4 (2026-08-07) adds `labels` to `local_notes` the same way: an in-place
+ * ALTER with a default of the empty string, so every existing note upgrades to
+ * "unlabelled" rather than being dropped. [MIGRATION_3_4].
  */
 @Database(
     entities = [CachedPayload::class, NoteEntity::class, PromptEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class HermexDatabase : RoomDatabase() {
@@ -154,7 +167,7 @@ abstract class HermexDatabase : RoomDatabase() {
     companion object {
         fun build(context: Context, databaseName: String = "hermex.db"): HermexDatabase =
             Room.databaseBuilder(context, HermexDatabase::class.java, databaseName)
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 // Only an install old enough to have the cache-only v1 schema
                 // can fall back destructively. v2+ owns user-authored content
                 // and must always receive explicit migrations.

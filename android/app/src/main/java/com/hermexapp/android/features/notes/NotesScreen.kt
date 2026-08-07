@@ -295,6 +295,7 @@ private fun NoteEditor(
     val existing = state.notes.firstOrNull { it.id == noteId }
     var title by remember(noteId) { mutableStateOf(existing?.title ?: "") }
     var body by remember(noteId) { mutableStateOf(existing?.body ?: "") }
+    var labels by remember(noteId) { mutableStateOf(existing?.labels ?: "") }
 
     // The note exactly as it was when this editor opened. Every keystroke
     // autosaves, so without this snapshot there is nothing to go back to — a
@@ -346,6 +347,7 @@ private fun NoteEditor(
                                 title = it,
                                 body = body,
                                 colorHex = colorHex,
+                                labels = labels,
                                 pinned = existing?.pinned == true,
                                 status = status,
                                 updatedAtMillis = System.currentTimeMillis(),
@@ -377,6 +379,7 @@ private fun NoteEditor(
                             title = title,
                             body = it,
                             colorHex = colorHex,
+                            labels = labels,
                             pinned = existing?.pinned == true,
                             status = status,
                             updatedAtMillis = System.currentTimeMillis(),
@@ -389,6 +392,30 @@ private fun NoteEditor(
                 singleLine = false,
                 fontWeight = FontWeight.Normal,
             )
+            TextFieldInline(
+                value = labels,
+                onChange = {
+                    labels = it
+                    viewModel.upsert(
+                        NoteEntity(
+                            id = noteId,
+                            title = title,
+                            body = body,
+                            colorHex = colorHex,
+                            labels = it,
+                            pinned = existing?.pinned == true,
+                            status = status,
+                            updatedAtMillis = System.currentTimeMillis(),
+                            createdAtMillis = existing?.createdAtMillis
+                                ?: System.currentTimeMillis(),
+                        )
+                    )
+                },
+                placeholder = "Labels, comma separated",
+                singleLine = true,
+                fontWeight = FontWeight.Normal,
+            )
+
             // Its own line, not the status row: that row already holds the
             // status chip and the Implement button, and a third control
             // squeezed "Mark action first" into a circle with its label
@@ -701,6 +728,18 @@ private fun NoteRow(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    // Labels belong on the row: a label you can only see by
+                    // opening the note cannot help you find the note.
+                    val rowLabels = com.hermexapp.android.persistence.NoteLabels.parse(note.labels)
+                    if (rowLabels.isNotEmpty()) {
+                        Text(
+                            rowLabels.joinToString("  ") { "#" + it },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }

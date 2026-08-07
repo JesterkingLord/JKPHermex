@@ -16,7 +16,7 @@ class MigrationInstrumentation : Instrumentation() {
 
     override fun onStart() {
         val testContext = targetContext
-        val databaseName = "hermex-migration-v2-v3-test.db"
+        val databaseName = "hermex-migration-v2-v4-test.db"
         val databaseFile = testContext.getDatabasePath(databaseName)
         var failure: Throwable? = null
 
@@ -35,7 +35,7 @@ class MigrationInstrumentation : Instrumentation() {
             testContext.deleteDatabase(databaseName)
             databaseFile.parentFile?.mkdirs()
             createVersionTwoFixture(databaseFile)
-            verifyVersionThreeMigration(testContext, databaseName)
+            verifyMigratedToLatest(testContext, databaseName)
         } catch (throwable: Throwable) {
             failure = throwable
         } finally {
@@ -50,7 +50,7 @@ class MigrationInstrumentation : Instrumentation() {
             finish(
                 Activity.RESULT_OK,
                 Bundle().apply {
-                    putString("stream", "PASS: Room v2-to-v3 preserved note and prompt")
+                    putString("stream", "PASS: Room v2-to-v4 preserved note, labels default and prompt")
                 },
             )
         } else {
@@ -91,7 +91,14 @@ class MigrationInstrumentation : Instrumentation() {
         }
     }
 
-    private fun verifyVersionThreeMigration(context: Context, databaseName: String) {
+    /**
+     * Opens the v2 fixture with the current schema, which runs the whole
+     * migration chain (2 → 3 → 4), and checks the user's rows survived it.
+     *
+     * The point is the content, not the schema: a migration that drops and
+     * recreates the table would also "succeed" at reaching v4.
+     */
+    private fun verifyMigratedToLatest(context: Context, databaseName: String) {
         val room = HermexDatabase.build(context, databaseName)
         try {
             runBlocking {
@@ -99,11 +106,17 @@ class MigrationInstrumentation : Instrumentation() {
                 check(note?.title == "Keep me")
                 check(note.body == "Preserved body")
                 check(note.status == NoteStatus.IDEA)
+                // v4: pre-existing notes become unlabelled rather than lost.
+                check(note.labels == "") { "labels should default to empty, was '${note.labels}'" }
 
                 val prompt = room.promptsDao().get("prompt-1")
                 check(prompt?.name == "Keep prompt")
                 check(prompt.body == "Prompt body")
                 check(prompt.usageCount == 7)
+
+                // The new column has to be writable, not merely present.
+                room.notesDao().upsert(note.copy(labels = "work,ideas"))
+                check(room.notesDao().get("note-1")?.labels == "work,ideas")
             }
         } finally {
             room.close()
