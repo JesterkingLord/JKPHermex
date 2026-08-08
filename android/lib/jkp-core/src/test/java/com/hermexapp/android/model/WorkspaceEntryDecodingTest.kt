@@ -108,6 +108,8 @@ class WorkspaceEntryDecodingTest {
 
     @Test
     fun `the list response decodes with its workspace path`() {
+        // The shape `.codex-tmp/hermes-webui` emits. Note this fixture alone
+        // proves nothing about production — see the deployed-shape test below.
         val response = json.decodeFromString<DirectoryListResponse>(
             """{"entries":[{"name":"a","type":"dir"}],"path":".",
                 "workspace":"C:/ws","workspace_recovered":false,"signature":"abc"}""",
@@ -115,5 +117,30 @@ class WorkspaceEntryDecodingTest {
 
         assertEquals(1, response.entries?.size)
         assertEquals("C:/ws", response.workspace)
+    }
+
+    @Test
+    fun `the deployed host sends no workspace, so the field decodes to null`() {
+        // Captured from the server actually answering :8787
+        // (E:/JKP/hermes-webui/server.py), which is ~1,750 lines behind
+        // .codex-tmp and whose list handler returns only entries, signature and
+        // path. Probed live against a WebUI-native and a CLI-backed session;
+        // neither carried `workspace`.
+        //
+        // The test above passes on a fixture production never sends, which is
+        // exactly how a caller comes to trust this field. Anything needing an
+        // absolute path — `/api/media` 403s on a relative one — must take the
+        // root from the session, not from here.
+        val response = json.decodeFromString<DirectoryListResponse>(
+            """{"entries":[{"name":"balance_audit.py","path":"balance_audit.py",
+                "type":"file","size":5435,"mtime_ns":1784843649334056700}],
+                "signature":"43bc0d97","path":"."}""",
+        )
+
+        assertEquals(1, response.entries?.size)
+        assertNull(
+            "the deployed list handler emits no workspace key; do not build on it",
+            response.workspace,
+        )
     }
 }

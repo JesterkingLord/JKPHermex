@@ -11,6 +11,21 @@ import kotlinx.serialization.Serializable
 data class DirectoryListResponse(
     val entries: List<WorkspaceEntry>? = null,
     val path: String? = null,
+    /**
+     * The workspace root — **absent on the deployed host, so usually null.**
+     *
+     * `.codex-tmp/hermes-webui` emits this key, but that tree is not what runs:
+     * the server answering :8787 is `E:/JKP/hermes-webui/server.py`, roughly
+     * 1,750 lines behind, and its list handler returns only `entries`,
+     * `signature` and `path`. Probed live against both a WebUI-native and a
+     * CLI-backed session; neither carried the key.
+     *
+     * Kept rather than deleted, because the newer tree does send it and it will
+     * decode once the host is updated. Treat it as a bonus, never a source:
+     * anything needing an absolute path must read `workspace` off the session,
+     * which every host sends. `/api/media` rejects a relative path with 403, so
+     * guessing from here costs a round trip that can only fail.
+     */
     val workspace: String? = null,
     val error: String? = null,
 )
