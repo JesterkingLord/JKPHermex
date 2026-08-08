@@ -152,6 +152,33 @@ fun workspaceFileKind(name: String): WorkspaceFileKind {
 }
 
 /**
+ * True when reading [name] through `/api/file` can only produce mojibake.
+ *
+ * The host ends `read_file_content` in `raw.decode('utf-8', errors='replace')`,
+ * so any non-text file comes back as a wall of U+FFFD with no error — the same
+ * defect images had before they were routed to `/api/media`.
+ *
+ * The set is deliberately narrow, because the obvious wider rule breaks things:
+ *  - `.md`, `.txt`, `.csv` share [WorkspaceFileKind.DOCUMENT] with `.pdf` but
+ *    are genuinely text, so excluding the whole kind would stop ordinary files
+ *    from opening;
+ *  - `.docx`, `.xlsx` and `.pptx` are binary yet **do** preview, because the
+ *    host routes them through `preview_office_document` before decoding.
+ *
+ * That leaves video, audio, archives and `.pdf` — checked by extension rather
+ * than by kind precisely because PDF's kind is shared with real text.
+ *
+ * Images are absent on purpose: they have somewhere better to go.
+ */
+fun workspaceIsUnreadableAsText(name: String): Boolean {
+    if (name.substringAfterLast('.', "").lowercase() == "pdf") return true
+    return when (workspaceFileKind(name)) {
+        WorkspaceFileKind.VIDEO, WorkspaceFileKind.AUDIO, WorkspaceFileKind.ARCHIVE -> true
+        else -> false
+    }
+}
+
+/**
  * Joins a workspace [root] and a workspace-relative [relativePath] into the
  * absolute path `/api/media` requires, or `null` when it cannot be built.
  *

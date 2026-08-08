@@ -139,6 +139,12 @@ fun FileBrowserScreen(
                     loadBytes = { viewModel.mediaBytes(it) },
                 )
 
+                state.openUnreadableKind != null -> UnreadableFileNotice(
+                    kind = state.openUnreadableKind!!,
+                    name = state.openFilePath?.substringAfterLast('/')
+                        ?.substringAfterLast('\\').orEmpty(),
+                )
+
                 file != null -> Column(
                     modifier = Modifier
                         .fillMaxSize()

@@ -59,6 +59,12 @@ class WorkspaceViewModel(
          * [workspaceAbsolutePath] for why that must not become a request.
          */
         val openMediaPath: String? = null,
+        /**
+         * Set when the open file is one `/api/file` could only return as
+         * mojibake and that we cannot render either — video, audio, archives,
+         * PDFs. The screen says so instead of showing the garbage.
+         */
+        val openUnreadableKind: WorkspaceFileKind? = null,
         /** Absolute workspace root, from the session; see [loadWorkspaceRoot]. */
         val workspaceRoot: String? = null,
         val gitStatus: GitStatus? = null,
@@ -81,7 +87,13 @@ class WorkspaceViewModel(
         _uiState.update {
             // openMediaPath clears with openFile: a listing that left the
             // preview mounted would draw the old image over the new directory.
-            it.copy(isLoading = true, errorMessage = null, openFile = null, openMediaPath = null)
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                openFile = null,
+                openMediaPath = null,
+                openUnreadableKind = null,
+            )
         }
         try {
             val response = client.directoryList(sessionId, path)
@@ -139,6 +151,7 @@ class WorkspaceViewModel(
                         openFile = null,
                         openFilePath = path,
                         openMediaPath = absolute,
+                        openUnreadableKind = null,
                         isLoading = false,
                         errorMessage = null,
                     )
@@ -150,7 +163,31 @@ class WorkspaceViewModel(
             // better than a blank screen that says nothing happened.
         }
 
-        _uiState.update { it.copy(isLoading = true, errorMessage = null, openMediaPath = null) }
+        if (workspaceIsUnreadableAsText(name)) {
+            // No text read at all. There is nothing to render for these, but
+            // saying so beats a screen of replacement characters that looks
+            // like the file itself is corrupt.
+            _uiState.update {
+                it.copy(
+                    openFile = null,
+                    openFilePath = path,
+                    openMediaPath = null,
+                    openUnreadableKind = workspaceFileKind(name),
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                openMediaPath = null,
+                openUnreadableKind = null,
+            )
+        }
         try {
             val response = client.file(sessionId, path)
             _uiState.update {
@@ -182,7 +219,12 @@ class WorkspaceViewModel(
     }
 
     fun closeFile() = _uiState.update {
-        it.copy(openFile = null, openFilePath = null, openMediaPath = null)
+        it.copy(
+            openFile = null,
+            openFilePath = null,
+            openMediaPath = null,
+            openUnreadableKind = null,
+        )
     }
 
     /** Bytes for the open preview, fetched by the UI layer that decodes them. */

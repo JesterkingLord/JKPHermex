@@ -66,6 +66,41 @@ internal fun decodeSampledImage(bytes: ByteArray): android.graphics.Bitmap? {
 }
 
 /**
+ * Says why a file is not on screen, for the ones that cannot be shown at all.
+ *
+ * The alternative is what used to happen: `/api/file` returns these as
+ * replacement characters, and a page of U+FFFD reads as a corrupt file rather
+ * than an unsupported one. Naming the kind is the difference between "this is
+ * broken" and "this is not something the browser renders".
+ *
+ * No "open externally" action: nothing here can hand the file to another app,
+ * and an affordance that does nothing is worse than none.
+ */
+@Composable
+fun UnreadableFileNotice(
+    kind: WorkspaceFileKind,
+    name: String,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalHermexPalette.current
+    val noun = when (kind) {
+        WorkspaceFileKind.VIDEO -> "video"
+        WorkspaceFileKind.AUDIO -> "audio file"
+        WorkspaceFileKind.ARCHIVE -> "archive"
+        else -> "file"
+    }
+
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            "${kind.glyph}  ${name.ifBlank { "This $noun" }}\n\nThis $noun cannot be shown here.",
+            color = palette.textSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(24.dp),
+        )
+    }
+}
+
+/**
  * Shows the image at [absolutePath], fetched through `/api/media`.
  *
  * Keyed on the path so reopening a different image re-fetches rather than
