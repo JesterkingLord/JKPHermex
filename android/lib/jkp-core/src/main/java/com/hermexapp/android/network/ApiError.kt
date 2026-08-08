@@ -25,6 +25,18 @@ sealed class ApiError : Exception() {
         private fun readResolve(): Any = Unauthorized
     }
 
+    /**
+     * A file body larger than the caller will hold in memory.
+     *
+     * Its own case rather than a [Network] failure, because it is not one: the
+     * server did nothing wrong and a retry fails identically. The UI has to say
+     * the file is too big, not offer to try again.
+     *
+     * [declaredBytes] is the server's `Content-Length`, or -1 when it sent none
+     * and the ceiling was reached while reading.
+     */
+    data class TooLarge(val declaredBytes: Long, val maxBytes: Long) : ApiError()
+
     val userMessage: String
         get() = when (this) {
             is InvalidServerUrl ->
@@ -38,6 +50,15 @@ sealed class ApiError : Exception() {
                 ClientErrorCatalog.INVALID_DEVICE_GRANT.message
             is Decoding ->
                 "The server response could not be read. Check that the URL points to a Hermes Web UI server."
+            is TooLarge -> {
+                val mb = maxBytes.toDouble() / (1024 * 1024)
+                if (declaredBytes >= 0) {
+                    val actual = declaredBytes.toDouble() / (1024 * 1024)
+                    "This file is %.1f MB, over the %.0f MB preview limit.".format(actual, mb)
+                } else {
+                    "This file is over the %.0f MB preview limit.".format(mb)
+                }
+            }
             is Http -> {
                 // Prefer host-aligned catalog when status/body map cleanly; keep
                 // a few endpoint-not-found strings that are more specific than

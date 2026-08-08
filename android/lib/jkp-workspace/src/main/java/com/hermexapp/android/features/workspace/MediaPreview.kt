@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.ui.theme.LocalHermexPalette
 
 /**
@@ -90,7 +91,11 @@ fun MediaPreview(
         val bytes = runCatching { loadBytes(absolutePath) }
         val decoded = bytes.getOrNull()?.let { decodeSampledImage(it) }
         when {
-            bytes.isFailure -> failure = "Could not load this image from the server."
+            // The server's own reason where there is one — "too large" and
+            // "unreachable" call for different responses from the reader, and
+            // one message covering both tells them nothing.
+            bytes.isFailure -> failure = (bytes.exceptionOrNull() as? ApiError)?.userMessage
+                ?: "Could not load this image from the server."
             decoded == null -> failure = "This file is named like an image but could not be decoded."
             else -> image = decoded.asImageBitmap()
         }

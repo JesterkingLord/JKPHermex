@@ -33,9 +33,16 @@ suspend fun ApiClient.file(sessionId: String, path: String): FileResponse =
  * a relative path with 403. Build it with `workspaceAbsolutePath`, and skip the
  * call entirely when the workspace root is unknown rather than spending a round
  * trip that can only fail.
+ *
+ * Capped, because the endpoint is not: `/api/file` refuses anything over
+ * 400,000 bytes, but `/api/media` served a 3 MB file whole when probed and
+ * would do the same for a 500 MB one. Over the ceiling the call fails with
+ * [ApiError.TooLarge] rather than allocating it.
  */
-suspend fun ApiClient.mediaBytes(absolutePath: String): ByteArray =
-    getBytes(Endpoint.MEDIA, mapOf("path" to absolutePath))
+suspend fun ApiClient.mediaBytes(
+    absolutePath: String,
+    maxBytes: Long = ApiClient.DEFAULT_MAX_DOWNLOAD_BYTES,
+): ByteArray = getBytes(Endpoint.MEDIA, mapOf("path" to absolutePath), maxBytes)
 
 suspend fun ApiClient.gitInfo(sessionId: String): GitInfoResponse =
     getJson(Endpoint.GIT_INFO, mapOf("session_id" to sessionId))

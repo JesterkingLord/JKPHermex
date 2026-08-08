@@ -91,34 +91,61 @@ class ApiClient(
      * Separate from [execute] because that one calls `body.string()`, which
      * decodes as text and would corrupt any image it touched. Error mapping is
      * kept identical so callers handle failures the same way everywhere.
+     *
+     * [maxBytes] is a hard ceiling on what will be held in memory, and it is
+     * not optional caution: `/api/media` has **no size limit of its own**. Where
+     * `/api/file` refuses at 400,000 bytes with "File too large", `/api/media`
+     * served a 3 MB file in full when probed, and would serve a 500 MB one the
+     * same way — straight into a single `ByteArray`.
+     *
+     * `Content-Length` is checked before the body is touched, so an oversized
+     * response costs nothing but the headers. The server sends it on every
+     * media response; when it is missing the read is capped anyway, because a
+     * chunked response with no declared length is exactly where a guard that
+     * trusted the header would let everything through. `HEAD` cannot be used to
+     * ask in advance — the host answers it with 501.
      */
-    suspend fun getBytes(endpoint: Endpoint, query: Map<String, String> = emptyMap()): ByteArray =
-        withContext(ioDispatcher) {
-            val request = Request.Builder()
-                .url(url(endpoint, query))
-                .header("Accept", "*/*")
-                .header("Cache-Control", "no-cache")
-                .get()
-                .build()
+    suspend fun getBytes(
+        endpoint: Endpoint,
+        query: Map<String, String> = emptyMap(),
+        maxBytes: Long = DEFAULT_MAX_DOWNLOAD_BYTES,
+    ): ByteArray = withContext(ioDispatcher) {
+        val request = Request.Builder()
+            .url(url(endpoint, query))
+            .header("Accept", "*/*")
+            .header("Cache-Control", "no-cache")
+            .get()
+            .build()
 
-            val response = try {
-                httpClient.newCall(request).execute()
+        val response = try {
+            httpClient.newCall(request).execute()
+        } catch (e: IOException) {
+            throw ApiError.Network(e)
+        }
+
+        response.use {
+            if (it.code == 401) throw ApiError.Unauthorized
+            if (it.code !in 200..299) throw ApiError.Http(it.code, null)
+
+            val body = it.body ?: return@use ByteArray(0)
+            val declared = body.contentLength()
+            if (declared > maxBytes) throw ApiError.TooLarge(declared, maxBytes)
+
+            try {
+                val source = body.source()
+                // Buffer at most one byte past the ceiling. `request` stops at
+                // end of stream instead of throwing, which `readByteArray(n)`
+                // would do whenever the body is shorter than n — the ordinary
+                // case when no Content-Length was sent.
+                source.request(maxBytes + 1)
+                val buffered = source.buffer.size
+                if (buffered > maxBytes) throw ApiError.TooLarge(declared, maxBytes)
+                source.readByteArray(buffered)
             } catch (e: IOException) {
                 throw ApiError.Network(e)
             }
-
-            response.use {
-                when {
-                    it.code == 401 -> throw ApiError.Unauthorized
-                    it.code !in 200..299 -> throw ApiError.Http(it.code, null)
-                    else -> try {
-                        it.body?.bytes() ?: ByteArray(0)
-                    } catch (e: IOException) {
-                        throw ApiError.Network(e)
-                    }
-                }
-            }
         }
+    }
 
     @PublishedApi
     internal suspend fun executePost(endpoint: Endpoint, body: String): String =
@@ -165,4 +192,20 @@ class ApiClient(
 
     @Serializable
     private data class LoginRequest(val password: String)
+
+    companion object {
+        /**
+         * Ceiling for a single in-memory file download, 25 MB.
+         *
+         * Chosen against what the workspace actually holds: phone screenshots
+         * and ordinary renders sit far below it, so nothing everyday is
+         * refused, while the multi-hundred-megabyte outputs a session can
+         * produce are stopped before they become one allocation on a device
+         * with far less headroom than the machine that wrote them.
+         *
+         * A limit is needed at all because `/api/media` enforces none of its
+         * own — unlike `/api/file`, which stops at 400,000 bytes.
+         */
+        const val DEFAULT_MAX_DOWNLOAD_BYTES: Long = 25L * 1024 * 1024
+    }
 }
