@@ -12,7 +12,7 @@ import com.hermexapp.android.model.GitStatus
 import com.hermexapp.android.network.directoryList
 import com.hermexapp.android.network.file
 import com.hermexapp.android.network.mediaBytes
-import com.hermexapp.android.network.sessionStatus
+import com.hermexapp.android.network.session
 import com.hermexapp.android.network.gitBranches
 import com.hermexapp.android.network.gitCheckout
 import com.hermexapp.android.network.gitCommit
@@ -205,16 +205,29 @@ class WorkspaceViewModel(
     }
 
     /**
-     * Learns the workspace root from the session, the only endpoint that
-     * dependably reports it — the deployed `/api/list` omits `workspace`.
+     * Learns the workspace root, which the deployed `/api/list` does not send.
      *
-     * Failure is silent on purpose: without a root images fall back to the text
-     * read, which is the behaviour that shipped before previews existed. An
-     * error banner here would report a degraded preview as a broken browser.
+     * Uses `/api/session`, **not** `/api/session/status`. Status looked like the
+     * cheaper choice and is wrong: probed against the live host, it answers
+     * `404 Session not found` for messaging-sourced sessions — including the
+     * operator's own `source_tag: telegram` session — while returning the
+     * workspace happily for WebUI-native ones. Sourcing the root from it meant
+     * previews silently degrading to the text read on exactly the sessions in
+     * daily use, which is indistinguishable from the feature not working.
+     *
+     * `/api/session` returns the workspace for both kinds. `messages=0` keeps
+     * it cheap: the transcript is not wanted, only the root.
+     *
+     * Failure stays silent on purpose. Without a root images fall back to the
+     * text read — the behaviour that shipped before previews existed — and an
+     * error banner would report a degraded preview as a broken browser.
      */
     suspend fun loadWorkspaceRoot() {
         if (_uiState.value.workspaceRoot != null) return
-        val root = runCatching { client.sessionStatus(sessionId).workspace }.getOrNull()
+        val root = runCatching {
+            client.session(sessionId, includeMessages = false, messageLimit = null)
+                .session?.workspace
+        }.getOrNull()
         if (!root.isNullOrBlank()) _uiState.update { it.copy(workspaceRoot = root) }
     }
 
