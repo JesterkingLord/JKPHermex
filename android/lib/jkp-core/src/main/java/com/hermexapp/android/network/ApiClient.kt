@@ -85,6 +85,41 @@ class ApiClient(
     internal suspend fun executeGet(endpoint: Endpoint, query: Map<String, String>): String =
         execute(requestBuilder(endpoint, query).get().build())
 
+    /**
+     * GETs raw bytes, for endpoints that answer with a file rather than JSON.
+     *
+     * Separate from [execute] because that one calls `body.string()`, which
+     * decodes as text and would corrupt any image it touched. Error mapping is
+     * kept identical so callers handle failures the same way everywhere.
+     */
+    suspend fun getBytes(endpoint: Endpoint, query: Map<String, String> = emptyMap()): ByteArray =
+        withContext(ioDispatcher) {
+            val request = Request.Builder()
+                .url(url(endpoint, query))
+                .header("Accept", "*/*")
+                .header("Cache-Control", "no-cache")
+                .get()
+                .build()
+
+            val response = try {
+                httpClient.newCall(request).execute()
+            } catch (e: IOException) {
+                throw ApiError.Network(e)
+            }
+
+            response.use {
+                when {
+                    it.code == 401 -> throw ApiError.Unauthorized
+                    it.code !in 200..299 -> throw ApiError.Http(it.code, null)
+                    else -> try {
+                        it.body?.bytes() ?: ByteArray(0)
+                    } catch (e: IOException) {
+                        throw ApiError.Network(e)
+                    }
+                }
+            }
+        }
+
     @PublishedApi
     internal suspend fun executePost(endpoint: Endpoint, body: String): String =
         execute(requestBuilder(endpoint, emptyMap()).post(body.toRequestBody(jsonMediaType)).build())

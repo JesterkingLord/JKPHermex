@@ -70,10 +70,14 @@ fun FileBrowserScreen(
         if (current.entries.isEmpty() && !current.isLoading) {
             viewModel.loadDirectoryNow(null, push = false)
         }
+        // Before any open: an image tapped without a known root falls back to
+        // the text read, so learning the root late means the first tap is the
+        // one that misses the preview.
+        viewModel.loadWorkspaceRoot()
         if (initialFilePath != null) viewModel.openFileNow(initialFilePath)
     }
     BackHandler {
-        if (state.openFile != null) viewModel.closeFile()
+        if (state.openFile != null || state.openMediaPath != null) viewModel.closeFile()
         else if (!viewModel.navigateUp()) onClose()
     }
 
@@ -88,14 +92,20 @@ fun FileBrowserScreen(
                     ?: "Files",
                 subtitle = state.currentPath,
                 onBack = {
-                    if (state.openFile != null) viewModel.closeFile()
-                    else if (!viewModel.navigateUp()) onClose()
+                    if (state.openFile != null || state.openMediaPath != null) {
+                        viewModel.closeFile()
+                    } else if (!viewModel.navigateUp()) {
+                        onClose()
+                    }
                 },
                 actions = {
                     // Only at the root of the listing: while a file is open or
                     // you are deep in a tree, leaving for a cross-session list
                     // is not what the button next to the title should do.
-                    if (onOpenRecentFiles != null && state.openFile == null) {
+                    if (onOpenRecentFiles != null &&
+                        state.openFile == null &&
+                        state.openMediaPath == null
+                    ) {
                         CircleButton(
                             onClick = onOpenRecentFiles,
                             contentDescription = "Recent files across sessions",
@@ -118,10 +128,16 @@ fun FileBrowserScreen(
             }
 
             val file = state.openFile
+            val mediaPath = state.openMediaPath
             when {
                 state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
+
+                mediaPath != null -> MediaPreview(
+                    absolutePath = mediaPath,
+                    loadBytes = { viewModel.mediaBytes(it) },
+                )
 
                 file != null -> Column(
                     modifier = Modifier

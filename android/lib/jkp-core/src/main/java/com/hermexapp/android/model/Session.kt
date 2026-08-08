@@ -112,6 +112,15 @@ data class SessionDetail(
 @Serializable
 data class SessionStatusResponse(
     @SerialName("session_id") val sessionId: String? = null,
+    /**
+     * Absolute workspace root, e.g. `C:\Users\me\workspace`.
+     *
+     * The session is the only dependable source for it: the deployed
+     * `/api/list` sends no `workspace` (see [DirectoryListResponse]) while
+     * `/api/media` requires an absolute path. Confirmed present here on the
+     * live host for both WebUI-native and CLI-backed sessions.
+     */
+    val workspace: String? = null,
     @SerialName("active_stream_id") val activeStreamId: String? = null,
     @SerialName("is_streaming") val isStreaming: Boolean? = null,
     @SerialName("pending_user_message") val pendingUserMessage: String? = null,

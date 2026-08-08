@@ -11,6 +11,8 @@ import com.hermexapp.android.network.ApiError
 import com.hermexapp.android.model.GitStatus
 import com.hermexapp.android.network.directoryList
 import com.hermexapp.android.network.file
+import com.hermexapp.android.network.mediaBytes
+import com.hermexapp.android.network.sessionStatus
 import com.hermexapp.android.network.gitBranches
 import com.hermexapp.android.network.gitCheckout
 import com.hermexapp.android.network.gitCommit
@@ -50,6 +52,15 @@ class WorkspaceViewModel(
          * screen, which is the one moment it should say which file.
          */
         val openFilePath: String? = null,
+        /**
+         * Absolute path for `/api/media` when the open file is one we preview
+         * rather than read as text. Null for everything else, including an
+         * image whose workspace root we never learned — see
+         * [workspaceAbsolutePath] for why that must not become a request.
+         */
+        val openMediaPath: String? = null,
+        /** Absolute workspace root, from the session; see [loadWorkspaceRoot]. */
+        val workspaceRoot: String? = null,
         val gitStatus: GitStatus? = null,
         val gitBranches: GitBranches? = null,
         val openDiff: GitDiff? = null,
@@ -67,7 +78,11 @@ class WorkspaceViewModel(
     }
 
     suspend fun loadDirectoryNow(path: String? = null, push: Boolean = true) {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null, openFile = null) }
+        _uiState.update {
+            // openMediaPath clears with openFile: a listing that left the
+            // preview mounted would draw the old image over the new directory.
+            it.copy(isLoading = true, errorMessage = null, openFile = null, openMediaPath = null)
+        }
         try {
             val response = client.directoryList(sessionId, path)
             _uiState.update { state ->
@@ -112,7 +127,30 @@ class WorkspaceViewModel(
     }
 
     suspend fun openFileNow(path: String) {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val name = path.substringAfterLast('/').substringAfterLast('\\')
+        if (workspaceFileKind(name) == WorkspaceFileKind.IMAGE) {
+            val absolute = workspaceAbsolutePath(_uiState.value.workspaceRoot, path)
+            if (absolute != null) {
+                // Deliberately no /api/file call: it decodes bytes as UTF-8 with
+                // errors='replace', so reading an image there yields a screen of
+                // replacement characters and no error to explain them.
+                _uiState.update {
+                    it.copy(
+                        openFile = null,
+                        openFilePath = path,
+                        openMediaPath = absolute,
+                        isLoading = false,
+                        errorMessage = null,
+                    )
+                }
+                return
+            }
+            // No root, so no absolute path, so nothing /api/media would accept.
+            // Fall through and read it as text: mojibake is poor, but it is
+            // better than a blank screen that says nothing happened.
+        }
+
+        _uiState.update { it.copy(isLoading = true, errorMessage = null, openMediaPath = null) }
         try {
             val response = client.file(sessionId, path)
             _uiState.update {
@@ -129,7 +167,26 @@ class WorkspaceViewModel(
         }
     }
 
-    fun closeFile() = _uiState.update { it.copy(openFile = null, openFilePath = null) }
+    /**
+     * Learns the workspace root from the session, the only endpoint that
+     * dependably reports it — the deployed `/api/list` omits `workspace`.
+     *
+     * Failure is silent on purpose: without a root images fall back to the text
+     * read, which is the behaviour that shipped before previews existed. An
+     * error banner here would report a degraded preview as a broken browser.
+     */
+    suspend fun loadWorkspaceRoot() {
+        if (_uiState.value.workspaceRoot != null) return
+        val root = runCatching { client.sessionStatus(sessionId).workspace }.getOrNull()
+        if (!root.isNullOrBlank()) _uiState.update { it.copy(workspaceRoot = root) }
+    }
+
+    fun closeFile() = _uiState.update {
+        it.copy(openFile = null, openFilePath = null, openMediaPath = null)
+    }
+
+    /** Bytes for the open preview, fetched by the UI layer that decodes them. */
+    suspend fun mediaBytes(absolutePath: String): ByteArray = client.mediaBytes(absolutePath)
 
     fun loadGit() {
         viewModelScope.launch { loadGitNow() }

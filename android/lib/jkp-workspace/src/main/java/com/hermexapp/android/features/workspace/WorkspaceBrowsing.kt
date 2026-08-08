@@ -125,8 +125,17 @@ private val codeExtensions = setOf(
 fun workspaceFileKind(entry: WorkspaceEntry): WorkspaceFileKind {
     if (entry.targetOutsideWorkspace == true) return WorkspaceFileKind.BLOCKED
     if (entry.isBrowsableDirectory) return WorkspaceFileKind.FOLDER
+    return workspaceFileKind(entry.name ?: entry.path.orEmpty())
+}
 
-    val name = entry.name ?: entry.path.orEmpty()
+/**
+ * Classifies by filename alone, for the paths that arrive without an entry —
+ * a recent-files tap, or reopening a path the listing no longer holds.
+ *
+ * Callers that have a [WorkspaceEntry] should use the overload above: it can
+ * still tell a folder or an escaping symlink apart, and a name cannot.
+ */
+fun workspaceFileKind(name: String): WorkspaceFileKind {
     val dot = name.lastIndexOf('.')
     // A leading dot is a hidden file (".gitignore"), not an extension.
     if (dot <= 0 || dot == name.length - 1) return WorkspaceFileKind.OTHER
@@ -140,4 +149,38 @@ fun workspaceFileKind(entry: WorkspaceEntry): WorkspaceFileKind {
         in codeExtensions -> WorkspaceFileKind.CODE
         else -> WorkspaceFileKind.OTHER
     }
+}
+
+/**
+ * Joins a workspace [root] and a workspace-relative [relativePath] into the
+ * absolute path `/api/media` requires, or `null` when it cannot be built.
+ *
+ * Returning null is the point. `/api/media` takes no `session_id` and answers a
+ * relative path with **403**, so without a root there is nothing to ask for —
+ * the caller must skip the request rather than spend a round trip that can only
+ * fail, and the root is not always known (the deployed `/api/list` omits it).
+ *
+ * Separators follow the root, because the host is whatever the server runs on:
+ * a Windows root keeps backslashes, a POSIX root keeps forward slashes. The
+ * server accepts either form for a Windows path, but echoing the root's own
+ * style keeps what we send recognisable as what it reported.
+ *
+ * `.` — how `/api/list` spells the workspace root — resolves to the root
+ * itself, and traversal segments are refused here rather than sent onward: the
+ * server blocks them anyway, and a request built to be rejected is a bug worth
+ * catching on this side.
+ */
+fun workspaceAbsolutePath(root: String?, relativePath: String?): String? {
+    val cleanRoot = root?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val rel = relativePath?.trim()?.replace('\\', '/')?.trim('/') ?: return null
+
+    val separator = if (cleanRoot.contains('\\') && !cleanRoot.startsWith("/")) "\\" else "/"
+    val trimmedRoot = cleanRoot.trimEnd('/', '\\')
+    if (rel.isEmpty() || rel == ".") return trimmedRoot
+
+    val segments = rel.split('/').filter { it.isNotBlank() && it != "." }
+    if (segments.isEmpty()) return trimmedRoot
+    if (segments.any { it == ".." }) return null
+
+    return trimmedRoot + separator + segments.joinToString(separator)
 }

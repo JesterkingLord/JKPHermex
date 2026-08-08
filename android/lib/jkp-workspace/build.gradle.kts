@@ -35,4 +35,12 @@ dependencies {
     // First tests in this module. junit is already in the version catalog and
     // used by every other module here — no new third-party dependency.
     testImplementation(libs.junit)
+
+    // For the view-model tests. Proving the image branch *never* calls
+    // /api/file needs a served endpoint whose requests can be inspected —
+    // an assertion about a call that did not happen cannot be made against a
+    // stub that was never asked. Both are already used by jkp-core, jkp-auth,
+    // jkp-chat and jkp-sessions; nothing new enters the build.
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }

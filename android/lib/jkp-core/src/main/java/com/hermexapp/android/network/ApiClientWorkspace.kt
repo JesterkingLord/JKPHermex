@@ -21,6 +21,22 @@ suspend fun ApiClient.directoryList(sessionId: String, path: String? = null): Di
 suspend fun ApiClient.file(sessionId: String, path: String): FileResponse =
     getJson(Endpoint.FILE, mapOf("session_id" to sessionId, "path" to path))
 
+/**
+ * Raw bytes of the file at [absolutePath], for previewing what `/api/file`
+ * cannot carry.
+ *
+ * `/api/file` returns `raw.decode('utf-8', errors='replace')`, so an image read
+ * through it arrives as replacement characters — a screenful of mojibake rather
+ * than a picture, and with no error to say why.
+ *
+ * The path must be **absolute**: `/api/media` takes no `session_id` and answers
+ * a relative path with 403. Build it with `workspaceAbsolutePath`, and skip the
+ * call entirely when the workspace root is unknown rather than spending a round
+ * trip that can only fail.
+ */
+suspend fun ApiClient.mediaBytes(absolutePath: String): ByteArray =
+    getBytes(Endpoint.MEDIA, mapOf("path" to absolutePath))
+
 suspend fun ApiClient.gitInfo(sessionId: String): GitInfoResponse =
     getJson(Endpoint.GIT_INFO, mapOf("session_id" to sessionId))
 

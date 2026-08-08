@@ -49,6 +49,13 @@ enum class Endpoint(val path: String) {
     UPLOAD("/api/upload"),
     DIRECTORY_LIST("/api/list"),
     FILE("/api/file"),
+
+    /**
+     * A file's raw bytes. Unlike every other workspace endpoint this one takes
+     * an **absolute** filesystem path and no `session_id`; a relative path is
+     * answered with 403, as is anything outside the server's allowed roots.
+     */
+    MEDIA("/api/media"),
     GIT_INFO("/api/git-info"),
     GIT_STATUS("/api/git/status"),
     GIT_BRANCHES("/api/git/branches"),
