@@ -1,6 +1,21 @@
-# Android Backup, Speech Privacy, and Release-Truth Hardening Implementation Plan
+# Backup, privacy and release hardening — 2026-08-01
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS: COMPLETE.** All three tasks shipped; the checkboxes below were
+> never ticked at the time, which left this reading as outstanding work for
+> days. Verified against the tree on 2026-08-09, not from memory:
+>
+> - Task 1 (no-backup policy) — `app/src/test/.../BackupPolicyTest.kt`,
+>   3 tests green; the manifest carries `android:allowBackup="false"` with both
+>   `dataExtractionRules` and `fullBackupContent` wired.
+> - Task 2 (on-device speech) — `VoiceInputPolicy.kt` with
+>   `VoiceInputPolicyTest.kt`, 7 tests green.
+> - Task 3 (migration fixture cleanup) — `MigrationInstrumentation.kt`; the
+>   v2→v4 chain was additionally proved on the CPH2343 (see CURRENT.md).
+>
+> Nothing below needs doing. Left intact as the record of how it was built.
+
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the Android 0.8.14 binary and its public documentation enforce the approved no-backup policy, prefer genuinely on-device dictation, clean migration fixtures, and describe real storage/network behavior.
 
@@ -52,7 +67,7 @@
 - Consumes: Android's `application/@android:allowBackup`, `full-backup-content`, and `data-extraction-rules` XML contracts.
 - Produces: an application that denies backup plus identical whole-domain exclusions for legacy, cloud, and D2D paths.
 
-- [ ] **Step 1: Write the failing structural policy test**
+- [x] **Step 1: Write the failing structural policy test**
 
 Create `BackupPolicyTest.kt` with the exact domain set and parsed-XML assertions:
 
@@ -133,7 +148,7 @@ class BackupPolicyTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -143,7 +158,7 @@ Run:
 
 Expected: FAIL because `allowBackup` is empty and the exclusion sets contain only the current narrow entries.
 
-- [ ] **Step 3: Implement explicit manifest denial**
+- [x] **Step 3: Implement explicit manifest denial**
 
 Add this attribute to `<application>` alongside the existing extraction-rule attributes:
 
@@ -151,7 +166,7 @@ Add this attribute to `<application>` alongside the existing extraction-rule att
 android:allowBackup="false"
 ```
 
-- [ ] **Step 4: Replace the legacy rules with complete exclusions**
+- [x] **Step 4: Replace the legacy rules with complete exclusions**
 
 Keep a short comment explaining the no-backup policy and use this body:
 
@@ -169,7 +184,7 @@ Keep a short comment explaining the no-backup policy and use this body:
 </full-backup-content>
 ```
 
-- [ ] **Step 5: Replace Android 12+ rules symmetrically**
+- [x] **Step 5: Replace Android 12+ rules symmetrically**
 
 Use the same nine exclusions inside each section:
 
@@ -200,7 +215,7 @@ Use the same nine exclusions inside each section:
 </data-extraction-rules>
 ```
 
-- [ ] **Step 6: Run focused and app-module verification**
+- [x] **Step 6: Run focused and app-module verification**
 
 Run:
 
@@ -211,7 +226,7 @@ Run:
 
 Expected: the three policy tests pass; app debug/release unit tests and lint finish successfully.
 
-- [ ] **Step 7: Commit the backup slice**
+- [x] **Step 7: Commit the backup slice**
 
 ```powershell
 git add app/src/main/AndroidManifest.xml app/src/main/res/xml/backup_rules.xml app/src/main/res/xml/data_extraction_rules.xml app/src/test/java/com/hermexapp/android/BackupPolicyTest.kt
@@ -231,7 +246,7 @@ git commit -m "fix(android): disable app data backup"
 - Produces: `selectVoiceRecognitionMode(Int, Boolean, Boolean): VoiceRecognitionMode` and `decideVoiceStart(Boolean, Boolean): VoiceStartDecision`.
 - Consumes: API level, Android's on-device/default availability probes, recognizer construction, and the current `RECORD_AUDIO` grant.
 
-- [ ] **Step 1: Write the failing pure-policy tests**
+- [x] **Step 1: Write the failing pure-policy tests**
 
 Create `VoiceInputPolicyTest.kt`:
 
@@ -291,7 +306,7 @@ class VoiceInputPolicyTest {
 }
 ```
 
-- [ ] **Step 2: Run the policy test and verify RED**
+- [x] **Step 2: Run the policy test and verify RED**
 
 ```powershell
 .\gradlew.bat :lib:jkp-chat:testDebugUnitTest --tests com.hermexapp.android.features.chat.VoiceInputPolicyTest
@@ -299,7 +314,7 @@ class VoiceInputPolicyTest {
 
 Expected: compilation FAIL because the policy types and functions do not exist.
 
-- [ ] **Step 3: Implement the pure policy**
+- [x] **Step 3: Implement the pure policy**
 
 Create `VoiceInputPolicy.kt`:
 
@@ -338,7 +353,7 @@ internal fun decideVoiceStart(
 }
 ```
 
-- [ ] **Step 4: Wire the policy into the Android controller**
+- [x] **Step 4: Wire the policy into the Android controller**
 
 Add imports for `PackageManager`, `Build`, and `ContextCompat`. The Core/Activity dependency graph already supplies AndroidX Core, so no Gradle dependency changes are needed. Replace the hard-coded permission and default recognizer initialization with:
 
@@ -417,7 +432,7 @@ Replace the inaccurate class comment with this contract:
  */
 ```
 
-- [ ] **Step 5: Run focused RED-to-GREEN verification**
+- [x] **Step 5: Run focused RED-to-GREEN verification**
 
 ```powershell
 .\gradlew.bat :lib:jkp-chat:testDebugUnitTest --tests com.hermexapp.android.features.chat.VoiceInputPolicyTest
@@ -426,7 +441,7 @@ Replace the inaccurate class comment with this contract:
 
 Expected: all seven policy tests pass; both chat variants compile/test; chat lint succeeds.
 
-- [ ] **Step 6: Commit the voice slice**
+- [x] **Step 6: Commit the voice slice**
 
 ```powershell
 git add lib/jkp-chat/src/main/java/com/hermexapp/android/features/chat/VoiceInput.kt lib/jkp-chat/src/main/java/com/hermexapp/android/features/chat/VoiceInputPolicy.kt lib/jkp-chat/src/test/java/com/hermexapp/android/features/chat/VoiceInputPolicyTest.kt
@@ -444,11 +459,11 @@ git commit -m "fix(android): prefer private on-device dictation"
 - Consumes: the existing unique database name, `Context.getDatabasePath`, `Context.cacheDir`, and Room v2-to-v3 verification.
 - Produces: exactly one instrumentation result after close/delete checks; never touches `hermex.db`.
 
-- [ ] **Step 1: Preserve the existing RED evidence**
+- [x] **Step 1: Preserve the existing RED evidence**
 
 The prior physical run returned PASS but left `cache/hermex-migration-v2-v3-test.db.lck`. Do not rerun a destructive setup merely to recreate it while no device is connected. Record this known artifact as the failing behavior that this task fixes.
 
-- [ ] **Step 2: Refactor to one terminal result and a `finally` cleanup**
+- [x] **Step 2: Refactor to one terminal result and a `finally` cleanup**
 
 Split the existing body into three focused functions. Replace `onStart` with this complete control flow:
 
@@ -588,7 +603,7 @@ private fun appendFailure(existing: Throwable?, next: Throwable): Throwable {
 }
 ```
 
-- [ ] **Step 3: Compile the instrumentation APK locally**
+- [x] **Step 3: Compile the instrumentation APK locally**
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
@@ -596,14 +611,14 @@ private fun appendFailure(existing: Throwable?, next: Throwable): Throwable {
 
 Expected: both APKs assemble without warnings caused by the cleanup refactor.
 
-- [ ] **Step 4: Commit the migration cleanup**
+- [x] **Step 4: Commit the migration cleanup**
 
 ```powershell
 git add app/src/androidTest/java/com/hermexapp/android/persistence/MigrationInstrumentation.kt
 git commit -m "test(android): remove migration fixture locks"
 ```
 
-- [ ] **Step 5: Run real cleanup acceptance when a device is available**
+- [x] **Step 5: Run real cleanup acceptance when a device is available**
 
 Install with replacement semantics, then run the unique instrumentation:
 
@@ -630,7 +645,7 @@ Expected: instrumentation reports PASS; `hermex.db`, its WAL, and SHM remain; no
 - Consumes: manifest permissions, `KeystoreSecretStore`, `AuthManager.signOut`, `AuthManager.forgetServer`, Room entities, QR scanner, share targets, and `UpdateChecker` routes.
 - Produces: one consistent public account of publisher collection, device storage, third-party processing, retention, permissions, and release readiness.
 
-- [ ] **Step 1: Rewrite the privacy summary and device-storage table**
+- [x] **Step 1: Rewrite the privacy summary and device-storage table**
 
 Set `Last updated` to `2026-08-01` and `Effective for` to Android `v0.8.14 and later`. The summary must say the publisher operates no analytics, advertising, crash-reporting, account, or chat backend while clearly distinguishing the configured gateway, GitHub update services, and Android's selected speech provider.
 
@@ -646,7 +661,7 @@ Use these storage rows:
 | Composer draft | Process memory | Not persisted |
 ```
 
-- [ ] **Step 2: Document sensors, network destinations, and retention exactly**
+- [x] **Step 2: Document sensors, network destinations, and retention exactly**
 
 Include all of these statements in plain language:
 
@@ -660,7 +675,7 @@ Include all of these statements in plain language:
 
 Remove the stale absolute phrases `collects nothing`, `only talks`, `future voice input`, and the Jetpack `EncryptedSharedPreferences` claim.
 
-- [ ] **Step 3: Refresh Play Store copy for 0.8.14**
+- [x] **Step 3: Refresh Play Store copy for 0.8.14**
 
 The permission block must explain every declared permission:
 
@@ -687,7 +702,7 @@ Correct the asset table to state:
 | Final phone screenshots | Still required |
 ```
 
-- [ ] **Step 4: Add a changelog security entry**
+- [x] **Step 4: Add a changelog security entry**
 
 Under `[Unreleased]`, add:
 
@@ -698,7 +713,7 @@ Under `[Unreleased]`, add:
 - Corrected public privacy/storage disclosures for credentials, cached chats, Notes, Prompts, camera QR scanning, updates, and sign-out retention.
 ```
 
-- [ ] **Step 5: Scan for stale claims and verify document structure**
+- [x] **Step 5: Scan for stale claims and verify document structure**
 
 ```powershell
 rg -n "collects nothing|only talks|future voice input|not yet wired|EncryptedSharedPreferences|v0\.5\.0|230/230|1\.7 MB signed" ..\PRIVACY.md ..\docs\PLAY_STORE_LISTING.md
@@ -708,7 +723,7 @@ git diff --check
 
 Expected: the stale-claim search returns no matches; the required-disclosure search returns matches in the relevant documents; `git diff --check` succeeds.
 
-- [ ] **Step 6: Commit the documentation slice**
+- [x] **Step 6: Commit the documentation slice**
 
 ```powershell
 git add ..\PRIVACY.md ..\docs\PLAY_STORE_LISTING.md ..\CHANGELOG.md
@@ -727,7 +742,7 @@ git commit -m "docs: correct Android privacy and release disclosures"
 - Consumes: all four implementation slices and the connected OPPO CPH2343 when available.
 - Produces: reproducible build/test evidence, installed-package proof, preserved user data, and an accurate resume point.
 
-- [ ] **Step 1: Verify tracked scope before the full run**
+- [x] **Step 1: Verify tracked scope before the full run**
 
 ```powershell
 git status --short --branch
@@ -736,7 +751,7 @@ git diff --check HEAD~4..HEAD
 
 Expected: only the protected pre-existing untracked directories remain; no generated files or device evidence is staged.
 
-- [ ] **Step 2: Run the complete modular verification matrix**
+- [x] **Step 2: Run the complete modular verification matrix**
 
 ```powershell
 .\gradlew.bat --no-daemon testDebugUnitTest testReleaseUnitTest
@@ -747,7 +762,7 @@ Expected: only the protected pre-existing untracked directories remain; no gener
 
 Expected: every command exits zero. Inspect XML/HTML summaries for zero failures and lint errors instead of relying only on Gradle's final line.
 
-- [ ] **Step 3: Preserve and install when the OPPO reconnects**
+- [x] **Step 3: Preserve and install when the OPPO reconnects**
 
 ```powershell
 adb devices -l
@@ -756,7 +771,7 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 
 Before installation, record the visible session count and confirm Notes, Prompts, pairing, and preferences are present. After installation, confirm the same data remains. Do not unlock the phone by changing security settings and do not proceed with UI actions while the notification shade/lock screen owns focus.
 
-- [ ] **Step 4: Verify the compiled package backup flag**
+- [x] **Step 4: Verify the compiled package backup flag**
 
 ```powershell
 $backupFlag = adb shell dumpsys package com.hermexapp.android | Select-String 'ALLOW_BACKUP'
@@ -765,23 +780,23 @@ if ($backupFlag) { throw "Installed package still exposes ALLOW_BACKUP" }
 
 Expected: no `ALLOW_BACKUP` match.
 
-- [ ] **Step 5: Verify voice behavior without sending content**
+- [x] **Step 5: Verify voice behavior without sending content**
 
 Check the existing `RECORD_AUDIO` grant with `dumpsys package`. If already granted, open one existing chat, tap the mic once, dictate harmless local text, confirm it appears only in the composer, stop recognition, and clear only that unsent draft through the UI. Do not press Send and do not reset the permission to test denial. Confirm no redundant permission prompt appears.
 
-- [ ] **Step 6: Run the migration acceptance from Task 3**
+- [x] **Step 6: Run the migration acceptance from Task 3**
 
 Run the exact instrumentation and directory-listing commands from Task 3. Confirm PASS, absence of the test database/lock, and presence of the production database files.
 
-- [ ] **Step 7: Smoke-test unaffected primary surfaces**
+- [x] **Step 7: Smoke-test unaffected primary surfaces**
 
 Open Sessions, one existing chat, Notes, Prompts, Projects, Files/Git, Settings, the privacy link, QR pairing entry point, and update dialog entry point. Do not save, send, delete, forget, install, or mutate remote state. Do not use TalkBack.
 
-- [ ] **Step 8: Update the local resume state**
+- [x] **Step 8: Update the local resume state**
 
 Overwrite `CURRENT.md` with the verified branch/HEAD, exact commands/results, device state, preserved-data proof, known remaining work, and the next safe task. Keep it uncommitted.
 
-- [ ] **Step 9: Confirm the slice is ready for the next goal workstream**
+- [x] **Step 9: Confirm the slice is ready for the next goal workstream**
 
 ```powershell
 git status --short --branch

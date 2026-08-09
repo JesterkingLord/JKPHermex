@@ -104,7 +104,7 @@ the existing workspace browser rather than adding a new screen from scratch.
 
 ## 4. Slices
 
-### Slice 1 — contract + repository
+### Slice 1 — contract + repository — SHIPPED (`21fa7dd`; see §3b)
 - `Endpoint.LIST("/api/list")` (new), reusing `FILE`, `MEDIA`, `UPLOAD`.
 - `WorkspaceEntry` DTO: `name`, `path`, `type`, `isDir`, `sizeBytes?`,
   `mtimeNs?`, `targetOutsideWorkspace?` — all nullable with defaults.
@@ -113,16 +113,19 @@ the existing workspace browser rather than adding a new screen from scratch.
 - Tests: tolerant decoding of a real-shaped payload, a symlink row missing
   size/target, and a 404 mapping to a typed failure.
 
-### Slice 2 — Files screen (browse)
+### Slice 2 — Files screen (browse) — SHIPPED (`9316316`, `64010f0`)
 - Drawer entry; breadcrumb; parent row; 48 dp targets; empty and error states.
 - Tests: breadcrumb segmentation, parent-path derivation, sort comparators.
 
-### Slice 3 — media grid + inline preview
+### Slice 3 — media grid + inline preview — PARTLY SHIPPED
+
+Classifier and inline preview shipped (`46b5e59`, `4d9d7d6`, `caaf0f2`,
+`816aef4`). Grid thumbnails are **deliberately not built** — see below.
 - Extension classifier (pure, tested) → Images / Video / Documents / Code.
 - Thumbnails via `/api/media`; SVG deliberately excluded from inline preview,
   matching the server's own rule.
 
-### Slice 4 — upload + provenance ledger
+### Slice 4 — upload + provenance ledger — SHIPPED (`ac36d8f`)
 - Upload into the current directory; record it in the local ledger.
 - "Uploaded from this device" section derived from the ledger.
 - Tests: ledger round-trip, dedupe, and that a file absent from the ledger is
@@ -193,6 +196,30 @@ already exist and need no changes. The new surface is a list plus a refresh
 action, not a second browser.
 
 ---
+
+## 4b. Slice 3 status, 2026-08-09
+
+**Shipped:** the extension classifier (pure, tested) and inline preview through
+`/api/media` — image previews (`46b5e59`), a 25 MB download cap because the
+endpoint enforces none of its own (`4d9d7d6`), video/audio/archive/PDF diverted
+away from the mojibake text read (`caaf0f2`), and the SVG exclusion this plan
+asked for, which the first cut had missed (`816aef4`).
+
+**Not built: grid thumbnails.** Not an oversight — a judgement worth recording.
+Thumbnails mean one `/api/media` fetch and one bitmap decode per visible row,
+in a `LazyColumn` that was measured at **26.7% janky frames, 104 of 105 janky
+frames on the UI thread** (see CURRENT.md). Adding per-row image work to a list
+with a known, measured scroll problem, on a debug build, with no device to
+re-measure on, would be shipping a probable regression and calling it a
+feature.
+
+It needs, in order: the release build (one `keytool` command away), a fresh
+jank profile, then thumbnails with a bounded cache and a scroll-aware fetch
+policy — and a re-profile to prove they cost nothing. That is a slice of its
+own, not a loose end.
+
+Everything else in slice 3 is done, and the preview path it needed is now in
+place, so the remaining work is genuinely just thumbnails.
 
 ## 5. Explicitly not promised
 
