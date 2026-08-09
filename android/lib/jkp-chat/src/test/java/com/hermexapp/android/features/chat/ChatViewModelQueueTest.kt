@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -176,5 +177,60 @@ class ChatViewModelQueueTest {
                 state.entries.any { it is TimelineEntry.UserMessage && it.text == "follow-up" } &&
                 state.isStreaming
         }
+    }
+
+    @Test
+    fun `cancel drains the queue into a fresh run, not a steer on the dead one`() = runBlocking {
+        // The Cancelled branch drained the queue while isStreaming was still
+        // true, so send() routed the queued message to steerNow() — steering a
+        // run that had just been cancelled. It never became a turn of its own
+        // and its attachments were dropped. Only StreamEnd finished the run
+        // first; nothing covered Cancelled at all.
+        enqueueStartResponse()
+        viewModel.updateComposerText("first turn")
+        viewModel.sendNow()
+        assertTrue(viewModel.uiState.value.isStreaming)
+
+        viewModel.enqueueMessage("after cancel", emptyList())
+        assertEquals(1, viewModel.uiState.value.queuedMessages.size)
+
+        // A start response is only consumed if the drain begins a NEW run.
+        // Were it steered instead, this would go unused and the assertion
+        // below would never see the message as a user turn.
+        enqueueStartResponse()
+        sse.emit(SseEvent.Cancelled)
+
+        waitUntil { viewModel.uiState.value.queuedMessages.isEmpty() }
+
+        // Assert on the wire, not the timeline: steerNow() also appends a user
+        // entry, so a timeline check passes either way and proves nothing.
+        // Only the endpoint distinguishes a new turn from a steer.
+        val paths = generateSequence { server.takeRequest(2, TimeUnit.SECONDS) }
+            .map { it.path.orEmpty() }
+            .takeWhile { it.isNotEmpty() }
+            .toList()
+        assertTrue(
+            "the drained message must start a run, not steer the cancelled one; saw $paths",
+            paths.any { "/api/chat/start" in it },
+        )
+        assertTrue(
+            "nothing may be steered into a cancelled run; saw $paths",
+            paths.none { "/api/chat/steer" in it },
+        )
+    }
+
+    @Test
+    fun `cancel with an empty queue stops streaming instead of hanging`() = runBlocking {
+        // Cancelled never called sse.stop()/finishStreaming(), so a host that
+        // closed without a stream_end left the run "streaming" for good — STOP
+        // button live, stall watch armed, no way back.
+        enqueueStartResponse()
+        viewModel.updateComposerText("only turn")
+        viewModel.sendNow()
+        assertTrue(viewModel.uiState.value.isStreaming)
+
+        sse.emit(SseEvent.Cancelled)
+
+        waitUntil { !viewModel.uiState.value.isStreaming }
     }
 }

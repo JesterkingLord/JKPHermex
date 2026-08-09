@@ -1033,6 +1033,16 @@ data class QueuedMessage(
                 drainQueuedMessages()
             }
             SseEvent.Cancelled -> {
+                // Same order as StreamEnd above, and the order is the point:
+                // drainQueuedMessages() goes through send(), which routes to
+                // steerNow() while isStreaming is still true. Draining before
+                // finishStreaming() therefore steered the queued message into
+                // the run that had just been cancelled — it never became a
+                // turn of its own, and its attachments were dropped on the
+                // way. Skipping sse.stop() also left the run "streaming"
+                // forever whenever the host closed without a stream_end.
+                sse.stop()
+                finishStreaming()
                 _uiState.update {
                     it.copy(entries = it.entries + TimelineEntry.Notice(nextId("notice"), "Run stopped."))
                 }
