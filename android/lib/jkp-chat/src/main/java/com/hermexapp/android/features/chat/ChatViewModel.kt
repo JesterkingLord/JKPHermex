@@ -807,7 +807,16 @@ data class QueuedMessage(
         }
 
         if (state.isStreaming) {
-            steerNow(draft)
+            // Compose exactly as the non-streaming path below does. Passing the
+            // raw draft meant a mid-run message referenced none of its
+            // attachments and left them sitting in the strip, where the next
+            // send picked them up again. It also made an image-only draft a
+            // dead button: steerNow returns early on empty text, so the tap did
+            // nothing and explained nothing.
+            steerNow(PendingAttachment.messageText(draft, state.attachments))
+            if (state.attachments.isNotEmpty()) {
+                _uiState.update { it.copy(attachments = emptyList()) }
+            }
             return
         }
 

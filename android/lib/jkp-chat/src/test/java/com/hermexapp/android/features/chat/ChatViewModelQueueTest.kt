@@ -233,4 +233,57 @@ class ChatViewModelQueueTest {
 
         waitUntil { !viewModel.uiState.value.isStreaming }
     }
+
+    @Test
+    fun `steering mid-run carries its attachments and clears the strip`() = runBlocking {
+        // The streaming path passed the raw draft, so a mid-run message named
+        // none of its attachments and left them in the strip for the next send
+        // to pick up again.
+        enqueueStartResponse()
+        viewModel.updateComposerText("first turn")
+        viewModel.sendNow()
+        assertTrue(viewModel.uiState.value.isStreaming)
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(
+            MockResponse().setBody("""{"filename":"shot.png","path":"/ws/shot.png","size":3}"""),
+        )
+        viewModel.addAttachmentNow(byteArrayOf(1, 2, 3), "shot.png")
+        server.takeRequest(2, TimeUnit.SECONDS)
+        assertEquals(1, viewModel.uiState.value.attachments.size)
+        viewModel.updateComposerText("look at this")
+        server.enqueue(MockResponse().setBody("""{"ok": true}"""))
+        viewModel.sendNow()
+
+        val steer = server.takeRequest(2, TimeUnit.SECONDS)
+        assertTrue("expected a steer, got ${steer?.path}", "/api/chat/steer" in steer?.path.orEmpty())
+        val body = steer?.body?.readUtf8().orEmpty()
+        assertTrue("the steer must name the attachment; body was $body", "shot.png" in body)
+        assertTrue(
+            "the strip must clear, or the next send re-sends the same file",
+            viewModel.uiState.value.attachments.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `an image-only draft mid-run is not a dead button`() = runBlocking {
+        // steerNow returns early on empty text, so an attachment with no words
+        // produced a tap that did nothing and said nothing.
+        enqueueStartResponse()
+        viewModel.updateComposerText("first turn")
+        viewModel.sendNow()
+        server.takeRequest(2, TimeUnit.SECONDS)
+
+        server.enqueue(
+            MockResponse().setBody("""{"filename":"only.png","path":"/ws/only.png","size":3}"""),
+        )
+        viewModel.addAttachmentNow(byteArrayOf(1, 2, 3), "only.png")
+        server.takeRequest(2, TimeUnit.SECONDS)
+        server.enqueue(MockResponse().setBody("""{"ok": true}"""))
+        viewModel.sendNow()
+
+        val steer = server.takeRequest(2, TimeUnit.SECONDS)
+        assertTrue("an image-only draft must still steer", "/api/chat/steer" in steer?.path.orEmpty())
+        assertTrue("only.png" in steer?.body?.readUtf8().orEmpty())
+    }
 }
