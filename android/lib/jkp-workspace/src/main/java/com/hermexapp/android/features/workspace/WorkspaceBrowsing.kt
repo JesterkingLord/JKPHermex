@@ -152,6 +152,38 @@ fun workspaceFileKind(name: String): WorkspaceFileKind {
 }
 
 /**
+ * Image extensions classified as images that must not be previewed inline.
+ *
+ * SVG only, for two independent reasons that agree. The feature plan excludes
+ * it by name — "SVG deliberately excluded from inline preview, matching the
+ * server's own rule" — and the server does hold it apart: `image/svg+xml`
+ * appears in both `_TEXT_MIME_TYPES` and `dangerous_types`, and is served as
+ * an attachment rather than inline, because an SVG is a document that can
+ * carry script.
+ *
+ * The practical half agrees: `BitmapFactory` cannot decode SVG, so routing one
+ * to the preview produced "named like an image but could not be decoded" —
+ * true, and useless. An SVG is XML text, so the text read shows its actual
+ * markup, which is the answer worth having.
+ *
+ * The listing still shows the image glyph, because it is an image. Only the
+ * preview declines.
+ */
+private val nonPreviewableImageExtensions = setOf("svg")
+
+/**
+ * True when [name] is an image this screen can actually draw inline.
+ *
+ * Deliberately not `workspaceFileKind(name) == IMAGE`. The classifier answers
+ * "what kind of file is this" — a question about the file. This answers "can
+ * we render it here" — a question about us and the server's rules. Conflating
+ * the two is what sent SVG to a decoder that cannot read it.
+ */
+fun workspaceIsInlinePreviewableImage(name: String): Boolean =
+    workspaceFileKind(name) == WorkspaceFileKind.IMAGE &&
+        name.substringAfterLast('.', "").lowercase() !in nonPreviewableImageExtensions
+
+/**
  * True when reading [name] through `/api/file` can only produce mojibake.
  *
  * The host ends `read_file_content` in `raw.decode('utf-8', errors='replace')`,

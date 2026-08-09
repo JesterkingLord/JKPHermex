@@ -153,7 +153,7 @@ class WorkspaceViewModel(
 
     suspend fun openFileNow(path: String) {
         val name = path.substringAfterLast('/').substringAfterLast('\\')
-        if (workspaceFileKind(name) == WorkspaceFileKind.IMAGE) {
+        if (workspaceIsInlinePreviewableImage(name)) {
             // Retry the root here, not just on entry. loadWorkspaceRoot fails
             // silently, so one blip as the screen opened would otherwise leave
             // the root null for the screen's whole life and send every image
