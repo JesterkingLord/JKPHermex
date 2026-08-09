@@ -241,13 +241,14 @@ fun SessionListScreen(
             // swipe-down gesture calls viewModel.refresh() (the non-suspend
             // public entry — PullToRefreshBox.onRefresh is `() -> Unit`,
             // which lines up with `refresh()`; `refreshNow()` is suspend).
-            // `isRefreshing` is bound to the existing state.isLoading flag so
-            // the spinner the screen already shows for first-paint loads is
-            // the same one the indicator visualizes — no new loading state.
+            // `isRefreshing` tracks isManualRefresh, not isLoading: the 15s
+            // background poll sets isLoading, so binding to it made the
+            // indicator animate on its own every tick with nobody touching
+            // the screen.
             // Inner LazyColumn is unchanged; FastScrollbar remains a sibling
             // overlay on the right edge of the Box.
             PullToRefreshBox(
-                isRefreshing = state.isLoading,
+                isRefreshing = state.isManualRefresh,
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {

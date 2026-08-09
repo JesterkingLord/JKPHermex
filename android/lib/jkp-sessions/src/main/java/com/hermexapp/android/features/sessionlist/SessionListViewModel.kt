@@ -61,6 +61,17 @@ class SessionListViewModel(
         val projects: List<com.hermexapp.android.model.Project> = emptyList(),
         val searchQuery: String = "",
         val isLoading: Boolean = false,
+        /**
+         * True only while a refresh the user actually asked for is running.
+         *
+         * Separate from [isLoading] because the background poll sets that one
+         * every 15s, and the pull-to-refresh indicator was bound to it — so
+         * the spinner animated in and out on its own every tick, on a screen
+         * nobody was touching. The original binding was a deliberate "reuse
+         * the loading flag we already have"; the poll loop arrived later and
+         * quietly invalidated it.
+         */
+        val isManualRefresh: Boolean = false,
         val isFromCache: Boolean = false,
         val errorMessage: String? = null,
         /**
@@ -140,8 +151,18 @@ class SessionListViewModel(
      */
     private val _currentPollIntervalMs = MutableStateFlow(60_000L)
 
+    /** Refresh the user asked for: pull-to-refresh, the retry button, first load. */
     fun refresh() {
-        viewModelScope.launch { refreshNow() }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isManualRefresh = true) }
+            try {
+                refreshNow()
+            } finally {
+                // finally: a thrown ApiError must not leave the indicator
+                // spinning for the life of the screen.
+                _uiState.update { it.copy(isManualRefresh = false) }
+            }
+        }
     }
 
     suspend fun refreshNow() {

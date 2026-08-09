@@ -657,6 +657,36 @@ class SessionListViewModelTest {
         // Only s2 is pinned, so only s2 may be selected — not all three.
         assertEquals(setOf("s2"), viewModel.uiState.value.selectedIds)
     }
+
+    @Test
+    fun `the background poll does not spin the pull-to-refresh indicator`() = runTest(dispatcher) {
+        // isRefreshing was bound to isLoading, which the 15s poll sets on
+        // every tick — so the indicator animated in and out by itself on a
+        // screen nobody was touching.
+        viewModel.onScreenResumed()
+        viewModel.startBackgroundRefresh()
+        try {
+            advanceTimeBy(16_000)
+            runCurrent()
+            assertFalse(
+                "a poll tick must not present as a user-initiated refresh",
+                viewModel.uiState.value.isManualRefresh,
+            )
+        } finally {
+            viewModel.stopBackgroundRefresh()
+        }
+    }
+
+    @Test
+    fun `a user refresh clears the indicator even when it fails`() = runTest(dispatcher) {
+        repo.loadSessionsError = ApiError.Http(500, null)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        // Cleared in a finally: a thrown ApiError must not leave the indicator
+        // spinning for the life of the screen.
+        assertFalse(viewModel.uiState.value.isManualRefresh)
+    }
 }
 
 /**
