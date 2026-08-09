@@ -105,11 +105,19 @@ object PairingIntentParser {
         val params = fragment.split('&')
             .mapNotNull { param ->
                 val parts = param.split('=', limit = 2)
-                if (parts.size != 2) null
-                else parts[0] to java.net.URLDecoder.decode(
-                    parts[1].replace('+', ' '),
-                    "UTF-8",
-                )
+                if (parts.size != 2) return@mapNotNull null
+                // URLDecoder throws IllegalArgumentException on a bare or
+                // truncated percent escape, and OkHttp does not reject those
+                // in a fragment — it passes "%zz" and a trailing "%" straight
+                // through. Nothing above catches it: parse() runs outside
+                // pairAndConfigure's try, and the onboarding caller has only
+                // try/finally, so the throw reached viewModelScope and took
+                // the app down. A QR clipped mid-escape, or a paste that lost
+                // its last character, was enough — no attacker required.
+                val decoded = runCatching {
+                    java.net.URLDecoder.decode(parts[1].replace('+', ' '), "UTF-8")
+                }.getOrNull() ?: return@mapNotNull null
+                parts[0] to decoded
             }
             .toMap()
         val pairId = params["pair_id"]?.takeIf { it.isNotBlank() } ?: return null

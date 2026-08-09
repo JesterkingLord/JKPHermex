@@ -1,6 +1,8 @@
 package com.hermexapp.android.auth
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -155,5 +157,35 @@ class PairingIntentParserTest {
         val raw = "http://100.88.54.29:8642/v1/pair/connect?pair_id=&token=t"
         val intent = PairingIntentParser.parse(raw)
         assertTrue(intent is PairingIntent.ServerUrlOnly)
+    }
+
+    @Test
+    fun `a truncated percent escape does not crash the parser`() {
+        // URLDecoder throws IllegalArgumentException on a bare "%", and OkHttp
+        // does not reject it in a fragment. parse() runs outside
+        // pairAndConfigure's try and the onboarding caller has only
+        // try/finally, so the throw reached viewModelScope and killed the app.
+        // A QR clipped mid-escape, or a paste missing its last character, was
+        // enough; no attacker needed.
+        val intent = PairingIntentParser.parse(
+            "https://hermes.example.com/#pair_id=abc&token=xyz%",
+        )
+
+        // Whatever it decides, it must decide it rather than throw.
+        assertNotNull(intent)
+    }
+
+    @Test
+    fun `an invalid percent escape drops that parameter, keeping the rest`() {
+        val intent = PairingIntentParser.parse(
+            "https://hermes.example.com/#pair_id=abc&token=%zz",
+        )
+
+        // token is unreadable, so this is not a usable pairing — but it must
+        // still come back as a decision, not an exception.
+        assertFalse(
+            "an undecodable token must not be treated as a credential",
+            intent is PairingIntent.CompletePairing,
+        )
     }
 }
