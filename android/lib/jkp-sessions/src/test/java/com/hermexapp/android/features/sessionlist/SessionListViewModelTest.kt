@@ -166,48 +166,45 @@ class SessionListViewModelTest {
     }
 
     @Test
-    fun `deleteSessions bulk hits the repo once with the first id (server-side fan-out)`() = runTest(dispatcher) {
+    fun `deleteSessions deletes every selected id, not just the first`() = runTest(dispatcher) {
+        // These paths called the single-id endpoint with ids.first() on the
+        // belief that it fanned out server-side. It does not: the deployed
+        // /api/session/delete reads one session_id. "Delete 2 sessions?"
+        // deleted one and the snackbar still said two.
         viewModel.refreshNow()
         advanceUntilIdle()
 
         viewModel.deleteSessions(listOf("s1", "s3"))
         advanceUntilIdle()
 
-        // Repository contract: still a single id argument (the API client
-        // signature is unchanged); the VM fans the ids out server-side
-        // and emits ONE Pinned-style event with all ids.
-        assertEquals(listOf("s1"), repo.deletedIds)
+        assertEquals(listOf("s1", "s3"), repo.deletedIds)
         assertEquals(null, viewModel.uiState.value.errorMessage)
     }
 
     @Test
-    fun `pinSessions bulk emits a single Pinned event with all ids (single repo call today)`() = runTest(dispatcher) {
+    fun `pinSessions pins every selected id`() = runTest(dispatcher) {
         viewModel.refreshNow()
         advanceUntilIdle()
 
         viewModel.pinSessions(listOf("s1", "s2"), pinned = true)
         advanceUntilIdle()
 
-        // Today's behavior: the VM sends ONE repo call with the first id
-        // and emits an event listing every selected id. Server-side
-        // fan-out is the bulk primitive; the rest of the ids ride along
-        // on the wire to the server as part of the snackbar payload only.
-        // If the server's fan-out later expands to per-id calls, this
-        // assertion should change to `repo.pinnedIdPairs == [(s1,true),(s2,true)]`.
-        assertEquals(listOf("s1" to true), repo.pinnedIdPairs)
+        assertEquals(listOf("s1" to true, "s2" to true), repo.pinnedIdPairs)
         assertEquals(null, viewModel.uiState.value.errorMessage)
     }
 
     @Test
-    fun `archiveSessions bulk hits the repo once with the first id (server-side fan-out)`() = runTest(dispatcher) {
+    fun `archiveSessions archives every selected id`() = runTest(dispatcher) {
         viewModel.refreshNow()
         advanceUntilIdle()
 
         viewModel.archiveSessions(listOf("s1", "s2", "s3"), archived = true)
         advanceUntilIdle()
 
-        // Same shape as pinSessions: one repo call, event carries all ids.
-        assertEquals(listOf("s1" to true), repo.archivedIdPairs)
+        assertEquals(
+            listOf("s1" to true, "s2" to true, "s3" to true),
+            repo.archivedIdPairs,
+        )
         assertEquals(null, viewModel.uiState.value.errorMessage)
     }
 

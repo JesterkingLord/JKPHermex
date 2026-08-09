@@ -329,11 +329,24 @@ class SessionListViewModel(
         val titles = _uiState.value.sessions
             .filter { it.sessionId in ids }
             .mapNotNull { it.title }
-        val actionMessage = if (ids.size == 1) "Could not delete session." else "Could not delete ${ids.size} sessions."
-        mutate(
-            errorEvent = SessionListEvent.ActionError(message = actionMessage),
-            successEvent = { SessionListEvent.Deleted(ids = ids, titles = titles) },
-        ) { repository.deleteSession(ids.first()) }
+        mutateEach(
+            ids = ids,
+            errorEvent = { failed ->
+                SessionListEvent.ActionError(
+                    message = if (failed == 1) "Could not delete 1 session."
+                    else "Could not delete $failed sessions.",
+                )
+            },
+            successEvent = { done ->
+                SessionListEvent.Deleted(
+                    ids = done,
+                    titles = _uiState.value.sessions
+                        .filter { it.sessionId in done }
+                        .mapNotNull { it.title }
+                        .ifEmpty { titles },
+                )
+            },
+        ) { id -> repository.deleteSession(id) }
     }
 
     fun pinSession(id: String, pinned: Boolean) = mutate(
@@ -345,12 +358,16 @@ class SessionListViewModel(
 
     fun pinSessions(ids: List<String>, pinned: Boolean) {
         if (ids.isEmpty()) return
-        mutate(
-            errorEvent = SessionListEvent.ActionError(
-                message = if (pinned) "Could not pin sessions." else "Could not unpin sessions.",
-            ),
-            successEvent = { SessionListEvent.Pinned(ids = ids, pinned = pinned) },
-        ) { repository.pinSession(ids.first(), pinned) }
+        mutateEach(
+            ids = ids,
+            errorEvent = { failed ->
+                SessionListEvent.ActionError(
+                    message = if (pinned) "Could not pin $failed sessions."
+                    else "Could not unpin $failed sessions.",
+                )
+            },
+            successEvent = { done -> SessionListEvent.Pinned(ids = done, pinned = pinned) },
+        ) { id -> repository.pinSession(id, pinned) }
     }
 
     fun archiveSession(id: String, archived: Boolean) = mutate(
@@ -362,12 +379,16 @@ class SessionListViewModel(
 
     fun archiveSessions(ids: List<String>, archived: Boolean) {
         if (ids.isEmpty()) return
-        mutate(
-            errorEvent = SessionListEvent.ActionError(
-                message = if (archived) "Could not archive sessions." else "Could not unarchive sessions.",
-            ),
-            successEvent = { SessionListEvent.Archived(ids = ids, archived = archived) },
-        ) { repository.archiveSession(ids.first(), archived) }
+        mutateEach(
+            ids = ids,
+            errorEvent = { failed ->
+                SessionListEvent.ActionError(
+                    message = if (archived) "Could not archive $failed sessions."
+                    else "Could not unarchive $failed sessions.",
+                )
+            },
+            successEvent = { done -> SessionListEvent.Archived(ids = done, archived = archived) },
+        ) { id -> repository.archiveSession(id, archived) }
     }
 
     fun moveSession(id: String, projectId: String?) {
@@ -441,6 +462,61 @@ class SessionListViewModel(
                 onAuthError(e)
                 _uiState.update { it.copy(errorMessage = e.userMessage) }
             }
+        }
+    }
+
+    /**
+     * Applies [action] to every id, one request each, and reports what landed.
+     *
+     * The bulk paths used to call the single-id endpoint with `ids.first()`,
+     * on the belief that it accepted a list. It does not: `/api/session/delete`,
+     * `/pin` and `/archive` each read one `session_id` and answer
+     * "session_id is required" without it — verified against the **deployed**
+     * host, not only the newer upstream tree. So "Delete 5 sessions?" deleted
+     * one, and the snackbar still said five. The user was told the work was
+     * done while four sessions were still there.
+     *
+     * Partial failure is reported as partial: the success event carries only
+     * the ids that actually succeeded, so the snackbar counts what happened
+     * rather than what was asked for.
+     *
+     * A per-item error (the host refusing one read-only session) continues to
+     * the rest. An [ApiError] does not — a dropped connection or an expired
+     * grant will fail every remaining id identically, and there is no reason
+     * to make fifty doomed requests to discover that.
+     */
+    private fun mutateEach(
+        ids: List<String>,
+        errorEvent: (failed: Int) -> SessionListEvent.ActionError,
+        successEvent: (succeeded: List<String>) -> SessionListEvent,
+        action: suspend (String) -> com.hermexapp.android.model.SessionMutationResponse,
+    ) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val succeeded = mutableListOf<String>()
+            var firstError: String? = null
+            for (id in ids) {
+                try {
+                    val response = action(id)
+                    if (response.error != null) {
+                        firstError = firstError ?: response.error
+                    } else {
+                        succeeded += id
+                    }
+                } catch (e: ApiError) {
+                    onAuthError(e)
+                    firstError = firstError ?: e.userMessage
+                    break
+                }
+            }
+            if (succeeded.isNotEmpty()) _events.tryEmit(successEvent(succeeded))
+            if (succeeded.size < ids.size) {
+                firstError?.let { message ->
+                    _uiState.update { it.copy(errorMessage = message) }
+                }
+                _events.tryEmit(errorEvent(ids.size - succeeded.size))
+            }
+            refreshNow()
         }
     }
 
