@@ -53,6 +53,11 @@ data class SessionSummary(
     @SerialName("source_tag") val sourceTag: String? = null,
     @SerialName("session_source") val sessionSource: String? = null,
     @SerialName("source_label") val sourceLabel: String? = null,
+    /**
+     * Set on imported sessions the server refuses to mutate. Absent on many
+     * rows that are still un-writable — read [isReadOnly], not this.
+     */
+    @SerialName("read_only") val readOnly: Boolean? = null,
 ) {
     /** Stable list identity mirroring the iOS `SessionSummary.id`. */
     val stableId: String
@@ -70,6 +75,24 @@ data class SessionSummary(
                 .mapNotNull { it?.trim()?.lowercase() }
                 .contains("cron")
         }
+
+    /**
+     * True when the server will refuse to write to this session.
+     *
+     * **The `read_only` flag alone is not the rule.** The host guard
+     * (`routes.py`, `PermissionError("read-only imported session")`) rejects
+     * an explicit `read_only` *and*, separately, any messaging-source record —
+     * agent rows normalise messaging sources without ever setting the flag. On
+     * the live host the operator's own telegram session has `read_only: null`
+     * with `session_source: "messaging"`, so a client testing only the flag
+     * still offers a composer the server refuses.
+     *
+     * Measured against the live host: 44 of 78 sessions carry the flag (every
+     * `claude_code` and `subagent` import), and the union with messaging is
+     * 45 — well over half the list.
+     */
+    val isReadOnly: Boolean
+        get() = readOnly == true || sessionSource?.trim()?.lowercase() == "messaging"
 }
 
 @Serializable

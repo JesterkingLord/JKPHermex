@@ -171,12 +171,30 @@ fun workspaceFileKind(name: String): WorkspaceFileKind {
  * Images are absent on purpose: they have somewhere better to go.
  */
 fun workspaceIsUnreadableAsText(name: String): Boolean {
-    if (name.substringAfterLast('.', "").lowercase() == "pdf") return true
+    if (name.substringAfterLast('.', "").lowercase() in binaryDocumentExtensions) return true
     return when (workspaceFileKind(name)) {
         WorkspaceFileKind.VIDEO, WorkspaceFileKind.AUDIO, WorkspaceFileKind.ARCHIVE -> true
         else -> false
     }
 }
+
+/**
+ * The binary members of [documentExtensions].
+ *
+ * That set mixes formats that share nothing but a category. Splitting it by
+ * what `/api/file` can actually return:
+ *  - `pdf` is binary and the host has no preview path for it;
+ *  - `doc` is an OLE compound file and `odt` is a zip — both binary, and
+ *    neither is one of the three the host converts;
+ *  - `docx`, `xlsx` and `pptx` are binary too but **do** come back readable,
+ *    because the host routes exactly those through `preview_office_document`;
+ *  - `md`, `txt`, `csv` and `rtf` are text — RTF is ASCII markup, ugly to read
+ *    raw but not mojibake — so they must keep their text read.
+ *
+ * `doc` and `odt` were missed on the first pass: the rule was written as "pdf"
+ * rather than "the binary ones", which is the same shortcut, one layer down.
+ */
+private val binaryDocumentExtensions = setOf("pdf", "doc", "odt")
 
 /**
  * Joins a workspace [root] and a workspace-relative [relativePath] into the

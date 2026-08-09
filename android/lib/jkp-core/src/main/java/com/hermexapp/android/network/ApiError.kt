@@ -82,6 +82,18 @@ sealed class ApiError : Exception() {
                         "The server endpoint was not found. Check that the URL points to a Hermes Web UI server."
                     statusCode == 408 ->
                         "The server took too long to respond. Check that the machine is awake and the server is running."
+                    // Same reasoning as the 404 above, and the same defect: a
+                    // 403 that explains itself beats our guess. The host
+                    // refuses read-only imported sessions with a plain reason
+                    // ("Read-only imported sessions cannot be renamed from
+                    // WebUI"), and 45 of the operator's 78 sessions are
+                    // un-writable — every claude_code and subagent import, plus
+                    // messaging sources. Answering all of those with "check the
+                    // server password" sends the user to change a credential
+                    // that is already correct, for a session that would refuse
+                    // them anyway. Ordered before the catalog so the server's
+                    // own words win over a generic status mapping.
+                    statusCode == 403 && reason != null -> reason
                     catalogMsg != ClientErrorCatalog.UNKNOWN.message -> catalogMsg
                     statusCode == 403 ->
                         "The server refused access. Check the server password and permissions."

@@ -74,7 +74,20 @@ class WorkspaceViewModel(
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
         val noticeMessage: String? = null,
-    )
+    ) {
+        /**
+         * True when something is open *instead of* the directory listing.
+         *
+         * One predicate rather than three call sites testing two of them: back
+         * already forgot [openUnreadableKind], so dismissing a PDF notice
+         * navigated a directory up — or closed the browser outright at the
+         * root — rather than returning to the listing the file was tapped
+         * from. Every new open state must be added here, and then back, the
+         * header arrow and the recent-files button all follow.
+         */
+        val hasOpenFileView: Boolean
+            get() = openFile != null || openMediaPath != null || openUnreadableKind != null
+    }
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -141,6 +154,11 @@ class WorkspaceViewModel(
     suspend fun openFileNow(path: String) {
         val name = path.substringAfterLast('/').substringAfterLast('\\')
         if (workspaceFileKind(name) == WorkspaceFileKind.IMAGE) {
+            // Retry the root here, not just on entry. loadWorkspaceRoot fails
+            // silently, so one blip as the screen opened would otherwise leave
+            // the root null for the screen's whole life and send every image
+            // to the text read with no way back.
+            if (_uiState.value.workspaceRoot == null) loadWorkspaceRoot()
             val absolute = workspaceAbsolutePath(_uiState.value.workspaceRoot, path)
             if (absolute != null) {
                 // Deliberately no /api/file call: it decodes bytes as UTF-8 with
@@ -273,7 +291,12 @@ class WorkspaceViewModel(
             _uiState.update { it.copy(openDiff = response.diff, isLoading = false) }
         } catch (e: ApiError) {
             onAuthError(e)
-            _uiState.update { it.copy(errorMessage = e.userMessage, isLoading = false) }
+            // openDiff clears with the error. Left set, the previous file's
+            // diff stayed on screen under the new file's error banner and read
+            // as though it belonged to the file that just failed to open.
+            _uiState.update {
+                it.copy(openDiff = null, errorMessage = e.userMessage, isLoading = false)
+            }
         }
     }
 

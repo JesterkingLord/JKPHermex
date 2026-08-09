@@ -77,7 +77,7 @@ fun FileBrowserScreen(
         if (initialFilePath != null) viewModel.openFileNow(initialFilePath)
     }
     BackHandler {
-        if (state.openFile != null || state.openMediaPath != null) viewModel.closeFile()
+        if (state.hasOpenFileView) viewModel.closeFile()
         else if (!viewModel.navigateUp()) onClose()
     }
 
@@ -92,7 +92,7 @@ fun FileBrowserScreen(
                     ?: "Files",
                 subtitle = state.currentPath,
                 onBack = {
-                    if (state.openFile != null || state.openMediaPath != null) {
+                    if (state.hasOpenFileView) {
                         viewModel.closeFile()
                     } else if (!viewModel.navigateUp()) {
                         onClose()
@@ -102,10 +102,7 @@ fun FileBrowserScreen(
                     // Only at the root of the listing: while a file is open or
                     // you are deep in a tree, leaving for a cross-session list
                     // is not what the button next to the title should do.
-                    if (onOpenRecentFiles != null &&
-                        state.openFile == null &&
-                        state.openMediaPath == null
-                    ) {
+                    if (onOpenRecentFiles != null && !state.hasOpenFileView) {
                         CircleButton(
                             onClick = onOpenRecentFiles,
                             contentDescription = "Recent files across sessions",
