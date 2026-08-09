@@ -264,10 +264,13 @@ fun SessionListScreen(
                 item(key = "bulk-bar") {
                     BulkSessionActionsBar(
                         selectedCount = state.selectedIds.size,
-                        totalVisible = state.sessions.count { it.sessionId != null },
+                        // visibleSessions, not state.sessions: the bar counts
+                        // what the filter is showing, so "Select all" and the
+                        // count above it agree with the rows on screen.
+                        totalVisible = visibleSessions.count { it.sessionId != null },
                         onCancel = { viewModel.clearSelection() },
                         onToggleSelectAll = {
-                            if (state.selectedIds.size == state.sessions.count { it.sessionId != null }) {
+                            if (state.selectedIds.size == visibleSessions.count { it.sessionId != null }) {
                                 viewModel.clearSelection()
                             } else {
                                 viewModel.selectAllVisible()

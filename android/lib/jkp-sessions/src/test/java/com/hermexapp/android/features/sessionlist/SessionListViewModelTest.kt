@@ -640,6 +640,23 @@ class SessionListViewModelTest {
         }
         advanceUntilIdle()
     }
+
+    @Test
+    fun `select all in a filter selects only what the filter shows`() = runTest(dispatcher) {
+        // selectAllVisible read the unfiltered list, so the Pinned view — a
+        // couple of rows on screen — selected every session in the account.
+        // Paired with a bulk delete that is confirmed by count, that is a
+        // destructive action agreed to on a number the operator never saw.
+        repo.sessions = listOf(s1, s2.copy(pinned = true), s3)
+        viewModel.refreshNow()
+        advanceUntilIdle()
+
+        viewModel.setFilterMode(SessionListViewModel.FilterMode.Pinned)
+        viewModel.selectAllVisible()
+
+        // Only s2 is pinned, so only s2 may be selected — not all three.
+        assertEquals(setOf("s2"), viewModel.uiState.value.selectedIds)
+    }
 }
 
 /**

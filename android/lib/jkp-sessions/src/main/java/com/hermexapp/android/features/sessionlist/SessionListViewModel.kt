@@ -578,12 +578,23 @@ class SessionListViewModel(
     }
 
     /** Selects every session in the current load (server'd sessions, not including cached-only rows). */
+    /**
+     * Selects the rows the filter is actually showing.
+     *
+     * It read the unfiltered list, so in the Pinned view — three rows on
+     * screen — one tap selected all 78 sessions, most of them not visible and
+     * none of them pinned. Paired with a bulk delete that is confirmed by
+     * count, that is a destructive action agreed to on a number the operator
+     * never saw. "Visible" is in the name; it now means it.
+     *
+     * Search is not re-applied here: it runs server-side, so `sessions`
+     * already holds the matches, and [filterSessions] is the only local
+     * narrowing left.
+     */
     fun selectAllVisible() {
+        val visible = filteredSessions.mapNotNull { it.sessionId }.toSet()
         _uiState.update { state ->
-            state.copy(
-                selectionMode = true,
-                selectedIds = state.sessions.mapNotNull { it.sessionId }.toSet(),
-            )
+            state.copy(selectionMode = true, selectedIds = visible)
         }
     }
 
