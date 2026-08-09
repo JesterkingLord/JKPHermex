@@ -10,6 +10,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -77,8 +78,16 @@ class AuthManagerTest {
         manager.configure(serverUrlString(), password = "wrong")
 
         // A 401 login throws Unauthorized before the ok-check (same as the iOS
-        // client): the message is surfaced and nothing is persisted.
-        assertEquals(ApiError.Unauthorized.userMessage, manager.lastErrorMessage.value)
+        // client). It used to surface that error's own copy — "this phone link
+        // is no longer authorized, link it again from your JKP host" — which
+        // sent someone who had merely mistyped off to re-pair a device that was
+        // never unpaired. /api/auth/login does not check the device grant.
+        assertEquals(AuthManager.WRONG_PASSWORD_MESSAGE, manager.lastErrorMessage.value)
+        assertNotEquals(
+            "a mistyped password must not read as a revoked device link",
+            ApiError.Unauthorized.userMessage,
+            manager.lastErrorMessage.value,
+        )
         assertTrue(manager.state.value !is AuthManager.State.LoggedIn)
         assertNull(secretStore.load(SecretStore.Key.SERVER_URL))
     }

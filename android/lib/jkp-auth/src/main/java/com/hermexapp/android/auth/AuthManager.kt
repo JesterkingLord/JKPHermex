@@ -115,10 +115,22 @@ class AuthManager(
                     _lastErrorMessage.value = EMPTY_PASSWORD_MESSAGE
                     return
                 }
-                val loginResponse = client.login(password)
-                if (loginResponse.ok != true) {
+                // Caught here rather than by the outer handler: down there a
+                // 401 is indistinguishable from a revoked device grant, and
+                // gets that message. At this point it can only be the password
+                // — the grant is not what /api/auth/login checks.
+                val loginResponse = try {
+                    client.login(password)
+                } catch (unauthorized: ApiError.Unauthorized) {
                     _state.value = State.LoggedOut(serverUrl)
-                    _lastErrorMessage.value = ApiError.Unauthorized.userMessage
+                    _lastErrorMessage.value = WRONG_PASSWORD_MESSAGE
+                    return
+                }
+                if (loginResponse.ok != true) {
+                    // Reachable only if a host ever answers 200 with ok=false;
+                    // the 401 path above is what actually fires today.
+                    _state.value = State.LoggedOut(serverUrl)
+                    _lastErrorMessage.value = WRONG_PASSWORD_MESSAGE
                     return
                 }
             }
@@ -279,5 +291,15 @@ class AuthManager(
         const val PASSKEY_ONLY_MESSAGE =
             "This server signs in with passkeys, which Hermex doesn\'t support yet."
         const val EMPTY_PASSWORD_MESSAGE = "Enter the server password."
+
+        /**
+         * A 401 from `/api/auth/login` means the password was wrong. It used
+         * to surface as [ApiError.Unauthorized]'s copy — "this phone link is
+         * no longer authorized, link it again from your JKP host" — which sent
+         * someone who had simply mistyped to go re-pair a device that was
+         * never unpaired.
+         */
+        const val WRONG_PASSWORD_MESSAGE =
+            "That server password was not accepted. Check it and try again."
     }
 }
